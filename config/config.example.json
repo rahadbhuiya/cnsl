@@ -1,0 +1,69 @@
+{
+  "_comment": "CNSL Guard — full config example. Copy to /etc/cnsl/config.json",
+
+  "authlog_path": "/var/log/auth.log",
+  "iface": "eth0",
+  "tcpdump_enabled": true,
+  "tcpdump_bpf": "tcp port 22 or tcp port 445 or tcp port 139 or udp port 5353 or arp",
+
+  "thresholds": {
+    "fails_window_sec": 60,
+    "fails_threshold": 8,
+    "unique_users_threshold": 4,
+    "success_after_fails_threshold": 5,
+    "incident_cooldown_sec": 120
+  },
+
+  "actions": {
+    "dry_run": true,
+    "block_duration_sec": 900,
+    "block_backend": "iptables",
+    "ipset_name": "cnsl_blocklist",
+    "chain": "INPUT"
+  },
+
+  "allowlist": ["127.0.0.1", "::1"],
+
+  "store": {
+    "db_path": "./cnsl_state.db"
+  },
+
+  "logging": {
+    "json_log_path": "/var/log/cnsl_guard.jsonl",
+    "console_verbose": true,
+    "log_net_hints": false
+  },
+
+  "dashboard": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+
+  "notifications": {
+    "min_severity": "MEDIUM",
+
+    "telegram": {
+      "enabled": false,
+      "bot_token": "YOUR_BOT_TOKEN",
+      "chat_id": "YOUR_CHAT_ID"
+    },
+
+    "discord": {
+      "enabled": false,
+      "webhook_url": "https://discord.com/api/webhooks/YOUR_WEBHOOK"
+    },
+
+    "slack": {
+      "enabled": false,
+      "webhook_url": "https://hooks.slack.com/services/YOUR_WEBHOOK"
+    },
+
+    "webhook": {
+      "enabled": false,
+      "url": "https://your-server.com/cnsl-hook",
+      "secret_header": "X-CNSL-Secret",
+      "secret_value": "change-me"
+    }
+  }
+}
