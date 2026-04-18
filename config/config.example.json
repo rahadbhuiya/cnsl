@@ -1,5 +1,5 @@
 {
-  "_comment": "CNSL Guard — full config example. Copy to /etc/cnsl/config.json",
+  "_comment": "CNSL — full config example. Copy to /etc/cnsl/config.json",
 
   "authlog_path": "/var/log/auth.log",
   "iface": "eth0",
@@ -29,7 +29,7 @@
   },
 
   "logging": {
-    "json_log_path": "/var/log/cnsl_guard.jsonl",
+    "json_log_path": "/var/log/cnsl.jsonl",
     "console_verbose": true,
     "log_net_hints": false
   },

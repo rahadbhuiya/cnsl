@@ -1,0 +1,25 @@
+# ============================================================
+# CNSL — Python Requirements
+# ============================================================
+# Core engine has ZERO external dependencies (pure stdlib).
+# Install extras based on what features you need.
+#
+# Quick install (everything):
+#   pip install -r requirements.txt
+#
+# Minimal install (core only):
+#   pip install -e .
+# ============================================================
+
+# ── Optional: Web dashboard + REST API + Notifications ──────
+aiohttp>=3.9.0
+
+# ── Optional: SQLite async persistence ──────────────────────
+aiosqlite>=0.19.0
+
+# ── Optional: YAML config file support ──────────────────────
+pyyaml>=6.0.0
+
+# ── Development & Testing ───────────────────────────────────
+pytest>=7.0.0
+pytest-asyncio>=0.23.0

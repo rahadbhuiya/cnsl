@@ -38,7 +38,7 @@ class Metrics:
         self.ip_fails:          Dict[str, int] = {}
         self.ip_country:        Dict[str, str] = {}
 
-    # ── Update methods ────────────────────────────────────────────────────────
+    # Update methods 
 
     def inc_incident(self, severity: str) -> None:
         self.incidents_total[severity] = self.incidents_total.get(severity, 0) + 1
@@ -64,7 +64,7 @@ class Metrics:
     def inc_event(self) -> None:
         self.events_processed += 1
 
-    # ── Exposition ────────────────────────────────────────────────────────────
+    # Exposition 
 
     def render(self) -> str:
         """Return Prometheus text exposition format."""
@@ -83,7 +83,7 @@ class Metrics:
             lines.append(f"{name}_total{label_str} {value}")
 
         uptime = int(time.time() - self._start)
-        gauge("cnsl_uptime_seconds", uptime, "Seconds since CNSL Guard started")
+        gauge("cnsl_uptime_seconds", uptime, "Seconds since CNSL started")
 
         lines.append("# HELP cnsl_incidents_total Total incidents by severity")
         lines.append("# TYPE cnsl_incidents_total counter")

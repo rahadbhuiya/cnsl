@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.title="CNSL Guard"
-LABEL org.opencontainers.image.description="Cyber Network Security Layer — SSH brute-force detection"
+LABEL org.opencontainers.image.title="CNSL"
+LABEL org.opencontainers.image.description="Correlated Network Security Layer — SSH brute-force detection"
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Install tcpdump and iptables (needed for live capture and blocking)

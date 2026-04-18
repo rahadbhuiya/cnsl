@@ -16,7 +16,7 @@ import json
 import time
 from typing import Dict, Optional, Any
 
-# ── Private IP ranges (never query API for these) ────────────────────────────
+# Private IP ranges (never query API for these) 
 _PRIVATE = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),

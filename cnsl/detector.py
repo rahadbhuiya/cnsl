@@ -34,9 +34,8 @@ if TYPE_CHECKING:
     from .store import Store
 
 
-# ---------------------------------------------------------------------------
 # Per-IP sliding-window state
-# ---------------------------------------------------------------------------
+
 
 @dataclass
 class IPState:
@@ -58,9 +57,9 @@ def _unique_users(dq: deque) -> int:
     return len({u for _, u in dq if u})
 
 
-# ---------------------------------------------------------------------------
+
 # Detector
-# ---------------------------------------------------------------------------
+
 
 class Detector:
     def __init__(
@@ -91,7 +90,7 @@ class Detector:
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
-    # ── Public ────────────────────────────────────────────────────────────────
+    # Public 
 
     async def handle(self, ev: Event) -> None:
         if self.metrics:
@@ -151,7 +150,7 @@ class Detector:
             })
         return sorted(result, key=lambda x: x["total_fails"], reverse=True)
 
-    # ── Private ───────────────────────────────────────────────────────────────
+    # Private 
 
     async def _evaluate(self, ip: str, st: IPState, t: float, trigger: str) -> None:
         _prune(st.fails, self.window_sec, t)
@@ -247,9 +246,9 @@ class Detector:
                     pass
 
 
-# ---------------------------------------------------------------------------
+
 # Response plan
-# ---------------------------------------------------------------------------
+
 
 def _response_plan(severity: str, ip: str) -> List[str]:
     if severity == Severity.HIGH:

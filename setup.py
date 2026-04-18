@@ -1,13 +1,13 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="cnsl-guard",
+    name="cnsl",
     version="1.0.0",
     author="Rahad Bhuiya",
-    description="Cyber Network Security Layer — real-time SSH brute-force detection and auto-blocking",
+    description="Correlated Network Security Layer — A pre-SIEM, intent-aware security layer for Linux servers",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/YOUR_USERNAME/cnsl",
+    url="https://github.com/rahadbhuiya/cnsl",
     license="MIT",
     packages=find_packages(exclude=["tests*"]),
     python_requires=">=3.10",

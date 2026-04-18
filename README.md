@@ -1,12 +1,12 @@
-# CNSL Guard — Cyber Network Security Layer
+# CNSL — Correlated Network Security Layer
 
-[![CI](https://github.com/YOUR_USERNAME/cnsl/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/cnsl/actions)
+[![CI](https://github.com/rahadbhuiya/cnsl/actions/workflows/ci.yml/badge.svg)](https://github.com/rahadbhuiya/cnsl/actions)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-26%20passing-brightgreen)]()
 [![Dry-run safe](https://img.shields.io/badge/default-dry--run%20safe-blue)]()
 
-**CNSL Guard** is an open-source, production-grade **SSH brute-force and intent-drift detection engine** for Linux servers.
+**CNSL** (Correlated Network Security Layer) is an open-source, production-grade **pre-SIEM intent-aware security layer** for Linux servers.
 
 It watches your `auth.log` in real-time, detects attack patterns using stateful per-IP analysis, automatically blocks attackers via `iptables` or `ipset`, sends alerts to Telegram/Discord/Slack, and shows everything in a live web dashboard.
 
@@ -51,7 +51,7 @@ All thresholds are configurable in `config.json`.
 
 ```bash
 # 1. Clone
-git clone https://github.com/YOUR_USERNAME/cnsl.git
+git clone https://github.com/rahadbhuiya/cnsl.git
 cd cnsl
 
 # 2. Install
@@ -91,7 +91,7 @@ pip install -e ".[dev]"          # + testing tools
 ### Via pip (once published to PyPI)
 
 ```bash
-pip install cnsl-guard
+pip install cnsl
 ```
 
 ---
@@ -261,10 +261,10 @@ curl -X POST http://127.0.0.1:8765/api/unblock \
 
 ```bash
 # Live view
-tail -f cnsl_guard.jsonl | jq .
+tail -f cnsl.jsonl | jq .
 
 # Filter HIGH only
-tail -f cnsl_guard.jsonl | jq 'select(.type=="incident" and .payload.severity=="HIGH")'
+tail -f cnsl.jsonl | jq 'select(.type=="incident" and .payload.severity=="HIGH")'
 ```
 
 Compatible with: Grafana Loki, Elasticsearch, Splunk, Vector, Fluentd, Datadog.
@@ -291,14 +291,14 @@ Metrics: `cnsl_incidents_total{severity}`, `cnsl_blocks_active`, `cnsl_blocks_to
 ## Docker
 
 ```bash
-docker build -t cnsl-guard .
+docker build -t cnsl .
 
 docker run --rm \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   --network host \
   -v /var/log:/var/log:ro \
   -v /etc/cnsl:/etc/cnsl:ro \
-  cnsl-guard --config /etc/cnsl/config.json --execute --dashboard
+  cnsl --config /etc/cnsl/config.json --execute --dashboard
 ```
 
 ---
@@ -311,7 +311,7 @@ sudo nano /etc/systemd/system/cnsl.service
 
 ```ini
 [Unit]
-Description=CNSL Guard — SSH Intrusion Detection
+Description=CNSL — SSH Intrusion Detection
 After=network.target
 
 [Service]

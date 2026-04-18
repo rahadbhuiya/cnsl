@@ -21,9 +21,9 @@ from typing import Any, Dict, List, Optional
 from .models import Detection, iso_time
 
 
-# ---------------------------------------------------------------------------
+
 # Notification payload builder
-# ---------------------------------------------------------------------------
+
 
 def _build_message(detection: Detection, geo: Optional[Dict] = None) -> str:
     """Build a human-readable alert message."""
@@ -61,9 +61,9 @@ def _build_message(detection: Detection, geo: Optional[Dict] = None) -> str:
     return "\n".join(l for l in lines if l is not None)
 
 
-# ---------------------------------------------------------------------------
+
 # Notifier
-# ---------------------------------------------------------------------------
+
 
 class Notifier:
     """
@@ -127,7 +127,7 @@ class Notifier:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             # Silently swallow errors so a broken channel never kills the engine
 
-    # ── Telegram ─────────────────────────────────────────────────────────────
+    # Telegram 
 
     async def _send_telegram(self, token: str, chat_id: str, text: str) -> None:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -139,7 +139,7 @@ class Notifier:
         }
         await _post_json(url, payload)
 
-    # ── Discord ──────────────────────────────────────────────────────────────
+    # Discord 
 
     async def _send_discord(self, url: str, d: Detection, geo: Optional[Dict], text: str) -> None:
         color = {"HIGH": 0xFF0000, "MEDIUM": 0xFF8C00, "LOW": 0x3498DB}.get(d.severity, 0x95A5A6)
@@ -157,18 +157,18 @@ class Notifier:
                     {"name": "Unique Users", "value": str(d.uniq_users), "inline": True},
                     {"name": "Reasons", "value": "\n".join(f"• {r}" for r in d.reasons)},
                 ],
-                "footer": {"text": f"CNSL Guard • {iso_time()}"},
+                "footer": {"text": f"CNSL • {iso_time()}"},
             }]
         }
         await _post_json(url, payload)
 
-    # ── Slack ────────────────────────────────────────────────────────────────
+    # Slack 
 
     async def _send_slack(self, url: str, text: str) -> None:
         payload = {"text": text}
         await _post_json(url, payload)
 
-    # ── Generic webhook ──────────────────────────────────────────────────────
+    #  Generic webhook 
 
     async def _send_webhook(self, cfg: Dict, d: Detection, geo: Optional[Dict]) -> None:
         headers: Dict[str, str] = {"Content-Type": "application/json"}
@@ -189,9 +189,9 @@ class Notifier:
         await _post_json(cfg["url"], payload, headers=headers)
 
 
-# ---------------------------------------------------------------------------
+
 # HTTP helper
-# ---------------------------------------------------------------------------
+
 
 async def _post_json(url: str, payload: Dict, headers: Optional[Dict] = None) -> None:
     try:

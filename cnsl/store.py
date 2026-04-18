@@ -19,9 +19,9 @@ from typing import Any, Dict, List, Optional
 from .models import Detection, iso_time
 
 
-# ---------------------------------------------------------------------------
+
 # Schema
-# ---------------------------------------------------------------------------
+
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -54,9 +54,9 @@ CREATE INDEX IF NOT EXISTS idx_incidents_ts ON incidents(ts);
 """
 
 
-# ---------------------------------------------------------------------------
+
 # Store
-# ---------------------------------------------------------------------------
+
 
 class Store:
     """
@@ -94,7 +94,7 @@ class Store:
     def available(self) -> bool:
         return self._available
 
-    # ── Incidents ─────────────────────────────────────────────────────────────
+    #  Incidents 
 
     async def save_incident(
         self,
@@ -165,7 +165,7 @@ class Store:
             row = await cur.fetchone()
         return dict(row) if row else {}
 
-    # ── Blocks ────────────────────────────────────────────────────────────────
+    # Blocks 
 
     async def save_block(self, ip: str, unblock_at: float, reason: str, dry_run: bool) -> None:
         if not self._available or self._db is None:

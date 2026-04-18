@@ -48,7 +48,7 @@ class Blocker:
         # ip -> unblock_at timestamp
         self.active_blocks: Dict[str, float] = {}
 
-    # ── Public ────────────────────────────────────────────────────────────────
+    # Public 
 
     async def block_ip(self, ip: str, reason: str) -> bool:
         """Schedule (and optionally execute) a block for the given IP."""
@@ -91,7 +91,7 @@ class Blocker:
     def is_blocked(self, ip: str) -> bool:
         return ip in self.active_blocks
 
-    # ── Private ───────────────────────────────────────────────────────────────
+    # Private 
 
     async def _execute_block(self, ip: str) -> bool:
         if self.backend == "ipset":
@@ -134,7 +134,7 @@ class Blocker:
             return False
 
 
-# ── ipset setup helper ────────────────────────────────────────────────────────
+#  ipset setup helper 
 
 async def ensure_ipset(name: str, logger: JsonLogger) -> bool:
     """

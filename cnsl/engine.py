@@ -20,9 +20,9 @@ from .sources import run_tcpdump, tail_authlog
 from .store import Store
 
 
-# ---------------------------------------------------------------------------
+
 # Engine loop
-# ---------------------------------------------------------------------------
+
 
 async def engine_loop(
     queue:    asyncio.Queue,
@@ -31,7 +31,7 @@ async def engine_loop(
     logger:   JsonLogger,
 ) -> None:
     await logger.log("startup", {
-        "msg":     "CNSL Guard started",
+        "msg":     "CNSL started",
         "time":    iso_time(),
         "dry_run": blocker.dry_run,
     })
@@ -48,16 +48,16 @@ async def engine_loop(
             await logger.log("engine_error", {"error": str(e)})
 
 
-# ---------------------------------------------------------------------------
+
 # CLI
-# ---------------------------------------------------------------------------
+
 
 def build_arg_parser():
     import argparse
 
     ap = argparse.ArgumentParser(
         prog="cnsl",
-        description="CNSL Guard — Cyber Network Security Layer",
+        description="CNSL — Cyber Network Security Layer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -80,7 +80,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL Guard 1.0.0")
+    ap.add_argument("--version",     action="version", version="CNSL 1.0.0")
     return ap
 
 
@@ -167,7 +167,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     print("", flush=True)
     print("╔═══════════════════════════════════════════╗")
-    print("║  CNSL Guard — Cyber Network Security Layer ║")
+    print("║  CNSL — Correlated Network Security Layer ║")
     print("╠═══════════════════════════════════════════╣")
     print(f"║  Auth log  : {authlog_path:<28} ║")
     print(f"║  Mode      : {'DRY-RUN (planning only)' if dry_run else 'LIVE BLOCKING ENABLED':<28} ║")
@@ -179,7 +179,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     print("  Press Ctrl+C to stop.\n", flush=True)
 
     await stop.wait()
-    await logger.log("shutdown", {"msg": "Stopping CNSL Guard"})
+    await logger.log("shutdown", {"msg": "Stopping CNSL"})
     await store.close()
     logger.close()
 

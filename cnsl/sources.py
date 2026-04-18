@@ -18,9 +18,9 @@ from .parsers import parse_auth_event, parse_tcpdump_hint
 _RETRY_DELAY = 5   # seconds before retrying a failed source process
 
 
-# ---------------------------------------------------------------------------
+
 # Auth.log reader (uses tail -F so it survives log rotation)
-# ---------------------------------------------------------------------------
+
 
 async def tail_authlog(
     queue: asyncio.Queue,
@@ -57,9 +57,8 @@ async def tail_authlog(
         await asyncio.sleep(_RETRY_DELAY)
 
 
-# ---------------------------------------------------------------------------
+
 # tcpdump reader (optional, hint-only)
-# ---------------------------------------------------------------------------
 
 async def run_tcpdump(
     queue:  asyncio.Queue,

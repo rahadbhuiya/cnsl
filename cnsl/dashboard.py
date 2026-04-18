@@ -32,16 +32,16 @@ if TYPE_CHECKING:
     from .store import Store
 
 
-# ---------------------------------------------------------------------------
+
 # Dashboard HTML (single-file, self-contained)
-# ---------------------------------------------------------------------------
+
 
 _HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CNSL Guard — Dashboard</title>
+<title>CNSL — Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -100,7 +100,7 @@ _HTML = """<!DOCTYPE html>
 
 <header>
   <span style="font-size:20px">🛡️</span>
-  <h1>CNSL Guard</h1>
+  <h1>CNSL</h1>
   <span class="badge">v1.0</span>
   <div id="live-dot" title="Live"></div>
 </header>
@@ -353,9 +353,9 @@ setInterval(refresh, 10000);  // full refresh every 10s
 </html>"""
 
 
-# ---------------------------------------------------------------------------
+
 # Dashboard server
-# ---------------------------------------------------------------------------
+
 
 async def start_dashboard(
     host:      str,

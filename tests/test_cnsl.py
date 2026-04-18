@@ -1,5 +1,5 @@
 """
-tests/test_cnsl.py — Unit tests for CNSL Guard.
+tests/test_cnsl.py — Unit tests for CNSL.
 
 Run:
     pytest tests/ -v
@@ -20,9 +20,9 @@ from cnsl.parsers import parse_auth_event, parse_tcpdump_hint
 from cnsl.detector import Detector, IPState, _prune, _unique_users
 
 
-# ============================================================================
+
 # Helpers
-# ============================================================================
+
 
 def make_cfg(**overrides):
     import json
@@ -43,9 +43,9 @@ def make_detector(cfg=None, **th_overrides):
     return Detector(cfg, logger, blocker)
 
 
-# ============================================================================
+
 # Parser tests
-# ============================================================================
+
 
 class TestParseAuthEvent:
     def test_failed_password(self):
@@ -123,9 +123,9 @@ class TestParseTcpdumpHint:
         assert ev is None
 
 
-# ============================================================================
+
 # Config tests
-# ============================================================================
+
 
 class TestConfig:
     def test_defaults_loaded(self):
@@ -140,9 +140,8 @@ class TestConfig:
         assert safe_int(None, 3) == 3
 
 
-# ============================================================================
 # Detector tests
-# ============================================================================
+
 
 def _run(coro):
     """Run a coroutine in a fresh event loop."""
@@ -298,9 +297,9 @@ class TestDetector:
         assert "8.8.8.8" in ips
 
 
-# ============================================================================
+
 # Models
-# ============================================================================
+
 
 class TestModels:
     def test_event_to_dict_has_time(self):

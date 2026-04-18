@@ -15,9 +15,9 @@ from typing import Optional
 from .models import Event, EventKind, now
 
 
-# ============================================================================
+
 # auth.log (sshd lines) — primary signal
-# ============================================================================
+
 
 # "Failed password for invalid user <user> from <ip> port <p> ssh2"
 # "Failed password for <user> from <ip> port <p> ssh2"
@@ -81,9 +81,9 @@ def parse_auth_event(line: str) -> Optional[Event]:
     return None
 
 
-# ============================================================================
+
 # tcpdump — secondary / hint signal
-# ============================================================================
+
 
 # "IP 192.168.0.5.445 > 192.168.0.10.53218: Flags ..."
 _TCPDUMP_IP_RE = re.compile(
