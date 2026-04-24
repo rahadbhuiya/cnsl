@@ -23,3 +23,23 @@ pyyaml>=6.0.0
 # ── Development & Testing ───────────────────────────────────
 pytest>=7.0.0
 pytest-asyncio>=0.23.0
+
+# ── Optional: Dashboard JWT authentication ───────────────────────────────────
+bcrypt>=4.0.0
+PyJWT>=2.8.0
+
+# ── Optional: MaxMind offline GeoIP ─────────────────────────────────────────
+geoip2>=4.7.0
+
+# ── Optional: Redis distributed blocklist ────────────────────────────────────
+redis>=5.0.0
+
+# ── Optional: AbuseIPDB threat intelligence ──────────────────────────────────
+# (uses aiohttp already listed above)
+
+# ── Phase 3: ML anomaly detection ────────────────────────────────────────────
+scikit-learn>=1.4.0
+numpy>=1.26.0
+
+# ── Phase 3: Compliance PDF reports ──────────────────────────────────────────
+reportlab>=4.0.0

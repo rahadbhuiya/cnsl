@@ -28,27 +28,46 @@ async def tail_authlog(
     logger: JsonLogger,
 ) -> None:
     """Continuously tail an auth.log file and push parsed Events to queue."""
+    import os
     await logger.log("source_start", {"source": "authlog", "path": path})
 
     while True:
+        if not os.path.exists(path):
+            await logger.log("source_waiting", {
+                "source": "authlog",
+                "path":   path,
+                "msg":    "File not found, waiting...",
+            })
+            await asyncio.sleep(_RETRY_DELAY)
+            continue
+
         try:
             proc = await asyncio.create_subprocess_exec(
-                "sudo", "tail", "-F", path,
+                "tail", "-F", path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
             assert proc.stdout is not None
 
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                text = line.decode(errors="ignore").strip()
-                if not text:
-                    continue
-                ev = parse_auth_event(text)
-                if ev:
-                    await queue.put(ev)
+            try:
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="ignore").strip()
+                    if not text:
+                        continue
+                    ev = parse_auth_event(text)
+                    if ev:
+                        await queue.put(ev)
+            finally:
+                # Kill the subprocess on EOF, exception, or task cancellation
+                # to prevent zombie process accumulation across restarts.
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
 
         except Exception as e:
             await logger.log("source_error", {"source": "authlog", "error": str(e)})
@@ -60,6 +79,7 @@ async def tail_authlog(
 
 # tcpdump reader (optional, hint-only)
 
+
 async def run_tcpdump(
     queue:  asyncio.Queue,
     iface:  str,
@@ -69,9 +89,7 @@ async def run_tcpdump(
     """Run tcpdump and push NET_HINT Events to queue."""
     await logger.log("source_start", {"source": "tcpdump", "iface": iface, "bpf": bpf})
 
-    # Build command.  Pass the BPF filter as a single argument — tcpdump
-    # handles its own tokenisation of the filter expression.
-    cmd = ["sudo", "tcpdump", "-i", iface, "-l", "-nn", "-q"]
+    cmd = ["tcpdump", "-i", iface, "-l", "-nn", "-q"]
     if bpf:
         cmd.append(bpf)
 
@@ -84,16 +102,23 @@ async def run_tcpdump(
             )
             assert proc.stdout is not None
 
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                text = line.decode(errors="ignore").strip()
-                if not text:
-                    continue
-                ev = parse_tcpdump_hint(text)
-                if ev:
-                    await queue.put(ev)
+            try:
+                while True:
+                    line = await proc.stdout.readline()
+                    if not line:
+                        break
+                    text = line.decode(errors="ignore").strip()
+                    if not text:
+                        continue
+                    ev = parse_tcpdump_hint(text)
+                    if ev:
+                        await queue.put(ev)
+            finally:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
 
         except Exception as e:
             await logger.log("source_error", {"source": "tcpdump", "error": str(e)})

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from .logger import JsonLogger
 from .models import now, iso_time
@@ -36,6 +36,7 @@ class Blocker:
         block_duration_sec: int,
         allowlist: Set[str],
         logger: JsonLogger,
+        metrics: Any = None,
     ):
         self.dry_run            = dry_run
         self.backend            = backend
@@ -44,6 +45,9 @@ class Blocker:
         self.block_duration_sec = block_duration_sec
         self.allowlist          = allowlist
         self.logger             = logger
+        self.metrics            = metrics
+        self.on_unblock         = None  # optional async callback(ip) for Redis cluster sync
+        self.store              = None  # optional Store — set after init to remove DB entries
 
         # ip -> unblock_at timestamp
         self.active_blocks: Dict[str, float] = {}
@@ -116,6 +120,18 @@ class Blocker:
             await self._run(cmd, "action_unblock_executed", "action_unblock_failed", ip)
 
         self.active_blocks.pop(ip, None)
+        if self.metrics:
+            self.metrics.dec_block()
+        if self.store:
+            try:
+                await self.store.remove_block(ip)
+            except Exception:
+                pass
+        if self.on_unblock:
+            try:
+                await self.on_unblock(ip)
+            except Exception:
+                pass
 
     async def _run(self, cmd: list, ok_type: str, fail_type: str, ip: str) -> bool:
         loop = asyncio.get_running_loop()
