@@ -889,6 +889,13 @@ Default config had `::1` in allowlist. On Linux, `ssh localhost` connects via `:
 
 ### v1.0.0 — Initial Release
 
+
+
+## If CNSL helped you
+
+⭐ Star this repo — it helps others find the project  
+☕ [Buy me a coffee](https://ko-fi.com/rahadbhuiya)
+
 ---
 
 ## License
