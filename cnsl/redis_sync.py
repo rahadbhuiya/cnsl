@@ -317,7 +317,7 @@ class RedisSync:
         except Exception:
             return [self.node_id]
 
-    # ── Cleanup ───────────────────────────────────────────────────────────────
+    # ── Cleanup ─────────────────────────────────────────────────────────────── rahad bhuiya
 
     async def close(self) -> None:
         if self._redis:
