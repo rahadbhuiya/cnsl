@@ -103,6 +103,7 @@ async def _collect_report_data(
     return data
 
 
+
 # HTML report
 
 
@@ -116,10 +117,9 @@ def _generate_html(data: Dict) -> str:
     # Top attackers table rows
     attacker_rows = ""
     for a in data.get("top_attackers", [])[:10]:
-        flag    = a.get("flag", "🌐")
         country = a.get("country", "Unknown")
         city    = a.get("city", "")
-        loc     = f"{flag} {country}" + (f", {city}" if city else "")
+        loc     = country + (f", {city}" if city else "")
         attacker_rows += f"""
         <tr>
           <td><code>{a.get('src_ip','')}</code></td>
@@ -145,7 +145,7 @@ def _generate_html(data: Dict) -> str:
         <tr>
           <td style="font-size:12px;color:#64748b">{i.get('time','')}</td>
           <td><code>{i.get('src_ip','')}</code></td>
-          <td>{i.get('flag','🌐')} {i.get('country','')}</td>
+          <td>{i.get('country','—')}</td>
           <td style="color:{color};font-weight:600">{sev}</td>
           <td style="font-size:12px">{reason_text}</td>
         </tr>"""
@@ -169,165 +169,46 @@ def _generate_html(data: Dict) -> str:
 <meta charset="UTF-8">
 <title>CNSL Security Report — {data['generated_at'][:10]}</title>
 <style>
-
-  body {{ 
-    font-family: 'Segoe UI', Arial,
-    sans-serif; 
-    background: #f8fafc;
-    color: #1e293b; 
-    margin: 0; 
-    padding: 32px; 
-    
-    }}
-  .container {{ 
-    max-width: 1100px; 
-    margin: 0 auto; 
-    
-    }}
-  .header {{ 
-    background: #0f1117; 
-    color: #e2e8f0; 
-    padding: 32px; 
-    border-radius: 12px;
-    margin-bottom: 32px; 
-    
-    }}
-  .header h1 {{ 
-    margin: 0 0 8px; 
-    font-size: 28px; 
-    
-    }}
-  .header p  {{ 
-    
-    margin: 0; 
-    color: #64748b; 
-    font-size: 14px; 
-    
-    }}
-  .grid {{ 
-    display: grid; 
-    grid-template-columns: repeat(4,1fr); 
-    gap: 16px; 
-    margin-bottom: 32px; 
-    
-    }}
-  .card {{ 
-    background: #fff; 
-    border: 1px solid #e2e8f0; 
-    border-radius: 10px; 
-    padding: 20px; 
-    
-    }}
-  .card .label {{ 
-    font-size: 12px; 
-    color: #64748b; 
-    text-transform: uppercase;
-    letter-spacing: .05em; 
-    margin-bottom: 8px; 
-    
-    }}
-  .card .value {{ 
-    font-size: 32px; 
-    font-weight: 700; 
-    
-    }}
-  .card .sub   {{ 
-    font-size: 12px; 
-    color: #94a3b8; 
-    margin-top: 4px; 
-    
-    }}
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc;
+          color: #1e293b; margin: 0; padding: 32px; }}
+  .container {{ max-width: 1100px; margin: 0 auto; }}
+  .header {{ background: #0f1117; color: #e2e8f0; padding: 32px; border-radius: 12px;
+             margin-bottom: 32px; }}
+  .header h1 {{ margin: 0 0 8px; font-size: 28px; }}
+  .header p  {{ margin: 0; color: #64748b; font-size: 14px; }}
+  .grid {{ display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 32px; }}
+  .card {{ background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; }}
+  .card .label {{ font-size: 12px; color: #64748b; text-transform: uppercase;
+                  letter-spacing: .05em; margin-bottom: 8px; }}
+  .card .value {{ font-size: 32px; font-weight: 700; }}
+  .card .sub   {{ font-size: 12px; color: #94a3b8; margin-top: 4px; }}
   .red  {{ color: #ef4444; }} .amber {{ color: #f59e0b; }}
   .blue {{ color: #3b82f6; }} .green {{ color: #22c55e; }}
-  .section {{ 
-    background: #fff; 
-    border: 1px solid #e2e8f0; 
-    border-radius: 10px;
-    padding: 24px; 
-    margin-bottom: 24px; 
-    
-    }}
-  .section h2 {{ 
-    font-size: 16px; 
-    font-weight: 600; 
-    margin: 0 0 16px;
-    border-bottom: 1px solid #f1f5f9; 
-    padding-bottom: 12px; 
-    
-    }}
-  table {{ 
-    width: 100%; 
-    border-collapse: collapse; 
-    font-size: 13px; 
-    
-    }}
-  th {{ 
-    text-align: left; 
-    padding: 8px 12px; 
-    border-bottom: 2px solid #f1f5f9;
-    font-size: 11px; 
-    color: #64748b; 
-    text-transform: uppercase; 
-    
-    }}
-  td {{ 
-    padding: 10px 12px; 
-    border-bottom: 1px solid #f8fafc; 
-    vertical-align: middle; 
-    
-    }}
-  code {{ 
-    background: #f1f5f9; 
-    padding: 2px 6px; 
-    border-radius: 4px; 
-    font-size: 12px; 
-    
-    }}
-  .compliance {{ 
-    display: grid; 
-    grid-template-columns: repeat(3,1fr); 
-    gap: 16px; 
-    
-    }}
-  .comp-card {{ 
-    border: 1px solid #e2e8f0; 
-    border-radius: 8px; 
-    padding: 16px; 
-    
-    }}
-  .comp-card h3 {{ 
-    margin: 0 0 8px; 
-    font-size: 14px; 
-    color: #1e293b; 
-    
-    }}
-  .comp-card p  {{
-    margin: 0; 
-    font-size: 12px; 
-    color: #64748b; 
-    line-height: 1.6;
-    
-    }}
-  .check {{ color: #22c55e; }} .warn {{ color: #f59e0b; }}
-
-  footer {{ 
-    text-align: center; 
-    color: #94a3b8; 
-    font-size: 12px; 
-    margin-top: 32px; 
-    
-    }}
-
+  .section {{ background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+              padding: 24px; margin-bottom: 24px; }}
+  .section h2 {{ font-size: 16px; font-weight: 600; margin: 0 0 16px;
+                 border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+  th {{ text-align: left; padding: 8px 12px; border-bottom: 2px solid #f1f5f9;
+        font-size: 11px; color: #64748b; text-transform: uppercase; }}
+  td {{ padding: 10px 12px; border-bottom: 1px solid #f8fafc; vertical-align: middle; }}
+  code {{ background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }}
+  .compliance {{ display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }}
+  .comp-card {{ border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }}
+  .comp-card h3 {{ margin: 0 0 8px; font-size: 14px; color: #1e293b; }}
+  .comp-card p  {{ margin: 0; font-size: 12px; color: #64748b; line-height: 1.6; }}
+  .chk {{ display:inline-flex;align-items:center; }}
+  footer {{ text-align: center; color: #94a3b8; font-size: 12px; margin-top: 32px; }}
 </style>
 </head>
 <body>
 <div class="container">
 
 <div class="header">
-  <h1>🛡️ CNSL Security Report</h1>
+  <h1><svg width="22" height="22" viewBox="0 0 20 20" fill="none" style="vertical-align:middle;margin-right:8px"><path d="M10 2L3 5.5V10c0 3.87 2.93 7.5 7 8.45C17.07 17.5 20 13.87 20 10V5.5L10 2z" stroke="#6366f1" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>CNSL Security Report</h1>
   <p>Period: last {data['period_days']} days &nbsp;·&nbsp;
      Generated: {data['generated_at']} &nbsp;·&nbsp;
-     Correlated Network Security Layer</p>
+     Correlated Network Security Layer v1.0</p>
 </div>
 
 <div class="grid">
@@ -377,30 +258,30 @@ def _generate_html(data: Dict) -> str:
     <div class="comp-card">
       <h3>SOC 2 Type II</h3>
       <p>
-        <span class="check">✓</span> CC6.1 — Access controls monitored<br>
-        <span class="check">✓</span> CC6.7 — Unauthorized access detection<br>
-        <span class="check">✓</span> CC7.2 — System anomaly monitoring<br>
-        <span class="{'check' if fim_count == 0 else 'warn'}">{'✓' if fim_count == 0 else '⚠'}</span>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.1 — Access controls monitored<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.7 — Unauthorized access detection<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC7.2 — System anomaly monitoring<br>
+        {'<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' if fim_count == 0 else '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/><path d="M6.5 4v3M6.5 8.5v.5" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/></svg>'}
         CC6.8 — File integrity {'maintained' if fim_count == 0 else f'{fim_count} changes detected'}
       </p>
     </div>
     <div class="comp-card">
       <h3>ISO 27001</h3>
       <p>
-        <span class="check">✓</span> A.12.4 — Event logging active<br>
-        <span class="check">✓</span> A.12.6 — Vulnerability monitoring<br>
-        <span class="check">✓</span> A.13.1 — Network monitoring<br>
-        <span class="check">✓</span> A.16.1 — Incident management
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.4 — Event logging active<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.6 — Vulnerability monitoring<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.13.1 — Network monitoring<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.16.1 — Incident management
       </p>
     </div>
     <div class="comp-card">
       <h3>PCI-DSS v4</h3>
       <p>
-        <span class="check">✓</span> Req 10 — Log monitoring active<br>
-        <span class="check">✓</span> Req 11.5 — Intrusion detection<br>
-        <span class="{'check' if fim_crit == 0 else 'warn'}">{'✓' if fim_crit == 0 else '⚠'}</span>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 10 — Log monitoring active<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 11.5 — Intrusion detection<br>
+        {'<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' if fim_crit == 0 else '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/><path d="M6.5 4v3M6.5 8.5v.5" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/></svg>'}
         Req 11.5.2 — File integrity {'OK' if fim_crit == 0 else f'{fim_crit} critical changes'}<br>
-        <span class="check">✓</span> Req 12.10 — Incident response
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 12.10 — Incident response
       </p>
     </div>
   </div>
@@ -422,26 +303,36 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
         from reportlab.lib.styles    import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units     import mm
         from reportlab.lib           import colors
-        from reportlab.platypus      import (SimpleDocTemplate, Paragraph, Spacer,Table, TableStyle, HRFlowable)
+        from reportlab.platypus      import (SimpleDocTemplate, Paragraph, Spacer,
+                                              Table, TableStyle, HRFlowable)
         from reportlab.lib.enums     import TA_CENTER, TA_LEFT
     except ImportError:
         return False
 
-    doc    = SimpleDocTemplate(output_path, pagesize=A4,leftMargin=20*mm, rightMargin=20*mm, topMargin=20*mm, bottomMargin=20*mm)
+    doc    = SimpleDocTemplate(output_path, pagesize=A4,
+                               leftMargin=20*mm, rightMargin=20*mm,
+                               topMargin=20*mm, bottomMargin=20*mm)
     styles = getSampleStyleSheet()
     story  = []
 
     # Custom styles
-    title_style = ParagraphStyle("Title2", parent=styles["Title"],fontSize=22, textColor=colors.HexColor("#0f1117"),spaceAfter=6)
-    h2_style    = ParagraphStyle("H2", parent=styles["Heading2"],fontSize=13, textColor=colors.HexColor("#1e293b"),spaceBefore=16, spaceAfter=8)
-    body_style  = ParagraphStyle("Body2", parent=styles["Normal"],fontSize=9, textColor=colors.HexColor("#374151"),leading=14)
-    muted_style = ParagraphStyle("Muted", parent=styles["Normal"],fontSize=8, textColor=colors.HexColor("#64748b"))
+    title_style = ParagraphStyle("Title2", parent=styles["Title"],
+                                  fontSize=22, textColor=colors.HexColor("#0f1117"),
+                                  spaceAfter=6)
+    h2_style    = ParagraphStyle("H2", parent=styles["Heading2"],
+                                  fontSize=13, textColor=colors.HexColor("#1e293b"),
+                                  spaceBefore=16, spaceAfter=8)
+    body_style  = ParagraphStyle("Body2", parent=styles["Normal"],
+                                  fontSize=9, textColor=colors.HexColor("#374151"),
+                                  leading=14)
+    muted_style = ParagraphStyle("Muted", parent=styles["Normal"],
+                                  fontSize=8, textColor=colors.HexColor("#64748b"))
 
     inc  = data["total_incidents"]
     high = data["high_count"]
 
     # Header
-    story.append(Paragraph("🛡️ CNSL Security Report", title_style))
+    story.append(Paragraph("CNSL Security Report", title_style))
     story.append(Paragraph(
         f"Period: last {data['period_days']} days &nbsp;·&nbsp; "
         f"Generated: {data['generated_at']}", muted_style
@@ -456,12 +347,12 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
     summary_data = [
         ["Metric", "Value", "Status"],
         ["Total incidents", str(inc),
-         "⚠ Action needed" if inc > 10 else "✓ Normal"],
+         "! Action needed" if inc > 10 else "OK Normal"],
         ["HIGH severity incidents", str(high),
-         "🚨 Review required" if high > 0 else "✓ None"],
+         "! Review required" if high > 0 else "OK None"],
         ["MEDIUM severity incidents", str(data["medium_count"]), "—"],
         ["File integrity alerts", str(data.get("fim_alert_count", 0)),
-         "🚨 Review files" if data.get("fim_critical", 0) > 0 else "✓ Clean"],
+         "! Review files" if data.get("fim_critical", 0) > 0 else "OK Clean"],
         ["Currently blocked IPs", str(data.get("block_count", 0)), "—"],
     ]
 
@@ -490,7 +381,7 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
     for a in data.get("top_attackers", [])[:8]:
         att_data.append([
             a.get("src_ip", ""),
-            f"{a.get('flag','')} {a.get('country','')}",
+            a.get('country', 'Unknown'),
             str(a.get("incident_count", 0)),
             a.get("max_severity", ""),
         ])
@@ -520,10 +411,10 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
     fim_ok   = data.get("fim_critical", 0) == 0
     comp_data = [
         ["Framework", "Control", "Status"],
-        ["SOC 2 Type II",  "CC6.1 CC6.7 CC7.2 CC6.8", "✓ Monitored" if fim_ok else "⚠ FIM alerts"],
-        ["ISO 27001",      "A.12.4 A.12.6 A.13.1 A.16.1", "✓ Compliant"],
+        ["SOC 2 Type II",  "CC6.1 CC6.7 CC7.2 CC6.8", "OK Monitored" if fim_ok else "! FIM alerts"],
+        ["ISO 27001",      "A.12.4 A.12.6 A.13.1 A.16.1", "OK Compliant"],
         ["PCI-DSS v4",     "Req 10, 11.5, 11.5.2, 12.10",
-         "✓ Compliant" if fim_ok else "⚠ File changes detected"],
+         "OK Compliant" if fim_ok else "! File changes detected"],
     ]
     t3 = Table(comp_data, colWidths=[45*mm, 75*mm, 60*mm])
     t3.setStyle(TableStyle([

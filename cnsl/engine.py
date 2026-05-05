@@ -54,7 +54,7 @@ async def engine_loop(
         try:
             ev: Event = await asyncio.wait_for(queue.get(), timeout=1.0)
             await detector.handle(ev)
-            if ml_detector.enabled:
+            if ml_detector and ml_detector.enabled:
                 try:
                     await ml_detector.ingest(ev)
                 except Exception:
@@ -258,7 +258,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
             start_dashboard(dash_host, dash_port, detector, blocker,
                             store, metrics, logger, auth=auth,
                             rbac=rbac, assets=asset_inventory,
-                            honeypot=active_response, dry_run=dry_run),
+                            honeypot=active_response, dry_run=dry_run,
+                            ml_detector=ml_detector, fim=fim_engine),
             name="dashboard",
         ))
 

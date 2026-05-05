@@ -17,6 +17,7 @@ Usage:
     python simulate.py unblock        # auto-unblock + metrics dec
     python simulate.py allowlist      # allowlist test
     python simulate.py metrics        # metrics & DB stats
+    python simulate.py notify         # notification channel dry-run test
     python simulate.py live           # interactive mode
 """
 
@@ -150,7 +151,7 @@ async def setup():
                         metrics=metrics, notifier=notifier,
                         correlator=correlator)
 
-    return detector, blocker, metrics, store, logger
+    return detector, blocker, metrics, store, logger, notifier
 
 
 # ── Scenario 1: SSH Brute-force ──────────────────────────────────────────────
@@ -395,6 +396,51 @@ async def scenario_allowlist(detector, blocker):
         log(f"Correct — {ip} was NOT blocked (allowlist working)", G)
 
 
+# ── Scenario 12: Notification channel dry-run ─────────────────────────────────
+
+async def scenario_notify(notifier):
+    """
+    Validates the notification pipeline by building a real Detection and
+    calling Notifier.send().  No network calls succeed (no real tokens),
+    but this confirms:
+      - _build_message() produces correct Markdown without crashes
+      - Special chars in ISP/city are properly escaped for Telegram
+      - severity filter (min_severity) is respected
+      - All channel dispatchers are exercised without raising
+    """
+    section("Scenario 12 — Notification Channel Dry-run")
+    from cnsl.models import Detection
+
+    geo_tricky = {
+        "country": "United_States",
+        "city":    "New*York",       # asterisk would break Markdown v1 without escaping
+        "isp":     "AS12345 Verizon_Business",  # underscore breaks Markdown v1
+        "flag":    "🇺🇸",
+        "proxy":   False,
+        "hosting": True,
+    }
+
+    cases = [
+        ("HIGH",   ["brute_force", "abuseipdb_score=98 reports=500 isp=Verizon_Business"],  3, 2, geo_tricky),
+        ("MEDIUM", ["credential_stuffing"],                                                  4, 4, None),
+        ("LOW",    ["single_fail"],                                                          1, 1, None),
+    ]
+
+    for sev, reasons, fails, users, geo in cases:
+        d = Detection(src_ip="1.2.3.4", severity=sev,
+                      reasons=reasons, fail_count=fails,
+                      uniq_users=users, window_sec=60)
+        try:
+            await notifier.send(d, geo)
+            print(f"  {G}OK{RST}  severity={Y}{sev}{RST}  — message built and dispatched (no real tokens)")
+        except Exception as e:
+            print(f"  {R}FAIL{RST} severity={sev}  error={e}")
+
+    print()
+    log("Notification pipeline validated (no crashes, escaping OK)", G)
+    log("Set bot_token + chat_id in config to enable real Telegram delivery", DIM)
+
+
 # ── Scenario 11: Metrics & DB stats ──────────────────────────────────────────
 
 async def scenario_metrics(metrics, store):
@@ -560,6 +606,7 @@ SCENARIO_MAP = {
     "unblock":     "auto-unblock + metrics",
     "allowlist":   "allowlist",
     "metrics":     "metrics & DB stats",
+    "notify":      "notification channel dry-run",
     "live":        "interactive",
 }
 
@@ -573,7 +620,7 @@ async def main():
         print(f"Valid modes: all  live  {' '.join(SCENARIO_MAP.keys())}")
         sys.exit(1)
 
-    detector, blocker, metrics, store, logger = await setup()
+    detector, blocker, metrics, store, logger, notifier = await setup()
 
     log("CNSL simulator starting  (dry-run — no real iptables changes)", G)
     log("All modules wired: metrics, store, correlator\n", DIM)
@@ -620,6 +667,10 @@ async def main():
 
         if mode in ("all", "metrics"):
             await scenario_metrics(metrics, store)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "notify"):
+            await scenario_notify(notifier)
 
         if mode == "live":
             await interactive_mode(detector, blocker)

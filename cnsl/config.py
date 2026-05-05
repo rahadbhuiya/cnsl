@@ -228,17 +228,41 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 
 def load_config(path: Optional[str] = None) -> Dict[str, Any]:
-    """Return merged config (defaults + optional file overrides)."""
+    """Return merged config (defaults + optional file overrides).
+
+    Search order when no explicit path is given:
+      1. /etc/cnsl/config.json
+      2. /etc/cnsl/config.yaml
+      3. ./config.json  (current working directory)
+      4. Built-in defaults only
+    """
     cfg: Dict[str, Any] = _deep_copy(DEFAULT_CONFIG)
 
-    if not path:
-        return cfg
+    # Resolve path — explicit arg wins, then auto-discover
+    resolved: Optional[str] = path
+    if not resolved:
+        candidates = [
+            "/etc/cnsl/config.json",
+            "/etc/cnsl/config.yaml",
+            "/etc/cnsl/config.yml",
+            os.path.join(os.getcwd(), "config.json"),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                resolved = candidate
+                break
 
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Config file not found: {path}")
+    if not resolved:
+        return cfg  # pure defaults
 
-    user_cfg = _read_file(path)
-    return _deep_merge(cfg, user_cfg)
+    if not os.path.exists(resolved):
+        raise FileNotFoundError(f"Config file not found: {resolved}")
+
+    user_cfg = _read_file(resolved)
+    merged = _deep_merge(cfg, user_cfg)
+    # Print which config was loaded so operators can confirm
+    print(f"   Config loaded: {resolved}")
+    return merged
 
 
 def apply_cli_overrides(cfg: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
@@ -327,6 +351,7 @@ def get_baseline_cfg(cfg: Dict) -> Dict:
 
 def get_notification_cfg(cfg: Dict) -> Dict:
     return cfg.get("notifications", DEFAULT_CONFIG["notifications"])
+
 
 
 # Helpers

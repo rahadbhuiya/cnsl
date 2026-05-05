@@ -151,6 +151,25 @@ class Store:
             rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
+    async def timeline_24h(self) -> List[Dict]:
+        """Return incident counts per hour for the last 24 hours, grouped by severity."""
+        if not self._available or self._db is None:
+            return []
+        cutoff = time.time() - 86400
+        async with self._db.execute(
+            """SELECT
+                 CAST((ts - ?) / 3600 AS INTEGER) as hour_offset,
+                 severity,
+                 COUNT(*) as count
+               FROM incidents
+               WHERE ts >= ?
+               GROUP BY hour_offset, severity
+               ORDER BY hour_offset""",
+            (cutoff, cutoff),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     async def stats(self) -> Dict[str, Any]:
         if not self._available or self._db is None:
             return {}
@@ -159,6 +178,7 @@ class Store:
                  COUNT(*) as total,
                  SUM(CASE WHEN severity='HIGH'   THEN 1 ELSE 0 END) as high,
                  SUM(CASE WHEN severity='MEDIUM' THEN 1 ELSE 0 END) as medium,
+                 SUM(CASE WHEN severity='LOW'    THEN 1 ELSE 0 END) as low,
                  COUNT(DISTINCT src_ip) as unique_ips
                FROM incidents"""
         ) as cur:

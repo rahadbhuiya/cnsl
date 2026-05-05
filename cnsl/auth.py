@@ -37,6 +37,7 @@ import secrets
 import time
 from collections import defaultdict
 from typing import Any, Dict, Optional, Set, Tuple
+import re
 
 
 # Lightweight JWT (no external dependency beyond stdlib)
@@ -114,18 +115,33 @@ def hash_password(password: str) -> str:
     return f"pbkdf2:{salt}:{h.hex()}"
 
 
+
+
+BCRYPT_REGEX = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
+
 def verify_password(password: str, hashed: str) -> bool:
     try:
         if hashed.startswith("$2"):
             if not _HAS_BCRYPT:
                 return False
+
+            #  critical fix: validate 
+            if not BCRYPT_REGEX.match(hashed):
+                return False
+
             return _bcrypt.checkpw(password.encode(), hashed.encode())
+
         if hashed.startswith("pbkdf2:"):
-            _, salt, stored = hashed.split(":", 2)
+            parts = hashed.split(":", 2)
+            if len(parts) != 3:
+                return False
+            _, salt, stored = parts
             h = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
             return hmac.compare_digest(h.hex(), stored)
+
     except Exception:
-        pass
+        return False
+
     return False
 
 

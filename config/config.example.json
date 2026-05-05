@@ -1,112 +1,142 @@
 {
+  "_comment": "CNSL — production config. Place at /etc/cnsl/config.json",
+
   "authlog_path": "/var/log/auth.log",
-  "tcpdump_enabled": false,
+  "iface": "any",
+  "tcpdump_enabled": true,
+  "tcpdump_bpf": "tcp port 22 or tcp port 445 or tcp port 139 or udp port 5353 or arp",
 
   "thresholds": {
-    "fails_window_sec": 60,
-    "fails_threshold": 8,
-    "unique_users_threshold": 4,
-    "success_after_fails_threshold": 5,
-    "incident_cooldown_sec": 120
+    "fails_window_sec":              60,
+    "fails_threshold":               5,
+    "unique_users_threshold":        3,
+    "success_after_fails_threshold": 3,
+    "incident_cooldown_sec":         60
   },
 
   "actions": {
-    "dry_run": true,
+    "dry_run":            false,
     "block_duration_sec": 900,
-    "block_backend": "iptables",
-    "chain": "INPUT"
+    "block_backend":      "iptables",
+    "ipset_name":         "cnsl_blocklist",
+    "chain":              "INPUT"
   },
 
   "allowlist": [
-    "127.0.0.1",
-    "::1"
+    "127.0.0.1"
   ],
 
   "store": {
-    "db_path": "./cnsl_state.db"
+    "db_path": "/var/lib/cnsl/cnsl_state.db"
   },
 
   "logging": {
-    "json_log_path": "./cnsl.jsonl",
-    "console_verbose": true,
-    "log_net_hints": false
+    "json_log_path":    "/var/log/cnsl.jsonl",
+    "console_verbose":  true,
+    "log_net_hints":    false,
+    "log_correlations": true,
+    "log_baseline":     true
   },
 
   "dashboard": {
-    "enabled": true,
-    "host": "127.0.0.1",
-    "port": 8765
+    "enabled":              true,
+    "host":                 "127.0.0.1",
+    "port":                 8765,
+    "require_https":        false,
+    "session_timeout_sec":  3600
   },
 
   "notifications": {
     "min_severity": "MEDIUM",
     "telegram": {
-      "enabled": false,
-      "bot_token": "YOUR_BOT_TOKEN",
-      "chat_id": "YOUR_CHAT_ID"
+      "enabled":   true,
+      "bot_token": "your telegram bot token",
+      "chat_id":   "your telegram chat id"
     },
-    "discord": {
-      "enabled": false,
-      "webhook_url": ""
-    },
-    "slack": {
-      "enabled": false,
-      "webhook_url": ""
-    }
+    "discord": { "enabled": false, "webhook_url": "" },
+    "slack":   { "enabled": false, "webhook_url": "" },
+    "webhook": { "enabled": false, "url": "" }
   },
 
   "geoip": {
-    "mmdb_path": null
+    "mmdb_path": "/etc/cnsl/GeoLite2-City.mmdb"
   },
 
   "auth": {
-    "enabled": false
+    "enabled": true,
+    "secret_key": "CHANGE-THIS-to-a-random-64-char-string",
+    "access_token_expire_hours": 8,
+    "users": {
+      "admin": {
+        "password_hash": "your password hash",
+        "role": "admin",
+        "must_change_password": false
+      }
+    }
+  },
+
+  "queue": { "maxsize": 10000 },
+
+  "log_sources": {
+    "nginx":  "/var/log/nginx/access.log",
+    "apache": "/var/log/apache2/access.log",
+    "mysql":  "/var/log/mysql/error.log",
+    "ufw":    "/var/log/ufw.log",
+    "syslog": "/var/log/syslog"
+  },
+
+  "fim": {
+      "enabled": false,
+      "db_path": "/var/lib/cnsl/cnsl_fim.db",
+      "watch_paths": [
+        "/etc/passwd",
+        "/etc/ssh/",
+        "/var/www/"
+      ],
+      "scan_interval_sec": 60
+  },
+
+  "ml": {
+    "enabled":                  false,
+    "min_samples":              100,
+    "retrain_interval_sec":     3600,
+    "contamination":            0.05,
+    "anomaly_score_threshold": -0.1
   },
 
   "redis": {
-    "enabled": false
+    "enabled":    false,
+    "host":       "127.0.0.1",
+    "port":       6379,
+    "password":   null,
+    "db":         0,
+    "key_prefix": "cnsl",
+    "sync_blocks": true
+  },
+
+  "honeypot": {
+    "enabled":                   false,
+    "mode":                      "redirect",
+    "honeypot_host":             "127.0.0.1",
+    "honeypot_port":             2222,
+    "fake_hostname":             "ubuntu-server",
+    "fake_version":              "Ubuntu 22.04.3 LTS",
+    "fake_banner":               "SSH-2.0-OpenSSH_8.2p1 Ubuntu",
+    "log_commands":              true,
+    "auto_redirect_severity":    "HIGH"
   },
 
   "threat_intel": {
     "abuseipdb": {
-      "enabled": false
+      "enabled":        false,
+      "api_key":        "YOUR_API_KEY",
+      "auto_flag_score": 50,
+      "cache_ttl_sec":  86400
     }
   },
 
   "behavioral_baseline": {
-    "enabled": true,
-    "min_observations": 10
-  },
-
-  "fim": {
-    "enabled": false
-  },
-
-  "ml": {
-    "enabled": false
-  },
-
-  "honeypot": {
-    "enabled": false
-  },
-
-  "asset_inventory": {
-    "enabled": true
-  },
-
-  "log_sources": {
-    "nginx":  null,
-    "apache": null,
-    "mysql":  null,
-    "ufw":    null,
-    "syslog": null
-  },
-
-  "reporting": {
-    "output_dir": "./reports"
-  },
-
-  "queue": {
-    "maxsize": 10000
+    "enabled":           true,
+    "min_observations":  10
   }
 }

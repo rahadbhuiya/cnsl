@@ -17,15 +17,21 @@ from .models import Event, EventKind, now
 
 
 # auth.log (sshd lines) — primary signal
-
+#
+# Modern OpenSSH (Kali, Debian 12+, Ubuntu 24+) splits into two processes:
+#   sshd[PID]          — the listener / pre-auth dispatcher
+#   sshd-session[PID]  — the per-connection session handler
+# All auth events (Failed password, Accepted, PAM failures) now come from
+# sshd-session[PID], so every regex must match BOTH variants.
+_SSHD_PREFIX = r"sshd(?:-session)?\[\d+\]:\s+"
 
 # "Failed password for invalid user <user> from <ip> port <p> ssh2"
 # "Failed password for <user> from <ip> port <p> ssh2"
 # "error: PAM: Authentication failure for <user> from <ip>"
 # "authentication failure; ...rhost=<ip>  user=<user>"
 _FAIL_RE = re.compile(
-    r"sshd\[\d+\]:\s+"
-    r"(?:Failed password|authentication failure|Invalid user"
+    _SSHD_PREFIX
+    + r"(?:Failed password|authentication failure|Invalid user"
     r"|error: PAM: Authentication failure|"
     r"Connection closed by authenticating user)"
     r".*?(?:from|rhost=)\s*(?P<ip>[\da-fA-F\.:]+)",
@@ -39,14 +45,15 @@ _FAIL_USER_RE = re.compile(
 # "Accepted password for <user> from <ip> port <p> ssh2"
 # "Accepted publickey for <user> from <ip> port <p> ssh2"
 _SUCCESS_RE = re.compile(
-    r"sshd\[\d+\]:\s+Accepted\s+(?:password|publickey)\s+for\s+"
+    _SSHD_PREFIX
+    + r"Accepted\s+(?:password|publickey)\s+for\s+"
     r"(?P<user>\S+)\s+from\s+(?P<ip>[\da-fA-F\.:]+)",
     re.IGNORECASE,
 )
 
 # "session opened for user <user> by ..."  (secondary success signal)
 _SESSION_RE = re.compile(
-    r"sshd\[\d+\]:\s+pam_unix.*session opened for user\s+(?P<user>\S+)",
+    _SSHD_PREFIX + r"pam_unix.*session opened for user\s+(?P<user>\S+)",
     re.IGNORECASE,
 )
 

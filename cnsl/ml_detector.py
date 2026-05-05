@@ -277,25 +277,29 @@ class MLDetector:
             data = list(self._training_data)
 
         if len(data) < self.min_samples:
-            # Not enough data yet — still bump the timer so we don't
-            # hammer _retrain() on every single event until min_samples is reached.
-            self._last_train = now()
             return
+
+        # Reset timer before training so we don't hammer retrain on every
+        # event if training is slow — will retry after retrain_interval_sec
+        self._last_train = now()
 
         loop = asyncio.get_running_loop()
         try:
             model = await loop.run_in_executor(None, self._fit, data)
             async with self._lock:
-                self._model    = model
-                self._trained  = True
+                self._model      = model
+                self._trained    = True
                 self._last_train = now()
-
             await self.logger.log("ml_retrained", {
-                "samples":      len(data),
+                "samples":       len(data),
                 "contamination": self.contamination,
             })
         except Exception as e:
-            await self.logger.log("ml_error", {"error": str(e)})
+            import traceback as _tb
+            await self.logger.log("ml_error", {
+                "error":     str(e),
+                "traceback": _tb.format_exc(),
+            })
 
     def _fit(self, data: List[List[float]]):
         """CPU-bound: fit sklearn model (runs in executor)."""
@@ -366,6 +370,6 @@ class MLDetector:
             "trained":          self._trained,
             "training_samples": len(self._training_data),
             "min_samples":      self.min_samples,
-            "last_trained":     iso_time(self._last_train) if self._last_train else None,
+            "last_trained":     iso_time(self._last_train) if self._trained and self._last_train else None,
             "tracked_ips":      len(self._accumulators),
         }

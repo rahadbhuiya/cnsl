@@ -21,42 +21,48 @@ from typing import Any, Dict, List, Optional
 from .models import Detection, iso_time
 
 
-
 # Notification payload builder
+
+
+def _tg_escape(text: str) -> str:
+    """Escape special characters for Telegram Markdown v1.
+    Markdown v1 only uses: *bold*, _italic_, `code`, [text](url).
+    Unmatched * or _ in dynamic content (ISP names, city names) will break rendering.
+    """
+    return text.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
 
 
 def _build_message(detection: Detection, geo: Optional[Dict] = None) -> str:
     """Build a human-readable alert message."""
-    sev_emoji = {"HIGH": "🚨", "MEDIUM": "⚠️", "LOW": "ℹ️"}.get(detection.severity, "⚠️")
-    flag = geo.get("flag", "🌐") if geo else "🌐"
-    country = geo.get("country", "Unknown") if geo else "Unknown"
-    city = geo.get("city", "") if geo else ""
-    isp = geo.get("isp", "") if geo else ""
-    proxy = " [PROXY/VPN]" if geo and geo.get("proxy") else ""
+    sev_label = {"HIGH": "[HIGH]", "MEDIUM": "[MEDIUM]", "LOW": "[LOW]"}.get(detection.severity, "[ALERT]")
+    country = _tg_escape(geo.get("country", "Unknown") if geo else "Unknown")
+    city    = _tg_escape(geo.get("city", "") if geo else "")
+    isp     = _tg_escape(geo.get("isp", "") if geo else "")
+    proxy   = " [PROXY/VPN]" if geo and geo.get("proxy") else ""
     hosting = " [DATACENTER]" if geo and geo.get("hosting") else ""
 
-    location = f"{flag} {country}"
+    location = country
     if city:
         location += f", {city}"
 
     lines = [
-        f"{sev_emoji} *CNSL ALERT — {detection.severity}*",
+        f"*CNSL ALERT — {detection.severity}*",
         f"",
-        f"🖥️  IP: `{detection.src_ip}`{proxy}{hosting}",
-        f"📍 Location: {location}",
-        f"🏢 ISP: {isp}" if isp else "",
+        f"IP:       `{detection.src_ip}`{proxy}{hosting}",
+        f"Location: {location}",
+        f"ISP:      {isp}" if isp else "",
         f"",
-        f"📊 Stats:",
-        f"  • Failed logins: {detection.fail_count} (window: {detection.window_sec}s)",
-        f"  • Unique users tried: {detection.uniq_users}",
+        f"Stats:",
+        f"  Fails:        {detection.fail_count} (window: {detection.window_sec}s)",
+        f"  Unique users: {detection.uniq_users}",
         f"",
-        f"🔍 Reasons:",
+        f"Reasons:",
     ]
     for r in detection.reasons:
-        lines.append(f"  • {r}")
+        lines.append(f"  - {_tg_escape(r)}")
     lines.extend([
         f"",
-        f"🕐 Time: {iso_time()}",
+        f"Time: {iso_time()}",
     ])
     return "\n".join(l for l in lines if l is not None)
 
@@ -143,21 +149,20 @@ class Notifier:
 
     async def _send_discord(self, url: str, d: Detection, geo: Optional[Dict], text: str) -> None:
         color = {"HIGH": 0xFF0000, "MEDIUM": 0xFF8C00, "LOW": 0x3498DB}.get(d.severity, 0x95A5A6)
-        flag = geo.get("flag", "🌐") if geo else "🌐"
         country = geo.get("country", "Unknown") if geo else "Unknown"
 
         payload = {
             "embeds": [{
-                "title": f"🚨 CNSL Alert — {d.severity}",
+                "title": f"CNSL Alert — {d.severity}",
                 "color": color,
                 "fields": [
-                    {"name": "IP", "value": f"`{d.src_ip}`", "inline": True},
-                    {"name": "Location", "value": f"{flag} {country}", "inline": True},
-                    {"name": "Failed Logins", "value": str(d.fail_count), "inline": True},
-                    {"name": "Unique Users", "value": str(d.uniq_users), "inline": True},
-                    {"name": "Reasons", "value": "\n".join(f"• {r}" for r in d.reasons)},
+                    {"name": "IP",           "value": f"`{d.src_ip}`",  "inline": True},
+                    {"name": "Location",     "value": country,          "inline": True},
+                    {"name": "Failed Logins","value": str(d.fail_count),"inline": True},
+                    {"name": "Unique Users", "value": str(d.uniq_users),"inline": True},
+                    {"name": "Reasons",      "value": "\n".join(f"- {r}" for r in d.reasons)},
                 ],
-                "footer": {"text": f"CNSL • {iso_time()}"},
+                "footer": {"text": f"CNSL | {iso_time()}"},
             }]
         }
         await _post_json(url, payload)

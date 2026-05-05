@@ -428,7 +428,13 @@ class FIMEngine:
 
         for p in self._watch_paths:
             if os.path.isfile(p):
+                # Direct file — watch it
                 paths.append(p)
+            elif os.path.isdir(p):
+                # Directory in watch_paths — scan all files inside recursively
+                for root, _dirs, files in os.walk(p):
+                    for fname in files:
+                        paths.append(os.path.join(root, fname))
 
         for d in self._watch_dirs:
             dir_path  = d.get("path", "")

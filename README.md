@@ -7,7 +7,7 @@
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/tests-26%20passing-brightgreen" alt="26 Tests Passing">
-  <img src="https://img.shields.io/badge/version-1.0.1-blue" alt="Version 1.0.1">
+  <img src="https://img.shields.io/badge/version-1.0.4-blue" alt="Version 1.0.4">
   <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Linux">
 </p>
 
@@ -52,6 +52,7 @@ DB auth fail  from 45.33.32.1  ──┘
 | Prometheus + Grafana | ❌ | ❌ | ✅ |
 | SOC2 / PCI-DSS compliance reports | ❌ | ❌ | ✅ |
 | Privilege escalation detection | ❌ | ❌ | ✅ |
+| PDF export from dashboard | ❌ | ❌ | ✅ |
 | Auto-unblock timer | ✅ | ✅ | ✅ |
 | Language | Python | C | Python |
 
@@ -69,7 +70,7 @@ DB auth fail  from 45.33.32.1  ──┘
 | **Database brute-force** | MySQL auth failure spikes |
 | **Honeypot port probe** | Any connection to port 23 / 3389 / 6379 → instant block |
 | **Privilege escalation** | `sudo`/`su` failure after successful SSH login |
-| **File tampering** | `/etc/passwd`, `authorized_keys`, `sshd_config`, crontab |
+| **File tampering** | `/etc/passwd`, `authorized_keys`, `sshd_config`, crontab, any watched directory |
 | **Behavioral anomaly** | Unusual login hour, new username, frequency spike (ML) |
 | **Coordinated attack** | Same IP across SSH + web + DB simultaneously |
 
@@ -90,10 +91,11 @@ DB auth fail  from 45.33.32.1  ──┘
 | **Intelligence** | GeoIP enrichment (MaxMind offline or ip-api.com fallback) |
 | **Intelligence** | AbuseIPDB threat score lookup |
 | **Intelligence** | Behavioral baseline + ML anomaly detection (IsolationForest) |
-| **Monitoring** | File Integrity Monitoring (FIM) with SQLite baseline |
+| **Monitoring** | File Integrity Monitoring (FIM) — watches files AND directories recursively |
 | **Monitoring** | Passive asset inventory via network events |
-| **Visibility** | Live web dashboard with Server-Sent Events real-time feed |
+| **Visibility** | Live web dashboard with tabbed UI and Server-Sent Events real-time feed |
 | **Visibility** | Prometheus metrics + Grafana dashboard template |
+| **Reporting** | PDF export directly from dashboard (no extra tools needed) |
 | **Reporting** | PDF / HTML compliance reports (SOC2, ISO27001, PCI-DSS) |
 | **Access** | JWT authentication + Role-Based Access Control (4 roles) |
 | **Notifications** | Telegram, Discord, Slack, custom webhook |
@@ -109,22 +111,25 @@ DB auth fail  from 45.33.32.1  ──┘
 git clone https://github.com/rahadbhuiya/cnsl.git
 cd cnsl
 
-# 2. Install
+# 2. Install (use a virtualenv)
+python3 -m venv venv
+source venv/bin/activate
 pip install -e ".[full]"
 
 # 3. Run in safe dry-run mode (no real blocks)
-sudo python -m cnsl --no-tcpdump
+sudo venv/bin/python -m cnsl --no-tcpdump
 
 # 4. Run with live dashboard
-sudo python -m cnsl --dashboard --no-tcpdump
+sudo venv/bin/python -m cnsl --dashboard --no-tcpdump
 # → Open http://127.0.0.1:8765
 # → Default login: admin / cnsl-change-me
 
 # 5. Enable real blocking when ready
-sudo python -m cnsl --execute --dashboard
+sudo venv/bin/python -m cnsl --execute --dashboard
 ```
 
-> **Note:** `sudo` is required for `/var/log/auth.log`, `iptables`, and `tcpdump`.
+> **Important:** Always use the virtualenv's Python (`venv/bin/python`) with `sudo`.  
+> Running `sudo python` uses the system Python which may not have all packages (e.g. `scikit-learn`).
 
 ---
 
@@ -222,26 +227,35 @@ sudo nano /etc/cnsl/config.json
 
   "allowlist": [
     "127.0.0.1",
-    "::1",
     "YOUR_OWN_IP_HERE"
   ],
 
   "actions": {
     "dry_run": false,
     "block_duration_sec": 900
+  },
+
+  "store": {
+    "db_path": "/var/lib/cnsl/cnsl_state.db"
+  },
+
+  "fim": {
+    "db_path": "/var/lib/cnsl/cnsl_fim.db"
   }
 }
 ```
 
-> ⚠️ **Always add your own IP to `allowlist` before setting `dry_run: false`.**  
-> Forgetting this will lock you out of your own server.
+> **Important notes:**
+> - Always add your own IP to `allowlist` before setting `dry_run: false` — forgetting this will lock you out.
+> - Remove `::1` from `allowlist` if you want to detect attacks from localhost (e.g. for testing with `ssh localhost`).
+> - Use absolute paths for `db_path` fields — relative paths cause baselines to reset on every restart.
 
 ---
 
 ### Step 4 — Enable live blocking
 
 ```bash
-sudo python -m cnsl \
+sudo venv/bin/python -m cnsl \
   --config /etc/cnsl/config.json \
   --execute \
   --dashboard
@@ -268,11 +282,27 @@ sudo python -m cnsl \
 ```json
 "fim": {
   "enabled": true,
-  "scan_interval_sec": 300
+  "db_path": "/var/lib/cnsl/cnsl_fim.db",
+  "watch_paths": [
+    "/etc/passwd",
+    "/etc/ssh/",
+    "/var/www/"
+  ],
+  "scan_interval_sec": 60
 }
 ```
 
-Watches `/etc/passwd`, `authorized_keys`, `sshd_config`, crontab, and more.
+FIM watches both individual files and entire directories (recursively). Any file created, modified, deleted, or permission-changed inside a watched directory fires an alert.
+
+> Use absolute `db_path` — relative paths cause the baseline to reset on every restart.
+
+**Test FIM:**
+```bash
+sudo touch /etc/ssh/test_cnsl.txt
+# wait 60 seconds
+grep "fim_alert" /var/log/cnsl.jsonl | tail -3
+sudo rm /etc/ssh/test_cnsl.txt
+```
 
 ---
 
@@ -281,11 +311,20 @@ Watches `/etc/passwd`, `authorized_keys`, `sshd_config`, crontab, and more.
 ```json
 "ml": {
   "enabled": true,
-  "min_samples": 100
+  "min_samples": 100,
+  "retrain_interval_sec": 3600,
+  "contamination": 0.05,
+  "anomaly_score_threshold": -0.1
 }
 ```
 
-Collects a baseline for a while, then starts flagging statistical outliers automatically.
+ML uses **IsolationForest** from scikit-learn — no pre-trained model needed. CNSL trains on your own traffic automatically.
+
+- Collects `min_samples` events first, then trains
+- Retrains every `retrain_interval_sec` seconds with fresh data
+- Check training status: `http://127.0.0.1:8765/api/ml-status`
+
+> **Important:** Use the virtualenv Python. `scikit-learn` installed in a venv won't be available to `sudo python` (system Python). Always run: `sudo venv/bin/python -m cnsl ...`
 
 ---
 
@@ -321,7 +360,7 @@ Wants=redis.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 -m cnsl \
+ExecStart=/opt/cnsl/venv/bin/python -m cnsl \
   --config /etc/cnsl/config.json \
   --execute \
   --dashboard
@@ -346,7 +385,7 @@ sudo journalctl -u cnsl -f
 ## Test Without a Real Server
 
 ```bash
-# Run all 11 scenarios
+# Run all scenarios
 python simulate.py
 
 # Run a specific scenario
@@ -360,24 +399,21 @@ python simulate.py honeypot     # honeypot port probe + instant block
 python simulate.py correlation  # multi-source coordinated attack (HIGH)
 python simulate.py unblock      # auto-unblock + Prometheus gauge verify
 python simulate.py allowlist    # allowlist protection test
+python simulate.py metrics      # metrics & DB stats
+python simulate.py notify       # notification pipeline + Telegram escaping test
 
 # Interactive mode — type events manually
 python simulate.py live
 ```
 
 ```
-# SSH events
 cnsl> fail 1.2.3.4 root      # SSH failure
 cnsl> ok   1.2.3.4 root      # SSH success → HIGH breach alert
-
-# Other attack types
 cnsl> web     1.2.3.4         # web scanner
 cnsl> exploit 1.2.3.4 /.env  # web exploit attempt
 cnsl> db      1.2.3.4 root   # database auth failure
 cnsl> sudo    1.2.3.4        # sudo failure (privilege escalation)
 cnsl> hp      1.2.3.4 23     # honeypot port probe
-
-# Management
 cnsl> unblock 1.2.3.4        # manually unblock IP
 cnsl> blocks                  # show active blocks
 cnsl> status                  # show all tracked IPs
@@ -390,14 +426,19 @@ cnsl> metrics                 # show Prometheus counters
 
 Enable with `--dashboard`. Access at `http://127.0.0.1:8765`
 
-| Section | What it shows |
+The dashboard has a **tabbed interface** — each tab shows a different area:
+
+| Tab | What it shows |
 |:---|:---|
-| **Stat cards** | Total incidents, HIGH severity count, active blocks, unique attackers |
-| **Charts** | Incidents over time, severity breakdown |
-| **Active blocks** | Currently blocked IPs with one-click unblock |
-| **Top attackers** | IP, country, ISP, incident count |
-| **Recent incidents** | Time, IP, location, severity, detection reason |
-| **Live feed** | Every event streamed in real time (SSE) |
+| **Overview** | Stat cards (total incidents, HIGH, active blocks, unique attackers, uptime, SSH fails, events processed, all-time blocks) · Timeline chart (last 24h) · Severity doughnut · Top attackers table |
+| **Incidents** | Full incident table with time, IP, location, severity, fail count, detection reasons |
+| **Blocks** | Active blocks with unblock button · Manual block form (type IP + Enter) |
+| **Honeypot** | Status, mode, active redirects · Session table (IP, duration, auth attempts, commands typed) |
+| **FIM** | Watched paths list · File integrity alerts (created / modified / deleted / permission) |
+| **ML** | Enabled/trained status · Training progress bar · Samples collected · Last trained time |
+| **Live Feed** | Every event streamed in real time via SSE · Clear button |
+
+**Export PDF** button in the header generates a full security report from all current data — no extra tools needed, uses browser print.
 
 > Dashboard binds to `127.0.0.1` only. For remote access use an SSH tunnel:
 > ```bash
@@ -420,35 +461,53 @@ Generate a secure key:
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Default credentials: `admin` / `cnsl-change-me` — **change this before deploying to production.**
+Default credentials: `admin` / `cnsl-change-me` — **change before deploying to production.**
 
 ### Roles
 
 | Role | Permissions |
 |:---|:---|
 | `viewer` | Read stats, incidents, blocks, metrics |
-| `analyst` | viewer + manual block / unblock *(enforced — viewer cannot block)* |
+| `analyst` | viewer + manual block / unblock |
 | `auditor` | analyst + generate reports + view asset inventory |
-| `admin` | Full access including config and honeypot management |
-
-> RBAC is enforced on all write endpoints. Block and unblock operations require `analyst` role or above. IP format is validated before any block action is taken.
+| `admin` | Full access |
 
 ---
 
 ## Honeypot Mode
 
-Instead of simply blocking, redirect attackers to a fake Ubuntu SSH server:
+Instead of blocking attackers, redirect them to a fake SSH server. The attacker thinks they got in — while every command they type is logged.
 
 ```json
 "honeypot": {
   "enabled": true,
   "mode": "redirect",
+  "honeypot_host": "127.0.0.1",
   "honeypot_port": 2222,
-  "listen_ports": [23, 3306, 6379, 27017]
+  "fake_hostname": "ubuntu-server",
+  "fake_version": "Ubuntu 22.04.3 LTS",
+  "log_commands": true,
+  "auto_redirect_severity": "HIGH"
 }
 ```
 
-The attacker connects to what looks like a real server, types commands, and everything is logged. They never touch anything real.
+> Use `honeypot_port` (not `ports`). Make sure port 2222 is free before starting.
+
+The built-in fake shell simulates a real Ubuntu system:
+
+| What the attacker can do | What actually happens |
+|:---|:---|
+| `ls`, `cd`, `pwd`, `cat` | Full fake filesystem — `/etc`, `/root`, `/var`, `/proc`, `/home` |
+| `touch`, `mkdir`, `rm`, `cp`, `mv` | Works in a session-local virtual filesystem |
+| `echo "x" > file` | Writes to virtual filesystem (`>>` append also works) |
+| `cat /etc/passwd`, `/etc/shadow`, `/etc/sudoers` | Returns realistic fake content |
+| `ps`, `top`, `df`, `free`, `netstat` | Returns realistic fake system info |
+| `wget`, `curl` | Simulates DNS timeout after a delay |
+| `python3`, `perl` | Interactive prompt or silent run |
+| `sudo`, `passwd` | Password prompts (logs what they type) |
+| `systemctl status` | Returns fake service status |
+
+Everything the attacker types is logged to `cnsl.jsonl` as `honeypot_command` events and visible in the **Honeypot tab** of the dashboard.
 
 ---
 
@@ -463,22 +522,31 @@ The attacker connects to what looks like a real server, types commands, and ever
 }
 ```
 
+Messages use clean plain text. ISP names, city names, and detection reasons with special characters (`_`, `*`) are automatically escaped so Telegram formatting never breaks.
+
 ---
 
 ## Reports
+
+**From the dashboard** — click **Export PDF** in the header. Generates a full security report from live data including incidents, blocks, FIM alerts, honeypot sessions, and ML status. No extra tools needed — uses browser print.
+
+**From the CLI:**
 
 ```bash
 # HTML report — last 30 days
 python -m cnsl --report html --report-days 30
 
-# PDF report
+# PDF report (requires reportlab: pip install reportlab)
 python -m cnsl --report pdf
+
+# JSON — machine-readable, for integration
+python -m cnsl --report json
 
 # Export Grafana dashboard JSON
 python -m cnsl --grafana-export
 ```
 
-Reports include: incident summary, top attackers, FIM alerts, and a SOC2 / ISO27001 / PCI-DSS compliance mapping.
+Reports include: executive summary, top attackers, recent incidents, FIM alerts, honeypot sessions, ML status, and SOC2 / ISO27001 / PCI-DSS compliance mapping.
 
 ---
 
@@ -502,24 +570,25 @@ scrape_configs:
       credentials: YOUR_JWT_TOKEN_HERE
 ```
 
-> Get a JWT token via `POST /api/login`. If auth is disabled in config, no token is needed.
-
 ---
 
 ## REST API
 
-All endpoints are available when `--dashboard` is active.
+All endpoints available when `--dashboard` is active.
 
 ```
 GET  /api/stats             Engine summary — incidents, blocks, uptime
 GET  /api/incidents         Recent incidents  (?limit=50, max 500)
 GET  /api/blocks            Currently active blocks
 GET  /api/top-attackers     Top attacker IPs with geo + ISP info
+GET  /api/timeline          Incident counts per hour for last 24h (for charts)
+GET  /api/ml-status         ML detector status + training progress
+GET  /api/honeypot          Honeypot status + recent sessions
+GET  /api/fim               FIM alerts + watched paths
+GET  /api/system            Uptime, SSH fails total, events processed, blocks total
 GET  /api/assets            Passive network asset inventory
-GET  /api/assets/summary    Trust level breakdown
 GET  /api/metrics           Prometheus metrics  (auth required)
-GET  /api/rbac/roles        Role and permission definitions
-GET  /api/honeypot/status   Honeypot listener status
+GET  /api/debug             Module wiring status (ml, fim, honeypot, assets)
 
 POST /api/login             {"username": "...", "password": "..."}
 POST /api/logout
@@ -544,17 +613,23 @@ Every event is a newline-delimited JSON record in `cnsl.jsonl`:
     "severity": "HIGH",
     "reasons": ["credential_breach: success after 6 fails (threshold=5)"],
     "fail_count": 6,
-    "geo": { "country": "China", "city": "Beijing", "flag": "🇨🇳" }
+    "geo": { "country": "China", "city": "Beijing" }
   }
 }
 ```
 
 ```bash
 # Stream all events live
-tail -f cnsl.jsonl | jq .
+tail -f /var/log/cnsl.jsonl | jq .
 
 # HIGH severity incidents only
-tail -f cnsl.jsonl | jq 'select(.type=="incident" and .payload.severity=="HIGH")'
+tail -f /var/log/cnsl.jsonl | jq 'select(.type=="incident" and .payload.severity=="HIGH")'
+
+# ML training events
+grep "ml_retrained\|ml_error" /var/log/cnsl.jsonl | tail -5
+
+# FIM alerts
+grep "fim_alert" /var/log/cnsl.jsonl | tail -10
 ```
 
 Compatible with: **Grafana Loki · Elasticsearch · Splunk · Vector · Fluentd · Datadog**
@@ -595,35 +670,36 @@ cnsl/
 │   ├── __init__.py          package version info
 │   ├── __main__.py          python -m cnsl entrypoint
 │   │
+│   ├── api.py               Lightweight REST API
 │   ├── models.py            Event, Detection dataclasses
 │   ├── config.py            config loading + all defaults
 │   ├── validator.py         startup config validation
-│   ├── logger.py            async structured JSON logger
+│   ├── logger.py            async structured JSON logger (text prefixes)
 │   │
-│   ├── parsers.py           auth.log + tcpdump line parsers
+│   ├── parsers.py           auth.log + tcpdump line parsers (sshd + sshd-session)
 │   ├── log_sources.py       nginx, apache, mysql, ufw, syslog parsers
 │   ├── sources.py           async log file tailers (tail -F)
 │   │
 │   ├── detector.py          stateful per-IP detection engine
 │   ├── correlator.py        cross-source correlation rules (6 rules)
-│   ├── ml_detector.py       ML anomaly detection (IsolationForest)
+│   ├── ml_detector.py       ML anomaly detection (IsolationForest, auto-trains)
 │   ├── threat_intel.py      AbuseIPDB + behavioral baseline
 │   │
 │   ├── blocker.py           iptables / ipset blocking backend
-│   ├── honeypot.py          fake SSH server + active response
+│   ├── honeypot.py          fake SSH server + 40-command shell simulation
 │   ├── redis_sync.py        distributed blocklist via Redis pub/sub
 │   │
 │   ├── geoip.py             GeoIP (MaxMind offline + ip-api.com)
 │   ├── assets.py            passive asset inventory
-│   ├── fim.py               file integrity monitoring
+│   ├── fim.py               file integrity monitoring (files + directories)
 │   │
 │   ├── auth.py              JWT authentication (PyJWT or fallback)
 │   ├── rbac.py              role-based access control (4 roles)
-│   ├── dashboard.py         web dashboard + REST API + SSE feed
+│   ├── dashboard.py         web dashboard + REST API + SSE feed (tabbed UI, SVG icons)
 │   ├── metrics.py           Prometheus metrics
 │   ├── grafana.py           Grafana dashboard template generator
-│   ├── reporter.py          PDF / HTML compliance reports
-│   ├── notify.py            Telegram, Discord, Slack, webhook
+│   ├── reporter.py          PDF / HTML compliance reports (SVG)
+│   ├── notify.py            Telegram, Discord, Slack, webhook (plain text)
 │   ├── store.py             SQLite persistence (aiosqlite)
 │   └── engine.py            main async loop + CLI argument parser
 │
@@ -634,7 +710,7 @@ cnsl/
 │   └── config.example.json  annotated example config
 │
 ├── .github/workflows/ci.yml
-├── simulate.py              local test simulator (11 scenarios)
+├── simulate.py              local test simulator (12 scenarios)
 ├── Dockerfile
 ├── setup.py
 ├── requirements.txt
@@ -655,12 +731,15 @@ cnsl/
 - [ ] Grafana alerting rules template
 - [ ] Agent system for multi-server log collection
 - [ ] Sigma rule support (import industry-standard detection rules)
+- [ ] WebSocket instead of SSE for bidirectional dashboard control
+- [ ] `MarkdownV2` Telegram formatting for richer alerts
+- [ ] Dashboard dark/light mode toggle
 
 ---
 
 ## Safety
 
-> ⚠️ `--execute` flag modifies live firewall rules.
+> `--execute` flag modifies live firewall rules.
 
 Before enabling real blocking:
 
@@ -684,6 +763,100 @@ Code style: type hints on all public functions, docstrings on all public methods
 
 ## Changelog
 
+### v1.0.4 — Honeypot overhaul, FIM fix
+
+**`honeypot.py` — Full shell simulation rewrite**
+- Previous shell had ~12 hardcoded responses in a dict lookup. New implementation handles 40+ commands with real logic.
+- Full fake Linux filesystem tree — `/etc`, `/root`, `/home`, `/var/log`, `/proc`, `/tmp` with realistic structure.
+- 20+ fake file contents — `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `/etc/ssh/sshd_config`, `/etc/hosts`, `/root/.bashrc`, `/root/.bash_history`, `/proc/cpuinfo`, `/var/log/auth.log` and more.
+- Session-persistent virtual filesystem — `touch`, `mkdir`, `rm`, `cp`, `mv`, `echo "x" > file`, `echo "x" >> file` all work within the session.
+- `ls` / `ls -la` shows real directory contents including session-created files.
+- `cd` changes working directory and updates the shell prompt dynamically (`root@ubuntu-server:/etc$`).
+- `cat` reads real fake file contents or session-created files; returns correct error for missing files.
+- `wget` / `curl` simulate DNS timeout with realistic error messages after a delay.
+- `sudo` shows password prompt for non-root users and logs credentials.
+- `passwd` shows full password change dialog.
+- `systemctl`, `apt`, `find`, `grep`, `wc`, `which`, `last`, `w`, `date` all added.
+- Max commands per session increased from 200 to 500.
+
+**`fim.py` — Directory scanning bug fixed**
+- `_collect_paths()` used `os.path.isfile()` — directories like `/etc/ssh/` and `/var/www/` were silently skipped. Files created inside watched directories never triggered alerts. Fixed: directories now walked recursively with `os.walk()`.
+
+**`notify.py`**
+- All emoji removed from Telegram and Discord messages. Clean plain text labels used instead — more readable and avoids rendering issues.
+
+**`logger.py` — new event types**
+- All emoji console prefixes replaced with aligned text labels (`[ALERT]`, `[BLOCK]`, `[FIM]`, `[ML]`, etc.).
+- Added prefixes for `ml_retrained`, `ml_error`, `fim_alert`, `honeypot_session_complete`, `redis_error`, `source_start`, `dashboard_started`.
+
+**`reporter.py` — SVG added**
+- HTML report: header and compliance checkmarks now use inline SVG icons.
+- PDF report: all emoji replaced with plain text since reportlab cannot render emoji.
+
+---
+
+### v1.0.3 — Critical runtime fixes
+
+**`parsers.py` — sshd-session regex mismatch (zero events on modern systems)**
+Modern OpenSSH (Kali, Debian 12+, Ubuntu 24.04+) renamed the per-connection process from `sshd` to `sshd-session`. All three auth.log regexes only matched `sshd[PID]:` so no SSH events were detected at all on any modern system. Fixed: extracted shared `_SSHD_PREFIX = r"sshd(?:-session)?\[\d+\]:\s+"` and applied it to all three patterns.
+
+**`config.py` — config file not auto-discovered**
+Running without `--config` always loaded built-in defaults, silently ignoring any existing `/etc/cnsl/config.json`. Telegram tokens, thresholds, allowlist — all ignored. Fixed: `load_config()` now auto-discovers config from `/etc/cnsl/config.json` → `/etc/cnsl/config.yaml` → `./config.json` before falling back to defaults.
+
+**Config: `allowlist` — `::1` blocked localhost SSH detection**
+Default config had `::1` in allowlist. On Linux, `ssh localhost` connects via `::1` so brute-force tests from localhost were silently skipped. Removed `::1` from default allowlist. Also lowered default thresholds (`fails_threshold: 8→5`, `cooldown: 120→60s`) for faster detection feedback during testing.
+
+---
+
+### v1.0.2 — Bug Fixes & Dashboard Overhaul
+
+**Critical Bug Fixes**
+
+- `engine.py` — `ml_detector` and `fim_engine` were passed to `start_dashboard()` but the function signature didn't accept them — both were silently `None` inside the dashboard, causing ML and FIM to always show as disabled regardless of config. Fixed by adding `ml_detector` and `fim` parameters to the signature.
+- `engine.py` — `engine_loop()` called `ml_detector.enabled` without a `None` guard — crashed with `AttributeError` when `ml_detector=None` (the default). Fixed: `if ml_detector and ml_detector.enabled`.
+- `ml_detector.py` — `_retrain()` set `_last_train = now()` even when skipping due to insufficient samples. This prevented training from ever running because the interval check would never pass again. Fixed: only reset `_last_train` when actually attempting training.
+- `ml_detector.py` — `_retrain()` exceptions were logged with only `str(e)` — no traceback. Fixed: full traceback now included in `ml_error` log entry.
+- `fim.py` — `_collect_paths()` used `os.path.isfile()` to filter `watch_paths` — directories were silently skipped. Fixed: directories are now walked recursively with `os.walk()`.
+- `dashboard.py` — `"low": 0` was hardcoded in `/api/stats` — LOW severity count was always zero. Fixed: reads from DB like HIGH and MEDIUM.
+- `store.py` — `stats()` SQL query never counted LOW incidents. Fixed: added `SUM(CASE WHEN severity='LOW' ...)` to the query.
+
+**New Dashboard Features**
+
+- Tabbed UI — Overview / Incidents / Blocks / Honeypot / FIM / ML / Live Feed
+- 8 stat cards including uptime, SSH fails total, events processed, all-time blocks
+- ML tab — enabled/trained status, training progress bar, samples collected, last trained time
+- Honeypot tab — session table with IP, duration, auth attempts, commands typed
+- FIM tab — watched paths list and file integrity alert table
+- Manual block form — type IP and press Enter or click Block IP
+- Live feed enhancements — ML anomaly, FIM change, and honeypot session events
+- Export PDF — full security report generated from live API data, printed via browser
+- SVG icons throughout — no emoji dependency
+- `/api/timeline` endpoint — incident counts per hour for last 24h chart
+- `/api/ml-status` endpoint — ML training state
+- `/api/honeypot` endpoint — honeypot sessions
+- `/api/fim` endpoint — FIM alerts and watched paths
+- `/api/system` endpoint — uptime, SSH fails, events processed, blocks total
+- `/api/debug` endpoint — module wiring status for diagnostics
+
+**Notify Fix**
+
+- `notify.py` — Telegram Markdown v1 broke silently when ISP names, city names, or detection reason strings contained `_`, `*`, `` ` ``, or `[`. Fixed: `_tg_escape()` helper applied to all dynamic fields.
+
+**Config Notes**
+
+- `honeypot` config key: use `honeypot_port` (not `ports`).
+- `fim.db_path` and `store.db_path` should be absolute paths to avoid baseline resets on restart.
+- Remove `::1` from `allowlist` if you want localhost SSH to be detected.
+- Always run with the virtualenv Python (`venv/bin/python`) to ensure `scikit-learn` is available under `sudo`.
+
+**Simulator**
+
+- Added `scenario_notify` (Scenario 12) — validates the full notification pipeline.
+- `setup()` now returns `notifier`.
+- Added `notify` to `SCENARIO_MAP`.
+
+---
+
 ### v1.0.1 — Bug Fixes
 
 **Critical**
@@ -692,32 +865,27 @@ Code style: type hints on all public functions, docstrings on all public methods
 - `engine.py` — `blocker.store` assigned before `store` was initialised — `UnboundLocalError` on startup
 
 **Security**
-- `/api/metrics` — now requires authentication (was publicly accessible to anyone)
+- `/api/metrics` — now requires authentication (was publicly accessible)
 - `/api/block` and `/api/unblock` — RBAC now enforced; `viewer` role can no longer perform write actions
-- `/api/block` — IP address format is now validated before any iptables action
-- `/api/incidents` — `?limit` parameter safely parsed and clamped to 1–500 (was an unguarded `int()` crash)
+- `/api/block` — IP address format validated before any iptables action
+- `/api/incidents` — `?limit` parameter safely parsed and clamped to 1–500
 
 **Logic**
-- `metrics.dec_block()` — Prometheus `cnsl_blocks_active` gauge now decrements correctly on unblock (was only ever incremented)
-- `store.remove_block()` — unblock now removes the entry from SQLite; dashboard block count was previously stale
-- Redis cluster sync — `publish_unblock()` was defined but never called; unblock events now propagate to all cluster nodes
-- Redis `subscribe_loop()` — `action == "unblock"` messages were silently dropped; now handled via `on_remote_unblock` callback
-- `--no-geoip` / `--no-db` — config-file path (`cfg["_no_geoip"]`) was ignored; only the CLI flag worked
+- `metrics.dec_block()` — Prometheus `cnsl_blocks_active` gauge now decrements on unblock
+- `store.remove_block()` — unblock now removes entry from SQLite
+- Redis cluster sync — `publish_unblock()` now called on unblock
+- Redis `subscribe_loop()` — `action == "unblock"` messages now handled
+- `--no-geoip` / `--no-db` — config-file path was ignored; only CLI flag worked
 
 **Performance**
-- `ml_detector._retrain()` — `_last_train` was only updated on successful training; if below `min_samples`, retrain was attempted on every single event
-- `fim._scan()` — all SQLite calls now run via `loop.run_in_executor()` to avoid blocking the async event loop
+- `fim._scan()` — all SQLite calls now run via `loop.run_in_executor()`
 
 **Resource Leaks**
-- `sources.py` and `log_sources.py` — `tail`/`tcpdump` subprocesses were never killed on EOF or exception; each reconnect spawned a new zombie process. Now always killed in a `finally` block.
-
-**Concurrency**
-- `AbuseIPDB.check()` — concurrent calls could both slip through the rate-limit window and fire duplicate HTTP requests. Now serialized with `asyncio.Lock` and a double-checked cache pattern.
+- `sources.py` and `log_sources.py` — subprocesses now always killed in a `finally` block
 
 **Simulator**
-- `simulate.py` — added 7 new scenarios: web scanner, DB brute-force, privilege escalation, honeypot probe, multi-source correlation, auto-unblock/metrics verify, allowlist
-- Wired `metrics`, `store`, and `correlator` into simulator setup so all bug fixes are exercised by tests
-- Added interactive commands: `web`, `exploit`, `db`, `sudo`, `hp`, `unblock`, `metrics`
+- Added 7 new scenarios
+- Wired `metrics`, `store`, and `correlator` into simulator setup
 
 ### v1.0.0 — Initial Release
 

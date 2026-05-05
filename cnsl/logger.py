@@ -62,18 +62,26 @@ class JsonLogger:
 
 
 _PREFIXES = {
-    "startup":                "🟢",
-    "shutdown":               "🔴",
-    "incident":               "🚨",
-    "response_plan":          "🛡️ ",
-    "action_block_scheduled": "⛔",
-    "action_block_executed":  "⛔",
-    "action_unblock_executed":"✅",
-    "action_skip_allowlist":  "⬜",
-    "engine_error":           "💥",
-    "event_auth":             "🔑",
-    "event_net_hint":         "🌐",
+    "startup":                 "[START]  ",
+    "shutdown":                "[STOP]   ",
+    "incident":                "[ALERT]  ",
+    "response_plan":           "[DEFEND] ",
+    "action_block_scheduled":  "[BLOCK]  ",
+    "action_block_executed":   "[BLOCK]  ",
+    "action_unblock_executed": "[UNBLOCK]",
+    "action_skip_allowlist":   "[ALLOW]  ",
+    "engine_error":            "[ERROR]  ",
+    "event_auth":              "[AUTH]   ",
+    "event_net_hint":          "[NET]    ",
+    "ml_retrained":            "[ML]     ",
+    "ml_error":                "[ML-ERR] ",
+    "fim_alert":               "[FIM]    ",
+    "fim_error":               "[FIM-ERR]",
+    "honeypot_session_complete":"[HP]     ",
+    "redis_error":             "[REDIS]  ",
+    "source_start":            "[SOURCE] ",
+    "dashboard_started":       "[DASH]   ",
 }
 
 def _console_prefix(event_type: str) -> str:
-    return _PREFIXES.get(event_type, "   ")
+    return _PREFIXES.get(event_type, "         ")
