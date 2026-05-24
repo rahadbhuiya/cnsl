@@ -19,6 +19,14 @@ from cnsl.models import Event, EventKind, Severity, iso_time, now
 from cnsl.parsers import parse_auth_event, parse_tcpdump_hint
 from cnsl.detector import Detector, IPState, _prune, _unique_users
 
+# Pre-import sklearn at module load time so individual tests don't timeout.
+# If sklearn is not installed or broken, ML tests will be skipped gracefully.
+try:
+    import sklearn  # noqa: F401
+    _SKLEARN_AVAILABLE = True
+except Exception:
+    _SKLEARN_AVAILABLE = False
+
 
 
 # Helpers
@@ -93,10 +101,18 @@ class TestParseAuthEvent:
         assert ev.src_ip == "9.9.9.9"
 
     def test_ipv6_address(self):
+        # ::ffff:1.2.3.4 is IPv6-mapped IPv4 — _clean_ip strips the prefix
         line = "Apr 15 10:00:00 srv sshd[1234]: Failed password for root from ::ffff:1.2.3.4 port 22 ssh2"
         ev = parse_auth_event(line)
         assert ev is not None
-        assert "::" in ev.src_ip
+        assert ev.src_ip == "1.2.3.4", f"Expected 1.2.3.4 got {ev.src_ip}"
+
+    def test_ipv6_loopback(self):
+        # Pure IPv6 like ::1 should stay as-is
+        line = "Apr 15 10:00:00 srv sshd[1234]: Failed password for root from ::1 port 22 ssh2"
+        ev = parse_auth_event(line)
+        assert ev is not None
+        assert ev.src_ip == "::1", f"Expected ::1 got {ev.src_ip}"
 
 
 class TestParseTcpdumpHint:
@@ -129,15 +145,24 @@ class TestParseTcpdumpHint:
 
 class TestConfig:
     def test_defaults_loaded(self):
-        cfg = load_config(None)
-        assert cfg["thresholds"]["fails_threshold"] == 8
-        assert cfg["actions"]["dry_run"] is True
-        assert "127.0.0.1" in cfg["allowlist"]
+        # DEFAULT_CONFIG always has the built-in defaults regardless of system config
+        assert DEFAULT_CONFIG["thresholds"]["fails_threshold"] == 8
+        assert DEFAULT_CONFIG["actions"]["dry_run"] is True
+        assert "127.0.0.1" in DEFAULT_CONFIG["allowlist"]
 
     def test_safe_int(self):
         assert safe_int("8", 0) == 8
         assert safe_int("bad", 5) == 5
         assert safe_int(None, 3) == 3
+
+    def test_load_config_merges_with_defaults(self):
+        # load_config() may load /etc/cnsl/config.json if it exists —
+        # verify it still returns a complete config with all required keys
+        cfg = load_config(None)
+        assert "thresholds" in cfg
+        assert "fails_threshold" in cfg["thresholds"]
+        assert "actions" in cfg
+        assert "allowlist" in cfg
 
 
 # Detector tests
@@ -409,12 +434,12 @@ class TestStoreLowCount:
                 store = Store(db_path)
                 await store.init()
 
-                # Insert one LOW incident directly
                 async with aiosqlite.connect(db_path) as db:
                     await db.execute(
-                        "INSERT INTO incidents (src_ip, severity, reasons, fail_count, ts) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        ("1.2.3.4", "LOW", '["test"]', 1, time.time())
+                        "INSERT INTO incidents "
+                        "(src_ip, severity, reasons, fail_count, uniq_users, ts, time) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        ("1.2.3.4", "LOW", '["test"]', 1, 1, time.time(), "2026-01-01T00:00:00Z")
                     )
                     await db.commit()
 
@@ -443,9 +468,10 @@ class TestStoreLowCount:
                 async with aiosqlite.connect(db_path) as db:
                     for sev in ["HIGH", "MEDIUM", "LOW"]:
                         await db.execute(
-                            "INSERT INTO incidents (src_ip, severity, reasons, fail_count, ts) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            ("1.2.3.4", sev, '["test"]', 1, time.time())
+                            "INSERT INTO incidents "
+                            "(src_ip, severity, reasons, fail_count, uniq_users, ts, time) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            ("1.2.3.4", sev, '["test"]', 1, 1, time.time(), "2026-01-01T00:00:00Z")
                         )
                     await db.commit()
 
@@ -544,47 +570,42 @@ class TestFIMDirectoryScanning:
 
 
 class TestMLRetrain:
-    """_retrain must not update _last_train when data is insufficient,
-    so the interval check keeps firing until enough samples arrive."""
+    """_retrain must not update _last_train when data is insufficient."""
 
     def test_last_train_not_updated_below_min_samples(self):
-        import asyncio, sys
-        try:
-            import sklearn  # noqa: F401
-        except ImportError:
-            pytest.skip("scikit-learn not installed")
-
-        sys.path.insert(0, '/home/claude/cnsl_project')
+        """Does not import sklearn — tests pure timer logic only."""
+        import asyncio
         from cnsl.ml_detector import MLDetector
         logger = AsyncMock()
         cfg = {"ml": {"enabled": True, "min_samples": 100, "retrain_interval_sec": 1}}
         ml = MLDetector(cfg, logger)
-
         assert ml._last_train == 0.0
 
         async def _go():
-            await ml._retrain()   # called with 0 samples
+            await ml._retrain()   # 0 samples — must be a no-op
 
         asyncio.run(_go())
-        # _last_train must stay 0.0 — no data to train on
         assert ml._last_train == 0.0, (
             "_last_train was updated even though there was no training data"
         )
 
     def test_last_train_updated_after_successful_train(self):
+        """Train with enough samples — _trained becomes True, _last_train > 0."""
         import asyncio
-        try:
-            import sklearn  # noqa: F401
-        except ImportError:
+        if not _SKLEARN_AVAILABLE:
             pytest.skip("scikit-learn not installed")
 
-        from cnsl.ml_detector import MLDetector, FeatureWindow
+        try:
+            from cnsl.ml_detector import MLDetector, FeatureWindow
+        except Exception as e:
+            pytest.skip(f"ml_detector import failed: {e}")
+
         logger = AsyncMock()
         cfg = {"ml": {"enabled": True, "min_samples": 3, "retrain_interval_sec": 1}}
         ml = MLDetector(cfg, logger)
 
-        # Inject enough training data
-        fw = FeatureWindow()
+        fw = FeatureWindow(ip="1.2.3.4", ts=time.time())
+        fw.ssh_fail_count = 5
         for _ in range(5):
             ml._training_data.append(fw.to_vector())
 

@@ -16,6 +16,29 @@ from .models import Event, EventKind, now
 
 
 
+# IP address helpers
+
+
+def _clean_ip(ip: str) -> str:
+    """
+    Normalize an IP address string:
+      - Strip IPv6 mapped IPv4 prefix (::ffff:1.2.3.4 → 1.2.3.4)
+      - Strip zone IDs (fe80::1%eth0 → fe80::1)
+      - Strip surrounding brackets ([::1] → ::1)
+    """
+    ip = ip.strip().strip("[]")
+    # IPv6-mapped IPv4: ::ffff:1.2.3.4
+    if ip.lower().startswith("::ffff:"):
+        candidate = ip[7:]
+        if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', candidate):
+            return candidate
+    # Zone ID: fe80::1%eth0
+    if "%" in ip:
+        ip = ip.split("%")[0]
+    return ip
+
+
+
 # auth.log (sshd lines) — primary signal
 #
 # Modern OpenSSH (Kali, Debian 12+, Ubuntu 24+) splits into two processes:
@@ -23,6 +46,8 @@ from .models import Event, EventKind, now
 #   sshd-session[PID]  — the per-connection session handler
 # All auth events (Failed password, Accepted, PAM failures) now come from
 # sshd-session[PID], so every regex must match BOTH variants.
+
+
 _SSHD_PREFIX = r"sshd(?:-session)?\[\d+\]:\s+"
 
 # "Failed password for invalid user <user> from <ip> port <p> ssh2"
@@ -69,17 +94,20 @@ def parse_auth_event(line: str) -> Optional[Event]:
     if m:
         return Event(
             ts=now(), source="auth", kind=EventKind.SSH_SUCCESS,
-            src_ip=m.group("ip"), user=m.group("user"), raw=s,
+            src_ip=_clean_ip(m.group("ip")), user=m.group("user"), raw=s,
         )
 
     # --- fail ---
     m = _FAIL_RE.search(s)
     if m:
-        ip = m.group("ip")
+        ip   = _clean_ip(m.group("ip"))
         user: Optional[str] = None
-        mu = _FAIL_USER_RE.search(s)
+        mu   = _FAIL_USER_RE.search(s)
         if mu:
             user = mu.group("u1") or mu.group("u2")
+            # Reject non-usernames that leaked from regex (e.g. "invalid", "password")
+            if user and user.lower() in ("invalid", "password", "failed", "error", "user"):
+                user = None
         return Event(
             ts=now(), source="auth", kind=EventKind.SSH_FAIL,
             src_ip=ip, user=user, raw=s,
@@ -104,7 +132,7 @@ def parse_tcpdump_hint(line: str) -> Optional[Event]:
     Parse one tcpdump output line.  Returns a NET_HINT Event or None.
     Conservative: only produce hints for known-suspicious / interesting traffic.
     """
-    s = line.strip()
+    s     = line.strip()
     lower = s.lower()
 
     hint: Optional[str] = None
@@ -123,9 +151,9 @@ def parse_tcpdump_hint(line: str) -> Optional[Event]:
     if hint is None:
         return None
 
-    m = _TCPDUMP_IP_RE.search(s)
-    src_ip = m.group("src") if m else None
-    dst_ip = m.group("dst") if m else None
+    m      = _TCPDUMP_IP_RE.search(s)
+    src_ip = _clean_ip(m.group("src")) if m and m.group("src") else None
+    dst_ip = _clean_ip(m.group("dst")) if m and m.group("dst") else None
 
     return Event(
         ts=now(), source="net", kind=EventKind.NET_HINT,

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 DEFAULT_CONFIG: Dict[str, Any] = {
 
-    # ── Sources ───────────────────────────────────────────────────────────────
+    #  Sources 
     "authlog_path":    "/var/log/auth.log",
     "iface":           "any",
     "tcpdump_enabled": True,
@@ -32,7 +32,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "or udp port 5353 or arp"
     ),
 
-    # ── Multi-log sources (Phase 2) ───────────────────────────────────────────
+    #  Multi-log sources (Phase 2) 
     # Set path to enable; omit or set null to disable that source.
     "log_sources": {
         "nginx":    None,   # e.g. "/var/log/nginx/access.log"
@@ -42,7 +42,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "syslog":   None,
     },
 
-    # ── Detection thresholds (per source IP) ──────────────────────────────────
+    #  Detection thresholds (per source IP) 
     "thresholds": {
         # Brute-force: many failures in a short window
         "fails_window_sec":  60,
@@ -63,7 +63,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "db_fail_threshold":         5,   # DB auth fails before alert
     },
 
-    # ── Blocking ──────────────────────────────────────────────────────────────
+    #  Blocking 
     "actions": {
         "dry_run":            True,       # SAFE DEFAULT
         "block_duration_sec": 900,        # 15-minute temporary block
@@ -76,13 +76,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "repeat_offender_window_sec": 3600,
     },
 
-    # ── Allowlist — never blocked ─────────────────────────────────────────────
+    #  Allowlist — never blocked 
     "allowlist": [
         "127.0.0.1",
         "::1",
     ],
 
-    # ── GeoIP (Phase 1) ───────────────────────────────────────────────────────
+    #  GeoIP 
     "geoip": {
         # Set mmdb_path to use MaxMind offline (faster, unlimited).
         # Download free from https://www.maxmind.com/en/geolite2/signup
@@ -90,7 +90,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "mmdb_path": None,
     },
 
-    # ── Authentication (Phase 1) ──────────────────────────────────────────────
+    #  Authentication (Phase 1) 
     "auth": {
         "enabled":                    False,
         "secret_key":                 None,   # REQUIRED if enabled
@@ -99,7 +99,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "users":                      {},     # populated by user
     },
 
-    # ── Redis distributed blocklist (Phase 2) ─────────────────────────────────
+    #  Redis distributed blocklist 
     "redis": {
         "enabled":      False,
         "host":         "127.0.0.1",
@@ -110,7 +110,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sync_blocks":  True,
     },
 
-    # ── Threat intelligence (Phase 2) ─────────────────────────────────────────
+    #  Threat intelligence 
     "threat_intel": {
         "abuseipdb": {
             "enabled":         False,
@@ -120,13 +120,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
 
-    # ── Behavioral baseline (Phase 2) ─────────────────────────────────────────
+    #  Behavioral baseline 
     "behavioral_baseline": {
         "enabled":           True,
         "min_observations":  10,      # learn before flagging
     },
 
-    # ── Notifications ─────────────────────────────────────────────────────────
+    #  Notifications 
     "notifications": {
         "min_severity": "MEDIUM",
 
@@ -151,12 +151,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
 
-    # ── SQLite persistence ────────────────────────────────────────────────────
+    #  SQLite persistence 
     "store": {
         "db_path": "./cnsl_state.db",
     },
 
-    # ── Logging ───────────────────────────────────────────────────────────────
+    #  Logging 
     "logging": {
         "json_log_path":    "./cnsl.jsonl",
         "console_verbose":  True,
@@ -165,7 +165,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "log_baseline":     True,   # log behavioral anomalies
     },
 
-    # ── Dashboard ─────────────────────────────────────────────────────────────
+    #  Dashboard 
     "dashboard": {
         "enabled": True,
         "host":    "127.0.0.1",
@@ -174,7 +174,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 
 
-    # ── Honeypot / active response (Phase 4) ──────────────────────────────────
+    #  Honeypot / active response 
     "honeypot": {
         "enabled":                 False,
         "mode":                    "redirect",  # drop|redirect|tarpit|log_only
@@ -186,12 +186,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auto_redirect_severity":  "HIGH",
     },
 
-    # ── Asset inventory (Phase 4) ─────────────────────────────────────────────
+    #  Asset inventory 
     "asset_inventory": {
         "enabled": True,
     },
 
-    # ── File Integrity Monitoring (Phase 3) ───────────────────────────────────
+    #  File Integrity Monitoring 
     "fim": {
         "enabled":          False,
         "db_path":          "./cnsl_fim.db",
@@ -202,7 +202,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Defaults are defined in fim.py (_DEFAULT_PATHS / _DEFAULT_DIRS).
     },
 
-    # ── ML anomaly detection (Phase 3) ────────────────────────────────────────
+    #  ML anomaly detection 
     "ml": {
         "enabled":                  False,
         "min_samples":              100,
@@ -211,12 +211,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "anomaly_score_threshold": -0.1,
     },
 
-    # ── Reporting (Phase 3) ───────────────────────────────────────────────────
+    #  Reporting 
     "reporting": {
         "output_dir": "./reports",
     },
 
-    # ── Queue ─────────────────────────────────────────────────────────────────
+    #  Search & Query Engine 
+    "search": {
+        "elasticsearch": {
+            "enabled":     False,
+            "url":         "http://localhost:9200",
+            "index":       "cnsl-events",
+            "username":    "",
+            "password":    "",
+            "timeout_sec": 5,
+        },
+    },
+
+    #  Queue 
     "queue": {
         "maxsize": 10000,   # drop events if queue fills (prevents OOM)
     },

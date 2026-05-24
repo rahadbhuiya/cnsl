@@ -8,29 +8,31 @@ import asyncio
 import signal
 from typing import Any, Dict, List
 
-from .assets       import AssetInventory
-from .auth         import AuthManager
-from .grafana      import export_dashboard
-from .honeypot     import ActiveResponse, FakeSSHServer
-from .rbac         import RBAC, Perm
-from .fim          import FIMEngine
-from .ml_detector  import MLDetector
-from .reporter     import Reporter
-from .correlator   import Correlator
-from .log_sources  import get_log_tasks
-from .redis_sync   import RedisSync
-from .threat_intel import AbuseIPDB, BehavioralBaseline
-from .blocker   import Blocker, ensure_ipset
-from .config import apply_cli_overrides, load_config, safe_int
-from .detector import Detector
-from .geoip     import GeoIP
-from .validator import validate_and_exit
-from .logger import JsonLogger
-from .metrics import Metrics
-from .models import Event, iso_time, now
-from .notify import Notifier
-from .sources import run_tcpdump, tail_authlog
-from .store import Store
+from .assets          import AssetInventory
+from .auth            import AuthManager
+from .grafana         import export_dashboard
+from .honeypot        import ActiveResponse, FakeSSHServer
+from .rbac            import RBAC, Perm
+from .fim             import FIMEngine
+from .ml_detector     import MLDetector
+from .reporter        import Reporter
+from .correlator      import Correlator
+from .log_sources     import get_log_tasks
+from .redis_sync      import RedisSync
+from .threat_intel    import AbuseIPDB, BehavioralBaseline
+from .blocker         import Blocker, ensure_ipset
+from .config          import apply_cli_overrides, load_config, safe_int
+from .detector        import Detector
+from .geoip           import GeoIP
+from .validator       import validate_and_exit
+from .logger          import JsonLogger
+from .metrics         import Metrics
+from .models          import Event, iso_time, now
+from .notify          import Notifier
+from .sources         import run_tcpdump, tail_authlog
+from .store           import Store
+from .search_engine   import SearchEngine, ElasticsearchPusher
+from .syslog_receiver import SyslogReceiver
 
 
 
@@ -44,6 +46,8 @@ async def engine_loop(
     logger:      JsonLogger,
     ml_detector: "MLDetector | None" = None,
 ) -> None:
+    from .normalizer import normalize as _normalize
+
     await logger.log("startup", {
         "msg":     "CNSL started",
         "time":    iso_time(),
@@ -53,6 +57,14 @@ async def engine_loop(
     while True:
         try:
             ev: Event = await asyncio.wait_for(queue.get(), timeout=1.0)
+
+            # Normalize to ECS schema — attached to event meta for downstream use
+            try:
+                norm = _normalize(ev)
+                ev.meta["_ecs"] = norm.to_dict()
+            except Exception:
+                pass  # normalization failure must never stop detection
+
             await detector.handle(ev)
             if ml_detector and ml_detector.enabled:
                 try:
@@ -162,6 +174,17 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         ok = await store.init()
         if not ok:
             await logger.log("store_warning", {"msg": "SQLite unavailable (install aiosqlite). Running without persistence."})
+
+    # Search engine — wraps SQLite with query/aggregation API
+    search_engine = SearchEngine(
+        db_path = cfg.get("store", {}).get("db_path", "./cnsl_state.db"),
+        es_cfg  = cfg,
+    )
+    if store.available:
+        await search_engine.init()
+
+    # Optional Elasticsearch/OpenSearch push
+    es_pusher = ElasticsearchPusher(cfg)
     
     detector = Detector(cfg, logger, blocker,
                         geoip=geoip,     store=store,
@@ -259,7 +282,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             store, metrics, logger, auth=auth,
                             rbac=rbac, assets=asset_inventory,
                             honeypot=active_response, dry_run=dry_run,
-                            ml_detector=ml_detector, fim=fim_engine),
+                            ml_detector=ml_detector, fim=fim_engine,
+                            search_engine=search_engine,
+                            es_pusher=es_pusher),
             name="dashboard",
         ))
 

@@ -514,7 +514,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
   Default password in use. Update config.json.
 </div>
 
-<!-- ─────────────────── OVERVIEW ─────────────────── -->
+<!--  OVERVIEW  -->
 <div class="page active" id="page-overview">
 
   <div class="stat-grid">
@@ -624,7 +624,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── INCIDENTS ─────────────────── -->
+<!--  INCIDENTS  -->
 <div class="page" id="page-incidents">
 
   <div class="tbl-wrap">
@@ -646,7 +646,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── BLOCKS ─────────────────── -->
+<!--  BLOCKS  -->
 <div class="page" id="page-blocks">
 
   <div class="tbl-wrap">
@@ -671,7 +671,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── HONEYPOT ─────────────────── -->
+<!--  HONEYPOT  -->
 <div class="page" id="page-honeypot">
 
   <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
@@ -707,7 +707,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── FIM ─────────────────── -->
+<!--  FIM  -->
 <div class="page" id="page-fim">
 
   <div id="fim-disabled-msg" style="display:none" class="banner banner-warn">
@@ -743,7 +743,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── ML ─────────────────── -->
+<!--  ML  -->
 <div class="page" id="page-ml">
 
   <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
@@ -788,7 +788,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
-<!-- ─────────────────── LIVE FEED ─────────────────── -->
+<!--  LIVE FEED  -->
 <div class="page" id="page-feed">
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -811,7 +811,7 @@ const fmtTime=ts=>ts?new Date(ts*1000).toLocaleTimeString():'—';
 const token=()=>localStorage.getItem('cnsl_token')||'';
 const authHdr=()=>({'Content-Type':'application/json','Authorization':'Bearer '+token()});
 
-// ── Tab navigation ────────────────────────────────────────────────────────
+//  Tab navigation 
 function showTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -819,14 +819,14 @@ function showTab(name){
   $('page-'+name).classList.add('active');
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────
+//  Auth 
 async function doLogout(){
   await fetch('/api/logout',{method:'POST',headers:authHdr()}).catch(()=>{});
   localStorage.removeItem('cnsl_token');
   location.href='/login';
 }
 
-// ── API fetch helper ──────────────────────────────────────────────────────
+//  API fetch helper 
 async function apiFetch(url,opts={}){
   opts.headers={...authHdr(),...(opts.headers||{})};
   const r=await fetch(url,opts);
@@ -834,7 +834,7 @@ async function apiFetch(url,opts={}){
   return r.json();
 }
 
-// ── Charts ────────────────────────────────────────────────────────────────
+//  Charts 
 const tlChart=new Chart($('chart-timeline').getContext('2d'),{type:'line',
   data:{labels:[],datasets:[
     {label:'HIGH',data:[],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.1)',tension:.3,fill:true,pointRadius:2},
@@ -854,7 +854,7 @@ const sevChart=new Chart($('chart-severity').getContext('2d'),{type:'doughnut',
     plugins:{legend:{labels:{color:'#64748b',font:{size:10},boxWidth:10}}}}
 });
 
-// ── Live Feed ─────────────────────────────────────────────────────────────
+//  Live Feed 
 function addFeed(text,cls='feed-info'){
   const feed=$('live-feed');
   const line=document.createElement('div');
@@ -865,7 +865,7 @@ function addFeed(text,cls='feed-info'){
 }
 function clearFeed(){$('live-feed').innerHTML='';}
 
-// ── Fetchers ──────────────────────────────────────────────────────────────
+//  Fetchers 
 async function fetchSystem(){
   const d=await apiFetch('/api/system');
   if(!d)return;
@@ -1029,7 +1029,7 @@ async function fetchML(){
   $('ml-last-trained').textContent=d.last_trained||'never';
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────
+//  Actions 
 async function doUnblock(ip){
   await apiFetch('/api/unblock',{method:'POST',body:JSON.stringify({ip})});
   addFeed('Manual unblock: '+ip,'feed-ok');
@@ -1048,7 +1048,7 @@ async function doManualBlock(){
 }
 $('manual-block-ip').addEventListener('keydown',e=>{if(e.key==='Enter')doManualBlock();});
 
-// ── PDF Export ────────────────────────────────────────────────────────────
+//  PDF Export 
 async function exportPDF(){
   const btn=$('pdf-btn');
   btn.textContent='Preparing...';
@@ -1275,7 +1275,7 @@ async function exportPDF(){
   btn.disabled = false;
 }
 
-// ── SSE ───────────────────────────────────────────────────────────────────
+//  SSE 
 function connectSSE(){
   const es=new EventSource('/stream?token='+encodeURIComponent(token()));
   es.onmessage=e=>{
@@ -1312,7 +1312,7 @@ function connectSSE(){
   };
 }
 
-// ── Refresh loop ──────────────────────────────────────────────────────────
+//  Refresh loop 
 async function refresh(){
   await Promise.all([
     fetchStats(),fetchSystem(),fetchTimeline(),
@@ -1357,20 +1357,22 @@ class _RateLimiter:
 
 
 async def start_dashboard(
-    host:         str,
-    port:         int,
-    detector:     "Detector",
-    blocker:      "Blocker",
-    store:        "Store",
-    metrics:      "Metrics",
-    logger:       "JsonLogger",
-    auth:         "AuthManager",
-    dry_run:      bool = True,
-    rbac:         Any = None,
-    assets:       Any = None,
-    honeypot:     Any = None,
-    ml_detector:  Any = None,
-    fim:          Any = None,
+    host:          str,
+    port:          int,
+    detector:      "Detector",
+    blocker:       "Blocker",
+    store:         "Store",
+    metrics:       "Metrics",
+    logger:        "JsonLogger",
+    auth:          "AuthManager",
+    dry_run:       bool = True,
+    rbac:          Any = None,
+    assets:        Any = None,
+    honeypot:      Any = None,
+    ml_detector:   Any = None,
+    fim:           Any = None,
+    search_engine: Any = None,
+    es_pusher:     Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -1404,7 +1406,7 @@ async def start_dashboard(
 
     router = web.RouteTableDef()
 
-    # ── Auth helpers ──────────────────────────────────────────────────────────
+    #  Auth helpers 
 
     def _get_client_ip(req: web.Request) -> str:
         return req.headers.get("X-Forwarded-For", req.remote or "unknown").split(",")[0].strip()
@@ -1437,7 +1439,7 @@ async def start_dashboard(
             return web.json_response({"error": "Rate limit exceeded"}, status=429)
         return None
 
-    # ── Pages ─────────────────────────────────────────────────────────────────
+    #  Pages 
 
     @router.get("/login")
     async def login_page(_: web.Request) -> web.Response:
@@ -1452,7 +1454,7 @@ async def start_dashboard(
                 raise web.HTTPFound("/login")
         return web.Response(text=_HTML, content_type="text/html")
 
-    # ── Auth endpoints ────────────────────────────────────────────────────────
+    #  Auth endpoints 
 
     @router.post("/api/login")
     async def api_login(req: web.Request) -> web.Response:
@@ -1484,7 +1486,7 @@ async def start_dashboard(
             "default_password": auth.is_default_password(),
         })
 
-    # ── API endpoints ─────────────────────────────────────────────────────────
+    #  API endpoints 
 
     @router.get("/api/stats")
     async def api_stats(req: web.Request) -> web.Response:
@@ -1547,17 +1549,154 @@ async def start_dashboard(
         return web.json_response(rows)
 
 
+    @router.get("/api/events")
+    async def api_events(req: web.Request) -> web.Response:
+        """Raw recent events — alias for /api/incidents with richer fields."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        try:
+            limit = int(req.rel_url.query.get("limit", 50))
+            limit = max(1, min(limit, 500))
+        except (ValueError, TypeError):
+            limit = 50
+        rows = await store.recent_incidents(limit) if store.available else []
+        return web.json_response(rows)
+
+    @router.get("/api/search")
+    async def api_search(req: web.Request) -> web.Response:
+        """
+        Full-text search over incidents.
+
+        Query params:
+          q         KQL-like query string (e.g. "severity:HIGH", "country:China", "1.2.3.4")
+          severity  Filter by severity (HIGH / MEDIUM / LOW)
+          since     Unix timestamp — events after this time
+          until     Unix timestamp — events before this time
+          limit     Max results (default 50, max 500)
+          offset    Pagination offset (default 0)
+        """
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+
+        q        = req.rel_url.query.get("q", "")
+        severity = req.rel_url.query.get("severity")
+        try:
+            since  = float(req.rel_url.query["since"]) if "since" in req.rel_url.query else None
+            until  = float(req.rel_url.query["until"]) if "until" in req.rel_url.query else None
+            limit  = int(req.rel_url.query.get("limit", 50))
+            offset = int(req.rel_url.query.get("offset", 0))
+            limit  = max(1, min(limit, 500))
+            offset = max(0, offset)
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid numeric parameter"}, status=400)
+
+        if search_engine and search_engine.available:
+            result = await search_engine.search(
+                query=q, since=since, until=until,
+                severity=severity, limit=limit, offset=offset,
+            )
+        else:
+            # Fallback to store when search engine not available
+            rows   = await store.recent_incidents(limit) if store.available else []
+            result = {"total": len(rows), "hits": rows, "took_ms": 0}
+
+        return web.json_response(result)
+
+    @router.get("/api/aggregate")
+    async def api_aggregate(req: web.Request) -> web.Response:
+        """
+        Aggregations over incidents.
+
+        Query params:
+          since  Unix timestamp
+          until  Unix timestamp
+
+        Returns: by_severity, top_ips, top_countries, hourly buckets
+        """
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+
+        try:
+            since = float(req.rel_url.query["since"]) if "since" in req.rel_url.query else None
+            until = float(req.rel_url.query["until"]) if "until" in req.rel_url.query else None
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid numeric parameter"}, status=400)
+
+        if search_engine and search_engine.available:
+            result = await search_engine.aggregate(since=since, until=until)
+        else:
+            result = {}
+
+        return web.json_response(result)
+
+    @router.get("/api/search/es-status")
+    async def api_es_status(req: web.Request) -> web.Response:
+        """Elasticsearch/OpenSearch cluster health."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+
+        if es_pusher and es_pusher.enabled:
+            health = await es_pusher.health()
+        else:
+            health = {"enabled": False}
+
+        return web.json_response(health)
+
+    @router.post("/api/search/es-push")
+    async def api_es_push(req: web.Request) -> web.Response:
+        """Manually push recent incidents to Elasticsearch."""
+        if (r := _rate_check(req)): return r
+        user_payload, err = _require_auth(req)
+        if err: return err
+        if (r := _require_perm(user_payload, "block:write")): return r
+
+        if not es_pusher or not es_pusher.enabled:
+            return web.json_response({"error": "Elasticsearch not enabled"}, status=400)
+
+        try:
+            body  = await req.json()
+            limit = int(body.get("limit", 100))
+            limit = max(1, min(limit, 1000))
+        except Exception:
+            limit = 100
+
+        rows = await store.recent_incidents(limit) if store.available else []
+        from .normalizer import normalize
+        from .models import Event, now as _now
+        norms = []
+        for row in rows:
+            ev = Event(
+                ts     = float(row.get("ts", _now())),
+                source = row.get("source", "cnsl"),
+                kind   = row.get("kind") or row.get("cnsl_kind", "SSH_FAIL"),
+                src_ip = row.get("src_ip"),
+                user   = row.get("user"),
+                meta   = {},
+            )
+            norms.append(normalize(ev))
+
+        result = await es_pusher.push(norms)
+        return web.json_response(result)
+
     @router.get("/api/debug")
     async def api_debug(req: web.Request) -> web.Response:
         """Diagnostic endpoint — shows what modules are wired."""
         return web.json_response({
-            "ml_detector_wired":   ml_detector is not None,
-            "ml_detector_enabled": getattr(ml_detector, "enabled", None),
-            "fim_wired":           fim is not None,
-            "fim_enabled":         getattr(fim, "enabled", None),
-            "honeypot_wired":      honeypot is not None,
-            "honeypot_enabled":    getattr(honeypot, "enabled", None),
-            "assets_wired":        assets is not None,
+            "ml_detector_wired":    ml_detector is not None,
+            "ml_detector_enabled":  getattr(ml_detector, "enabled", None),
+            "fim_wired":            fim is not None,
+            "fim_enabled":          getattr(fim, "enabled", None),
+            "honeypot_wired":       honeypot is not None,
+            "honeypot_enabled":     getattr(honeypot, "enabled", None),
+            "assets_wired":         assets is not None,
+            "search_engine_wired":  search_engine is not None,
+            "search_engine_ready":  getattr(search_engine, "available", False),
+            "es_pusher_wired":      es_pusher is not None,
+            "es_pusher_enabled":    getattr(es_pusher, "enabled", False),
         })
 
     @router.get("/api/ml-status")
@@ -1617,6 +1756,113 @@ async def start_dashboard(
             "blocks_total":     metrics.blocks_total,
         })
 
+    @router.get("/api/events/normalized")
+    async def api_events_normalized(req: web.Request) -> web.Response:
+        """Return recent incidents as ECS-normalized JSON documents."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        try:
+            limit = int(req.rel_url.query.get("limit", 50))
+            limit = max(1, min(limit, 500))
+        except (ValueError, TypeError):
+            limit = 50
+        rows = await store.recent_incidents(limit) if store.available else []
+        from .normalizer import normalize
+        from .models import Event, now as _now
+        normalized = []
+        for row in rows:
+            # Reconstruct a minimal Event from stored incident for normalization
+            ev = Event(
+                ts     = float(row.get("ts", _now())),
+                source = row.get("source", "cnsl"),
+                kind   = row.get("kind") or row.get("cnsl_kind", "SSH_FAIL"),
+                src_ip = row.get("src_ip"),
+                user   = row.get("user"),
+                raw    = row.get("raw"),
+                meta   = {},
+            )
+            norm = normalize(ev)
+            d    = norm.to_dict()
+            # Merge stored incident fields
+            d["cnsl"]["severity"]   = row.get("severity")
+            d["cnsl"]["reasons"]    = row.get("reasons", [])
+            d["cnsl"]["fail_count"] = row.get("fail_count", 0)
+            d["cnsl"]["country"]    = row.get("country")
+            normalized.append(d)
+        return web.json_response(normalized)
+
+    @router.get("/api/export/ecs")
+    async def api_export_ecs(req: web.Request) -> web.Response:
+        """Export recent incidents as Elasticsearch bulk-index NDJSON."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        try:
+            limit = int(req.rel_url.query.get("limit", 200))
+            limit = max(1, min(limit, 1000))
+        except (ValueError, TypeError):
+            limit = 200
+        index = req.rel_url.query.get("index", "cnsl-events")
+        rows  = await store.recent_incidents(limit) if store.available else []
+        from .normalizer import normalize
+        from .models import Event, now as _now
+        import json as _json
+        lines = []
+        for row in rows:
+            ev = Event(
+                ts     = float(row.get("ts", _now())),
+                source = row.get("source", "cnsl"),
+                kind   = row.get("kind") or row.get("cnsl_kind", "SSH_FAIL"),
+                src_ip = row.get("src_ip"),
+                user   = row.get("user"),
+                meta   = {},
+            )
+            norm   = normalize(ev)
+            action = _json.dumps({"index": {"_index": index}})
+            doc    = norm.to_ecs_json()
+            lines.append(action)
+            lines.append(doc)
+        body = "\n".join(lines) + "\n"
+        return web.Response(
+            text         = body,
+            content_type = "application/x-ndjson",
+            headers      = {"Content-Disposition": "attachment; filename=cnsl-events.ndjson"},
+        )
+
+    @router.get("/api/export/cef")
+    async def api_export_cef(req: web.Request) -> web.Response:
+        """Export recent incidents as CEF (ArcSight/Splunk compatible) text."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        try:
+            limit = int(req.rel_url.query.get("limit", 200))
+            limit = max(1, min(limit, 1000))
+        except (ValueError, TypeError):
+            limit = 200
+        rows = await store.recent_incidents(limit) if store.available else []
+        from .normalizer import normalize
+        from .models import Event, now as _now
+        lines = []
+        for row in rows:
+            ev = Event(
+                ts     = float(row.get("ts", _now())),
+                source = row.get("source", "cnsl"),
+                kind   = row.get("kind") or row.get("cnsl_kind", "SSH_FAIL"),
+                src_ip = row.get("src_ip"),
+                user   = row.get("user"),
+                meta   = {},
+            )
+            norm = normalize(ev)
+            lines.append(norm.to_cef())
+        body = "\n".join(lines) + "\n"
+        return web.Response(
+            text         = body,
+            content_type = "text/plain",
+            headers      = {"Content-Disposition": "attachment; filename=cnsl-events.cef"},
+        )
+
     @router.get("/api/metrics")
     async def api_metrics(req: web.Request) -> web.Response:
         if (r := _rate_check(req)): return r
@@ -1657,7 +1903,7 @@ async def start_dashboard(
         await logger.log("dashboard_manual_unblock", {"ip": ip, "by": user_payload.get("sub")})
         return web.json_response({"unblocked": True, "ip": ip})
 
-    # ── SSE ───────────────────────────────────────────────────────────────────
+    #  SSE 
 
     @router.get("/stream")
     async def sse_stream(req: web.Request) -> web.Response:
@@ -1695,7 +1941,7 @@ async def start_dashboard(
 
         return resp
 
-    # ── Start ─────────────────────────────────────────────────────────────────
+    #  Start 
 
     app = web.Application()
     app.add_routes(router)

@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     country     TEXT,
     city        TEXT,
     isp         TEXT,
-    flag        TEXT
+    flag        TEXT,
+    kind        TEXT    DEFAULT 'SSH_FAIL'
 );
 
 CREATE TABLE IF NOT EXISTS blocks (
@@ -83,6 +84,14 @@ class Store:
             self._db.row_factory = aiosqlite.Row
             await self._db.executescript(_SCHEMA)
             await self._db.commit()
+            # Migration: add 'kind' column to existing DBs that don't have it
+            try:
+                await self._db.execute(
+                    "ALTER TABLE incidents ADD COLUMN kind TEXT DEFAULT 'SSH_FAIL'"
+                )
+                await self._db.commit()
+            except Exception:
+                pass  # Column already exists — normal on new installs
             self._available = True
             return True
         except ImportError:
@@ -104,11 +113,29 @@ class Store:
         if not self._available or self._db is None:
             return
         geo = geo or {}
+        # Infer kind from reasons — credential_breach means SSH_SUCCESS (success after fails)
+        kind = "SSH_FAIL"
+        reasons_str = " ".join(d.reasons).lower()
+        if "credential_breach" in reasons_str:
+            kind = "SSH_SUCCESS"
+        elif "web_exploit" in reasons_str or "web exploit" in reasons_str:
+            kind = "WEB_EXPLOIT_ATTEMPT"
+        elif "web_scan" in reasons_str or "web scan" in reasons_str:
+            kind = "WEB_SCAN"
+        elif "db_auth" in reasons_str or "database" in reasons_str:
+            kind = "DB_AUTH_FAIL"
+        elif "honeypot" in reasons_str:
+            kind = "FW_HONEYPOT_PORT"
+        elif "firewall" in reasons_str or "fw_block" in reasons_str:
+            kind = "FW_BLOCK"
+        elif "sudo" in reasons_str or "privilege" in reasons_str:
+            kind = "SUDO_FAIL"
+
         await self._db.execute(
             """INSERT INTO incidents
                (ts, time, src_ip, severity, reasons,
-                fail_count, uniq_users, country, city, isp, flag)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                fail_count, uniq_users, country, city, isp, flag, kind)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 time.time(), iso_time(),
                 d.src_ip, d.severity,
@@ -116,6 +143,7 @@ class Store:
                 d.fail_count, d.uniq_users,
                 geo.get("country"), geo.get("city"),
                 geo.get("isp"),    geo.get("flag"),
+                kind,
             ),
         )
         await self._db.commit()
