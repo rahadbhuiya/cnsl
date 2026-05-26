@@ -198,7 +198,7 @@ class AuthManager:
         self._max_attempts = 5
         self._lockout_sec  = 60
 
-    # ── Login ─────────────────────────────────────────────────────────────────
+    #  Login 
 
     def login(
         self, username: str, password: str, client_ip: str = "unknown"
@@ -234,7 +234,7 @@ class AuthManager:
         token = _sign_jwt(payload, self.secret)
         return token, None
 
-    # ── Verify ────────────────────────────────────────────────────────────────
+    #  Verify 
 
     def verify_token(self, token: str) -> Tuple[Optional[Dict], Optional[str]]:
         """Returns (payload, None) or (None, error)."""
@@ -247,7 +247,7 @@ class AuthManager:
             return None, "Invalid or expired token."
         return payload, None
 
-    # ── Logout ────────────────────────────────────────────────────────────────
+    #  Logout 
 
     def logout(self, token: str) -> None:
         self._blacklist.add(token)
@@ -255,7 +255,7 @@ class AuthManager:
         if len(self._blacklist) > 10000:
             self._blacklist = set(list(self._blacklist)[-5000:])
 
-    # ── Rate limiting ─────────────────────────────────────────────────────────
+    #  Rate limiting 
 
     def _is_rate_limited(self, ip: str) -> bool:
         cutoff = time.time() - self._lockout_sec
@@ -266,7 +266,7 @@ class AuthManager:
     def _record_attempt(self, ip: str) -> None:
         self._login_attempts[ip].append(time.time())
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    #  Helpers 
 
     def is_default_password(self) -> bool:
         """True if still using the default admin password."""

@@ -187,7 +187,7 @@ class Detector:
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
-    # ── Public: event ingestion ───────────────────────────────────────────────
+    #  Public: event ingestion 
 
     async def handle(self, ev: Event) -> None:
         """Main entry point — route event to the appropriate handler."""
@@ -216,7 +216,7 @@ class Detector:
         t  = ev.ts
         _prune_all(st, self.window_sec, t)
 
-        # ── Route by kind ────────────────────────────────────────────────────
+        #  Route by kind 
 
         if ev.kind == EventKind.SSH_FAIL:
             await self._on_ssh_fail(ip, ev, st, t)
@@ -236,13 +236,13 @@ class Detector:
         elif ev.kind in _SYS_KINDS:
             await self._on_sys_event(ip, ev, st, t)
 
-        # ── Correlator (cross-source, Phase 2) ───────────────────────────────
+        #  Correlator (cross-source, Phase 2) 
         if self.correlator:
             alert = self.correlator.ingest(ev)
             if alert and self.log_correlations:
                 await self._handle_correlation(alert)
 
-    # ── SSH handlers ──────────────────────────────────────────────────────────
+    #  SSH handlers 
 
     async def _on_ssh_fail(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         st.fails.append((t, 1))
@@ -296,7 +296,7 @@ class Detector:
                                fail_count=fail_count, uniq_users=_unique_users(st.users),
                                user=ev.user)
 
-    # ── Web handler (Phase 2) ─────────────────────────────────────────────────
+    #  Web handler (Phase 2) 
 
     async def _on_web_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         if ev.kind == "WEB_SCAN":
@@ -328,7 +328,7 @@ class Detector:
                                fail_count=scan_count + auth_count + expl_count,
                                uniq_users=0)
 
-    # ── DB handler (Phase 2) ──────────────────────────────────────────────────
+    #  DB handler (Phase 2) 
 
     async def _on_db_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         st.db_fails.append((t, 1))
@@ -345,7 +345,7 @@ class Detector:
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="db",
                                fail_count=db_count, uniq_users=0)
 
-    # ── Firewall handler (Phase 2) ────────────────────────────────────────────
+    #  Firewall handler (Phase 2) 
 
     async def _on_fw_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         # Honeypot port = instant HIGH — no threshold needed
@@ -358,7 +358,7 @@ class Detector:
         else:
             await self.logger.log("fw_block", {"ip": ip, "meta": ev.meta})
 
-    # ── Syslog handler (Phase 2) ──────────────────────────────────────────────
+    #  Syslog handler (Phase 2) 
 
     async def _on_sys_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         # sudo/su fail alone is LOW — correlator will escalate if SSH login preceded it
@@ -369,7 +369,7 @@ class Detector:
             "meta": ev.meta,
         })
 
-    # ── Correlation alert handler (Phase 2) ───────────────────────────────────
+    #  Correlation alert handler (Phase 2) 
 
     async def _handle_correlation(self, alert: "CorrelationAlert") -> None:
         ip  = alert.src_ip
@@ -408,7 +408,7 @@ class Detector:
         if alert.severity == Severity.HIGH:
             await self._block_ip(ip, f"correlation:{alert.rule_name}", st, detection)
 
-    # ── Core: fire incident ───────────────────────────────────────────────────
+    #  Core: fire incident 
 
     async def _maybe_fire(
         self,
@@ -505,7 +505,7 @@ class Detector:
         if sev == Severity.HIGH:
             await self._block_ip(ip, "; ".join(reasons), st, detection)
 
-    # ── Blocking ──────────────────────────────────────────────────────────────
+    #  Blocking 
 
     async def _block_ip(
         self,
@@ -538,7 +538,7 @@ class Detector:
             except Exception:
                 pass
 
-    # ── GeoIP helper ──────────────────────────────────────────────────────────
+    #  GeoIP helper 
 
     async def _get_geo(self, ip: str) -> Optional[Dict]:
         if not self.geoip:
@@ -548,7 +548,7 @@ class Detector:
         except Exception:
             return None
 
-    # ── Public: stats for dashboard ───────────────────────────────────────────
+    #  Public: stats for dashboard 
 
     def get_stats(self) -> List[Dict]:
         """Return snapshot of all tracked IPs — used by dashboard REST API."""

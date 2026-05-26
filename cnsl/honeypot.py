@@ -424,13 +424,13 @@ class FakeSSHServer:
 
             await asyncio.sleep(random.uniform(0.03, 0.15))
 
-            # ── exit / logout ────────────────────────────────────────────────
+            #  exit / logout 
             if cmd_lower in ("exit", "logout", "quit"):
                 writer.write(b"logout\r\n")
                 await writer.drain()
                 break
 
-            # ── cd ───────────────────────────────────────────────────────────
+            #  cd 
             elif cmd_lower == "cd":
                 target = cmd_args[0] if cmd_args else home
                 new_path = _resolve(target)
@@ -439,7 +439,7 @@ class FakeSSHServer:
                 else:
                     writer.write(f"bash: cd: {target}: No such file or directory\r\n".encode())
 
-            # ── ls ───────────────────────────────────────────────────────────
+            #  ls 
             elif cmd_lower == "ls":
                 flags = [a for a in cmd_args if a.startswith("-")]
                 paths = [a for a in cmd_args if not a.startswith("-")]
@@ -452,11 +452,11 @@ class FakeSSHServer:
                     out = _ls_output(target)
                     writer.write(out if out else b"")
 
-            # ── pwd ──────────────────────────────────────────────────────────
+            #  pwd 
             elif cmd_lower == "pwd":
                 writer.write((_cwd + "\r\n").encode())
 
-            # ── cat ──────────────────────────────────────────────────────────
+            #  cat 
             elif cmd_lower == "cat":
                 if not cmd_args:
                     writer.write(b"")
@@ -473,7 +473,7 @@ class FakeSSHServer:
                         else:
                             writer.write(f"cat: {cmd_args[0]}: No such file or directory\r\n".encode())
 
-            # ── echo / redirect (echo "x" > file) ───────────────────────────
+            #  echo / redirect (echo "x" > file) 
             elif cmd_lower == "echo":
                 if ">" in cmd or ">>" in cmd:
                     # Parse redirect: echo "content" > /path/file
@@ -494,14 +494,14 @@ class FakeSSHServer:
                     text = cmd[5:].strip().strip('"').strip("'") if len(cmd) > 5 else ""
                     writer.write((text + "\r\n").encode())
 
-            # ── touch ────────────────────────────────────────────────────────
+            #  touch 
             elif cmd_lower == "touch":
                 for arg in cmd_args:
                     target = _resolve(arg)
                     if target not in _session_fs and target not in _FILE_CONTENTS:
                         _session_fs[target] = b""
 
-            # ── mkdir ────────────────────────────────────────────────────────
+            #  mkdir 
             elif cmd_lower == "mkdir":
                 for arg in cmd_args:
                     if arg.startswith("-"):
@@ -511,7 +511,7 @@ class FakeSSHServer:
                     if target not in _FS:
                         _FS[target] = []
 
-            # ── rm ───────────────────────────────────────────────────────────
+            #  rm 
             elif cmd_lower == "rm":
                 real_args = [a for a in cmd_args if not a.startswith("-")]
                 recursive = "-r" in cmd_args or "-rf" in cmd_args or "-fr" in cmd_args
@@ -528,7 +528,7 @@ class FakeSSHServer:
                     else:
                         writer.write(f"rm: cannot remove '{arg}': No such file or directory\r\n".encode())
 
-            # ── cp ───────────────────────────────────────────────────────────
+            #  cp 
             elif cmd_lower == "cp":
                 real_args = [a for a in cmd_args if not a.startswith("-")]
                 if len(real_args) >= 2:
@@ -540,7 +540,7 @@ class FakeSSHServer:
                     else:
                         writer.write(f"cp: cannot stat '{real_args[0]}': No such file or directory\r\n".encode())
 
-            # ── mv ───────────────────────────────────────────────────────────
+            #  mv 
             elif cmd_lower == "mv":
                 real_args = [a for a in cmd_args if not a.startswith("-")]
                 if len(real_args) >= 2:
@@ -551,15 +551,15 @@ class FakeSSHServer:
                     else:
                         writer.write(f"mv: cannot stat '{real_args[0]}': No such file or directory\r\n".encode())
 
-            # ── chmod ────────────────────────────────────────────────────────
+            #  chmod 
             elif cmd_lower == "chmod":
                 pass   # silently succeed
 
-            # ── chown ────────────────────────────────────────────────────────
+            #  chown 
             elif cmd_lower == "chown":
                 pass   # silently succeed
 
-            # ── whoami / id ──────────────────────────────────────────────────
+            #  whoami / id 
             elif cmd_lower == "whoami":
                 writer.write(f"{user}\r\n".encode())
 
@@ -567,7 +567,7 @@ class FakeSSHServer:
                 uid = "0" if user == "root" else "1000"
                 writer.write(f"uid={uid}({user}) gid={uid}({user}) groups={uid}({user})\r\n".encode())
 
-            # ── uname ────────────────────────────────────────────────────────
+            #  uname 
             elif cmd_lower == "uname":
                 if "-a" in cmd_args:
                     writer.write(f"Linux {self.fake_hostname} 5.15.0-91-generic #101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023 x86_64 x86_64 x86_64 GNU/Linux\r\n".encode())
@@ -580,15 +580,15 @@ class FakeSSHServer:
                 else:
                     writer.write(b"Linux\r\n")
 
-            # ── hostname ─────────────────────────────────────────────────────
+            #  hostname 
             elif cmd_lower == "hostname":
                 writer.write(f"{self.fake_hostname}\r\n".encode())
 
-            # ── uptime ───────────────────────────────────────────────────────
+            #  uptime 
             elif cmd_lower == "uptime":
                 writer.write(b" 09:00:01 up 1 day,  0:03,  1 user,  load average: 0.08, 0.03, 0.01\r\n")
 
-            # ── ps ───────────────────────────────────────────────────────────
+            #  ps 
             elif cmd_lower == "ps":
                 writer.write(
                     b"USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\r\n"
@@ -598,7 +598,7 @@ class FakeSSHServer:
                     b"root      1337  0.0  0.0  12784  1856 pts/0    R+   09:00   0:00 ps aux\r\n"
                 )
 
-            # ── top ──────────────────────────────────────────────────────────
+            #  top 
             elif cmd_lower == "top":
                 writer.write(
                     b"top - 09:00:01 up 1 day,  0:03,  1 user,  load average: 0.08, 0.03, 0.01\r\n"
@@ -610,7 +610,7 @@ class FakeSSHServer:
                     b"  412 root      20   0   65432   8192   6144 S   0.0   0.4   0:00.45 sshd\r\n"
                 )
 
-            # ── df ───────────────────────────────────────────────────────────
+            #  df 
             elif cmd_lower == "df":
                 writer.write(
                     b"Filesystem      1K-blocks    Used Available Use% Mounted on\r\n"
@@ -620,7 +620,7 @@ class FakeSSHServer:
                     b"tmpfs             1018456       0   1018456   0% /dev/shm\r\n"
                 )
 
-            # ── free ─────────────────────────────────────────────────────────
+            #  free 
             elif cmd_lower == "free":
                 writer.write(
                     b"               total        used        free      shared  buff/cache   available\r\n"
@@ -628,7 +628,7 @@ class FakeSSHServer:
                     b"Swap:              0           0           0\r\n"
                 )
 
-            # ── env / printenv ───────────────────────────────────────────────
+            #  env / printenv 
             elif cmd_lower in ("env", "printenv"):
                 writer.write((
                     f"USER={user}\r\nHOME={home}\r\nSHELL=/bin/bash\r\n"
@@ -637,12 +637,12 @@ class FakeSSHServer:
                     f"MAIL=/var/mail/root\r\nLOGNAME=root\r\n"
                 ).encode())
 
-            # ── history ──────────────────────────────────────────────────────
+            #  history 
             elif cmd_lower == "history":
                 hist = [f"    {i+1}  {c}" for i, c in enumerate(session.commands[:-1])]
                 writer.write(("\r\n".join(hist) + "\r\n").encode() if hist else b"")
 
-            # ── which / type ─────────────────────────────────────────────────
+            #  which / type 
             elif cmd_lower in ("which", "type"):
                 bins = {
                     "ls": "/bin/ls", "cat": "/bin/cat", "echo": "/bin/echo",
@@ -661,7 +661,7 @@ class FakeSSHServer:
                     else:
                         writer.write(f"{arg} not found\r\n".encode())
 
-            # ── ip / ifconfig ────────────────────────────────────────────────
+            #  ip / ifconfig 
             elif cmd_lower == "ip":
                 writer.write(
                     b"1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN\r\n"
@@ -681,7 +681,7 @@ class FakeSSHServer:
                     b"        inet 127.0.0.1  netmask 255.0.0.0\r\n"
                 )
 
-            # ── netstat / ss ─────────────────────────────────────────────────
+            #  netstat / ss 
             elif cmd_lower in ("netstat", "ss"):
                 writer.write(
                     b"Netid State  Recv-Q Send-Q  Local Address:Port  Peer Address:Port\r\n"
@@ -690,7 +690,7 @@ class FakeSSHServer:
                     b"tcp   ESTAB  0      0       10.0.0.1:22          10.0.0.2:54321\r\n"
                 )
 
-            # ── iptables ─────────────────────────────────────────────────────
+            #  iptables 
             elif cmd_lower == "iptables":
                 writer.write(
                     b"Chain INPUT (policy ACCEPT)\r\n"
@@ -700,14 +700,14 @@ class FakeSSHServer:
                     b"Chain OUTPUT (policy ACCEPT)\r\ntarget     prot opt source               destination\r\n"
                 )
 
-            # ── crontab ──────────────────────────────────────────────────────
+            #  crontab 
             elif cmd_lower == "crontab":
                 if "-l" in cmd_args:
                     writer.write(b"no crontab for root\r\n")
                 elif "-e" in cmd_args:
                     writer.write(b"")   # silently open editor (attacker sees nothing)
 
-            # ── systemctl / service ──────────────────────────────────────────
+            #  systemctl / service 
             elif cmd_lower == "systemctl":
                 if cmd_args and cmd_args[0] == "status":
                     svc = cmd_args[1] if len(cmd_args) > 1 else "unknown"
@@ -719,12 +719,12 @@ class FakeSSHServer:
                 else:
                     writer.write(b"")
 
-            # ── apt / apt-get ────────────────────────────────────────────────
+            #  apt / apt-get 
             elif cmd_lower in ("apt", "apt-get"):
                 writer.write(b"E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)\r\n"
                               b"E: Unable to acquire the dpkg frontend lock, are you root?\r\n")
 
-            # ── find ─────────────────────────────────────────────────────────
+            #  find 
             elif cmd_lower == "find":
                 path_arg = cmd_args[0] if cmd_args and not cmd_args[0].startswith("-") else _cwd
                 resolved = _resolve(path_arg)
@@ -734,7 +734,7 @@ class FakeSSHServer:
                     lines.append(f"{resolved.rstrip('/')}/{e}")
                 writer.write(("\r\n".join(lines) + "\r\n").encode())
 
-            # ── grep ─────────────────────────────────────────────────────────
+            #  grep 
             elif cmd_lower == "grep":
                 # For grep on real file contents, do basic search
                 if len(cmd_args) >= 2:
@@ -745,7 +745,7 @@ class FakeSSHServer:
                         matches = [l for l in content.decode(errors="ignore").split("\n") if pattern.lower() in l.lower()]
                         writer.write(("\r\n".join(matches) + "\r\n").encode() if matches else b"")
 
-            # ── wc ───────────────────────────────────────────────────────────
+            #  wc 
             elif cmd_lower == "wc":
                 if cmd_args:
                     target = _resolve(cmd_args[-1])
@@ -754,7 +754,7 @@ class FakeSSHServer:
                     words   = len(content.split())
                     writer.write(f"  {lines}  {words}  {len(content)} {cmd_args[-1]}\r\n".encode())
 
-            # ── wget / curl — simulate timeout ───────────────────────────────
+            #  wget / curl — simulate timeout 
             elif cmd_lower in ("wget", "curl"):
                 await asyncio.sleep(random.uniform(4, 10))
                 if cmd_lower == "wget":
@@ -767,12 +767,12 @@ class FakeSSHServer:
                 else:
                     writer.write(b"curl: (6) Could not resolve host\r\n")
 
-            # ── nc / ncat / netcat ───────────────────────────────────────────
+            #  nc / ncat / netcat 
             elif cmd_lower in ("nc", "ncat", "netcat"):
                 await asyncio.sleep(random.uniform(5, 15))
                 writer.write(b"")   # timeout silently
 
-            # ── python / python3 / perl / ruby ───────────────────────────────
+            #  python / python3 / perl / ruby 
             elif cmd_lower in ("python", "python3"):
                 if "-c" in cmd_args:
                     await asyncio.sleep(random.uniform(0.5, 1.5))
@@ -793,7 +793,7 @@ class FakeSSHServer:
                 await asyncio.sleep(random.uniform(1, 3))
                 writer.write(b"")
 
-            # ── bash / sh ────────────────────────────────────────────────────
+            #  bash / sh 
             elif cmd_lower in ("bash", "sh"):
                 if "-c" in cmd_args:
                     # Execute as nested command
@@ -811,7 +811,7 @@ class FakeSSHServer:
                 else:
                     writer.write(b"")   # spawn subshell silently
 
-            # ── sudo ─────────────────────────────────────────────────────────
+            #  sudo 
             elif cmd_lower == "sudo":
                 if user == "root":
                     # Already root — just run rest of command (ignore)
@@ -820,7 +820,7 @@ class FakeSSHServer:
                     writer.write(b"[sudo] password for " + user.encode() + b": \r\n"
                                  b"Sorry, try again.\r\n")
 
-            # ── passwd ───────────────────────────────────────────────────────
+            #  passwd 
             elif cmd_lower == "passwd":
                 writer.write(b"Changing password for root.\r\nCurrent password: ")
                 await writer.drain()
@@ -842,17 +842,17 @@ class FakeSSHServer:
                     pass
                 writer.write(b"passwd: password updated successfully\r\n")
 
-            # ── clear / reset ────────────────────────────────────────────────
+            #  clear / reset 
             elif cmd_lower in ("clear", "reset"):
                 writer.write(b"\033[2J\033[H")   # ANSI clear screen
 
-            # ── date ─────────────────────────────────────────────────────────
+            #  date 
             elif cmd_lower == "date":
                 from datetime import datetime, timezone
                 writer.write((datetime.now(timezone.utc).strftime(
                     "Wed May  1 09:00:01 UTC 2024") + "\r\n").encode())
 
-            # ── last ─────────────────────────────────────────────────────────
+            #  last 
             elif cmd_lower == "last":
                 writer.write(
                     b"root     pts/0        10.0.0.2         Tue Jan  1 00:00   still logged in\r\n"
@@ -860,7 +860,7 @@ class FakeSSHServer:
                     b"wtmp begins Mon Dec 25 00:00:00 2023\r\n"
                 )
 
-            # ── w / who ──────────────────────────────────────────────────────
+            #  w / who 
             elif cmd_lower in ("w", "who"):
                 writer.write(
                     b" 09:00:01 up 1 day,  0:03,  1 user,  load average: 0.08, 0.03, 0.01\r\n"
@@ -868,7 +868,7 @@ class FakeSSHServer:
                     b"root     pts/0    10.0.0.2         09:00    0.00s  0.02s  0.00s w\r\n"
                 )
 
-            # ── lsb_release ──────────────────────────────────────────────────
+            #  lsb_release 
             elif cmd_lower == "lsb_release":
                 writer.write(
                     b"No LSB modules are available.\r\n"
@@ -876,12 +876,12 @@ class FakeSSHServer:
                     b"Release:\t22.04\r\nCodename:\tjammy\r\n"
                 )
 
-            # ── dpkg / rpm ───────────────────────────────────────────────────
+            #  dpkg / rpm 
             elif cmd_lower in ("dpkg", "rpm"):
                 writer.write(b"dpkg-query: no packages found matching *\r\n"
                               if "-l" in cmd_args else b"")
 
-            # ── unknown command ───────────────────────────────────────────────
+            #  unknown command 
             else:
                 writer.write(f"{cmd_name}: command not found\r\n".encode())
 

@@ -138,5 +138,13 @@
   "behavioral_baseline": {
     "enabled":           true,
     "min_observations":  10
+  },
+
+  "syslog_receiver": {
+      "enabled":   true,
+      "host":      "0.0.0.0",
+      "udp_port":  5514,
+      "tcp_port":  5514
   }
+
 }

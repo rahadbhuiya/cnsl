@@ -20,12 +20,12 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
     v = _Validator(cfg, errors)
 
-    # ── Sources ───────────────────────────────────────────────────────────────
+    #  Sources 
     v.is_str("authlog_path")
     v.is_str("iface")
     v.is_bool("tcpdump_enabled")
 
-    # ── Thresholds ────────────────────────────────────────────────────────────
+    #  Thresholds 
     th = cfg.get("thresholds", {})
     if not isinstance(th, dict):
         errors.append("thresholds must be a dict")
@@ -37,7 +37,7 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
         tv.is_positive_int("success_after_fails_threshold", max_val=100)
         tv.is_positive_int("incident_cooldown_sec",         max_val=86400)
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    #  Actions 
     ac = cfg.get("actions", {})
     if not isinstance(ac, dict):
         errors.append("actions must be a dict")
@@ -48,7 +48,7 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
         av.is_one_of("block_backend", ["iptables", "ipset"])
         av.is_str("chain")
 
-    # ── Allowlist ─────────────────────────────────────────────────────────────
+    #  Allowlist 
     al = cfg.get("allowlist", [])
     if not isinstance(al, list):
         errors.append("allowlist must be a list")
@@ -60,14 +60,14 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
             except ValueError:
                 errors.append(f"allowlist[{i}]: invalid IP/CIDR: {entry!r}")
 
-    # ── Logging ───────────────────────────────────────────────────────────────
+    #  Logging 
     lg = cfg.get("logging", {})
     if isinstance(lg, dict):
         lv = _Validator(lg, errors, prefix="logging")
         lv.is_str("json_log_path")
         lv.is_bool("console_verbose")
 
-    # ── Auth ──────────────────────────────────────────────────────────────────
+    #  Auth 
     auth = cfg.get("auth", {})
     if isinstance(auth, dict) and auth.get("enabled"):
         if not auth.get("secret_key"):
@@ -78,14 +78,14 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
         elif len(auth["secret_key"]) < 32:
             errors.append("auth.secret_key must be at least 32 characters")
 
-    # ── Dashboard ─────────────────────────────────────────────────────────────
+    #  Dashboard 
     dash = cfg.get("dashboard", {})
     if isinstance(dash, dict):
         port = dash.get("port", 8765)
         if not isinstance(port, int) or not (1024 <= port <= 65535):
             errors.append(f"dashboard.port must be between 1024 and 65535 (got {port!r})")
 
-    # ── Notifications ─────────────────────────────────────────────────────────
+    #  Notifications 
     notif = cfg.get("notifications", {})
     if isinstance(notif, dict):
         min_sev = notif.get("min_severity", "MEDIUM")

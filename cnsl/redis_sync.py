@@ -83,7 +83,7 @@ class RedisSync:
         # Callback: called when a remote node publishes an unblock
         self.on_remote_unblock: Optional[Callable] = None
 
-    # ── Keys ──────────────────────────────────────────────────────────────────
+    #  Keys 
 
     @property
     def _blocks_key(self) -> str:
@@ -96,7 +96,7 @@ class RedisSync:
     def _node_key(self) -> str:
         return f"{self.prefix}:node:{self.node_id}"
 
-    # ── Connection ────────────────────────────────────────────────────────────
+    #  Connection 
 
     async def connect(self) -> bool:
         """Connect to Redis. Returns True on success."""
@@ -139,7 +139,7 @@ class RedisSync:
     def connected(self) -> bool:
         return self._connected
 
-    # ── Block operations ──────────────────────────────────────────────────────
+    #  Block operations 
 
     async def publish_block(self, ip: str, reason: str, ttl_sec: int) -> bool:
         """Publish a block to the cluster."""
@@ -226,7 +226,7 @@ class RedisSync:
         except Exception:
             return []
 
-    # ── Subscribe loop ────────────────────────────────────────────────────────
+    #  Subscribe loop 
 
     async def subscribe_loop(self) -> None:
         """
@@ -294,7 +294,7 @@ class RedisSync:
                 if not self._connected:
                     await asyncio.sleep(30)
 
-    # ── Heartbeat ─────────────────────────────────────────────────────────────
+    #  Heartbeat 
 
     async def heartbeat_loop(self) -> None:
         """Announce this node's presence every 15 seconds."""
@@ -317,7 +317,8 @@ class RedisSync:
         except Exception:
             return [self.node_id]
 
-    # ── Cleanup ─────────────────────────────────────────────────────────────── rahad bhuiya
+    # Cleanup 
+    
 
     async def close(self) -> None:
         if self._redis:

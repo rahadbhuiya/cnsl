@@ -1,8 +1,8 @@
 """
 CNSL — Correlated Network Security Layer
-A pre-SIEM, intent-aware security layer for Linux servers.
+A lightweight SIEM for Linux — correlation, ML, honeypot, and search.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__  = "Rahad Bhuiya"
 __license__ = "MIT"

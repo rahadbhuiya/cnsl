@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="cnsl",
-    version="1.0.0",
+    version="1.1.0",
     author="Rahad Bhuiya",
-    description="Correlated Network Security Layer — A pre-SIEM, intent-aware security layer for Linux servers",
+    description="Correlated Network Security Layer — A lightweight SIEM for Linux",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/rahadbhuiya/cnsl",

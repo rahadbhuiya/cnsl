@@ -294,5 +294,6 @@ class BehavioralBaseline:
             "login_hours":   dict(prof.login_hours),
         }
 
+
     def profile_count(self) -> int:
         return len(self._profiles)

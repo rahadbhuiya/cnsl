@@ -43,9 +43,8 @@ def _is_private(ip: str) -> bool:
 
 def _flag(code: str) -> str:
     if len(code) != 2:
-        return "🌐"
-    return chr(0x1F1E0 + ord(code[0]) - ord("A")) + \
-           chr(0x1F1E0 + ord(code[1]) - ord("A"))
+        return "[??]"
+    return f"[{code.upper()}]"
 
 
 class GeoIP:
@@ -81,7 +80,7 @@ class GeoIP:
             return {
                 "country": "Local/Private", "countryCode": "LO",
                 "city": "", "isp": "Local network",
-                "flag": "🏠", "proxy": False, "hosting": False,
+                "flag": "[LOCAL]", "proxy": False, "hosting": False,
                 "backend": "local",
             }
 
@@ -152,7 +151,7 @@ class GeoIP:
         return {
             "country": "Unknown", "countryCode": "??", "city": "",
             "isp": "", "org": "", "as": "", "proxy": False,
-            "hosting": False, "flag": "🌐", "backend": "unknown",
+            "hosting": False, "flag": "[??]", "backend": "unknown",
         }
 
     def get_cached(self, ip: str) -> Optional[Dict]:

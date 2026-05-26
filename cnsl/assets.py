@@ -156,7 +156,7 @@ class AssetInventory:
         self._assets:    Dict[str, Asset] = {}
         self._allowlist: Set[str]         = set()
 
-    # ── Setup ─────────────────────────────────────────────────────────────────
+    #  Setup 
 
     def set_allowlist(self, ips: List[str]) -> None:
         self._allowlist = set(ips)
@@ -164,7 +164,7 @@ class AssetInventory:
             a = self._get_or_create(ip)
             a.trust = "allowlisted"
 
-    # ── Ingestion ─────────────────────────────────────────────────────────────
+    #  Ingestion 
 
     def ingest_tcpdump_line(self, line: str, src_ip: Optional[str] = None) -> None:
         """Process one tcpdump output line."""
@@ -256,7 +256,7 @@ class AssetInventory:
         if a.trust not in ("allowlisted", "attacker"):
             a.trust = "known"
 
-    # ── Queries ───────────────────────────────────────────────────────────────
+    #  Queries 
 
     def all_assets(self) -> List[Dict]:
         return sorted(
@@ -293,7 +293,7 @@ class AssetInventory:
         a = self._assets.get(ip)
         return a.to_dict() if a else None
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    #  Internal 
 
     def _get_or_create(self, ip: str) -> Asset:
         if ip not in self._assets:

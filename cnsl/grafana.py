@@ -221,7 +221,7 @@ class GrafanaDashboard:
         panels = []
         pid    = 1
 
-        # ── Row: Overview ─────────────────────────────────────────────────────
+        #  Row: Overview 
         panels.append(_row_panel("Overview", y=0, pid=pid)); pid += 1
 
         stat_defs = [
@@ -238,7 +238,7 @@ class GrafanaDashboard:
             ))
             pid += 1
 
-        # ── Row: Trends ───────────────────────────────────────────────────────
+        #  Row: Trends 
         panels.append(_row_panel("Trends", y=5, pid=pid)); pid += 1
 
         panels.append(_timeseries_panel(
@@ -294,7 +294,7 @@ class GrafanaDashboard:
         ))
         pid += 1
 
-        # ── Row: Top attackers ────────────────────────────────────────────────
+        #  Row: Top attackers 
         panels.append(_row_panel("Top Attackers", y=22, pid=pid)); pid += 1
 
         panels.append(_bar_gauge_panel(
@@ -315,7 +315,7 @@ class GrafanaDashboard:
         ))
         pid += 1
 
-        # ── Row: System ───────────────────────────────────────────────────────
+        #  Row: System 
         panels.append(_row_panel("System", y=33, pid=pid)); pid += 1
 
         panels.append(_timeseries_panel(

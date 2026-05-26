@@ -38,7 +38,7 @@ from cnsl.notify   import Notifier
 from cnsl.store    import Store
 
 
-# ── Terminal colours ─────────────────────────────────────────────────────────
+#  Terminal colours 
 R   = "\033[91m"
 Y   = "\033[93m"
 G   = "\033[92m"
@@ -74,7 +74,7 @@ def section(title):
     print(f"{B}{BOLD}{'─'*54}{RST}")
 
 
-# ── Event factories ──────────────────────────────────────────────────────────
+#  Event factories 
 
 def make_fail(ip, user="root"):
     return Event(ts=now(), source="auth", kind=EventKind.SSH_FAIL,
@@ -117,7 +117,7 @@ def make_sudo_fail(ip, user="www-data"):
                  raw=f"sudo: {user}: authentication failure")
 
 
-# ── Setup ────────────────────────────────────────────────────────────────────
+#  Setup 
 
 async def setup():
     """Create a fully-wired test CNSL instance (dry-run, no real blocking)."""
@@ -154,7 +154,7 @@ async def setup():
     return detector, blocker, metrics, store, logger, notifier
 
 
-# ── Scenario 1: SSH Brute-force ──────────────────────────────────────────────
+#  Scenario 1: SSH Brute-force 
 
 async def scenario_brute_force(detector, blocker):
     section("Scenario 1 — SSH Brute-force")
@@ -176,7 +176,7 @@ async def scenario_brute_force(detector, blocker):
         log(f"MEDIUM alert raised for {ip}", Y)
 
 
-# ── Scenario 2: Credential Stuffing ─────────────────────────────────────────
+#  Scenario 2: Credential Stuffing 
 
 async def scenario_credential_stuffing(detector, blocker):
     section("Scenario 2 — Credential Stuffing")
@@ -195,7 +195,7 @@ async def scenario_credential_stuffing(detector, blocker):
     log(f"Credential stuffing detected from {ip}", Y)
 
 
-# ── Scenario 3: Credential Breach (HIGH) ─────────────────────────────────────
+#  Scenario 3: Credential Breach (HIGH) 
 
 async def scenario_credential_breach(detector, blocker):
     section("Scenario 3 — Credential Breach  (HIGH severity)")
@@ -219,7 +219,7 @@ async def scenario_credential_breach(detector, blocker):
         log(f"HIGH ALERT — {ip} flagged  (dry-run, no real block)", R)
 
 
-# ── Scenario 4: Web Scanner + Exploit ────────────────────────────────────────
+#  Scenario 4: Web Scanner + Exploit 
 
 async def scenario_web(detector, blocker):
     section("Scenario 4 — Web Scanner + Exploit Attempt")
@@ -245,7 +245,7 @@ async def scenario_web(detector, blocker):
         log(f"Web attack logged from {ip}", Y)
 
 
-# ── Scenario 5: Database Brute-force ─────────────────────────────────────────
+#  Scenario 5: Database Brute-force 
 
 async def scenario_db(detector, blocker):
     section("Scenario 5 — Database Brute-force")
@@ -262,7 +262,7 @@ async def scenario_db(detector, blocker):
     log(f"Database brute-force logged from {ip}", Y)
 
 
-# ── Scenario 6: Privilege Escalation ─────────────────────────────────────────
+#  Scenario 6: Privilege Escalation 
 
 async def scenario_priv_escalation(detector, blocker):
     section("Scenario 6 — Privilege Escalation")
@@ -284,7 +284,7 @@ async def scenario_priv_escalation(detector, blocker):
     log(f"Privilege escalation attempt detected from {ip}", R)
 
 
-# ── Scenario 7: Honeypot Port Probe ──────────────────────────────────────────
+#  Scenario 7: Honeypot Port Probe 
 
 async def scenario_honeypot(detector, blocker):
     section("Scenario 7 — Honeypot Port Probe")
@@ -308,7 +308,7 @@ async def scenario_honeypot(detector, blocker):
         log(f"Honeypot probe logged from {ip}", Y)
 
 
-# ── Scenario 8: Multi-Source Correlation (HIGH) ───────────────────────────────
+#  Scenario 8: Multi-Source Correlation (HIGH) 
 
 async def scenario_correlation(detector, blocker):
     section("Scenario 8 — Multi-Source Correlation (HIGH)")
@@ -340,7 +340,7 @@ async def scenario_correlation(detector, blocker):
         log(f"HIGH — Multi-source attack from {ip} detected (correlator)", R)
 
 
-# ── Scenario 9: Auto-Unblock + Metrics dec_block ─────────────────────────────
+#  Scenario 9: Auto-Unblock + Metrics dec_block 
 
 async def scenario_unblock(detector, blocker, metrics):
     section("Scenario 9 — Auto-Unblock + Metrics Counter")
@@ -377,7 +377,7 @@ async def scenario_unblock(detector, blocker, metrics):
         log(f"IP not blocked — check threshold config", Y)
 
 
-# ── Scenario 10: Allowlist ────────────────────────────────────────────────────
+#  Scenario 10: Allowlist 
 
 async def scenario_allowlist(detector, blocker):
     section("Scenario 10 — Allowlisted IP (never blocked)")
@@ -396,7 +396,7 @@ async def scenario_allowlist(detector, blocker):
         log(f"Correct — {ip} was NOT blocked (allowlist working)", G)
 
 
-# ── Scenario 12: Notification channel dry-run ─────────────────────────────────
+#  Scenario 12: Notification channel dry-run 
 
 async def scenario_notify(notifier):
     """
@@ -441,7 +441,7 @@ async def scenario_notify(notifier):
     log("Set bot_token + chat_id in config to enable real Telegram delivery", DIM)
 
 
-# ── Scenario 11: Metrics & DB stats ──────────────────────────────────────────
+#  Scenario 11: Metrics & DB stats 
 
 async def scenario_metrics(metrics, store):
     section("Scenario 11 — Metrics & Database Stats")
@@ -468,7 +468,7 @@ async def scenario_metrics(metrics, store):
                   f"{inc['src_ip']:<18}  {inc['time']}")
 
 
-# ── Interactive mode ──────────────────────────────────────────────────────────
+#  Interactive mode 
 
 async def interactive_mode(detector, blocker):
     section("Interactive Mode")
@@ -592,7 +592,7 @@ async def interactive_mode(detector, blocker):
             print(f"  Unknown command: {cmd}  (type 'quit' to exit)")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+#  Main 
 
 SCENARIO_MAP = {
     "brute":       "brute-force",
