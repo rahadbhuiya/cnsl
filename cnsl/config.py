@@ -82,6 +82,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "::1",
     ],
 
+    #  Country-based blocking 
+    # Block all IPs from specified countries BEFORE detection thresholds are hit.
+    # Requires GeoIP to be enabled. Uses ISO 3166-1 alpha-2 country codes.
+    # Example: ["CN", "RU", "KP", "IR"]
+    "country_block": {
+        "enabled":       False,
+        "countries":     [],           # ISO-3166-1 alpha-2 codes (uppercase)
+        "severity":      "HIGH",       # always HIGH — logged + blocked immediately
+        "allowlist":     [],           # IPs exempt from country blocking even if in blocked country
+    },
+
     #  GeoIP 
     "geoip": {
         # Set mmdb_path to use MaxMind offline (faster, unlimited).
@@ -330,6 +341,9 @@ def get_log_sources(cfg: Dict) -> Dict[str, str]:
 
 def get_allowlist(cfg: Dict) -> List[str]:
     return cfg.get("allowlist", ["127.0.0.1", "::1"])
+
+def get_country_block_cfg(cfg: Dict) -> Dict:
+    return cfg.get("country_block", DEFAULT_CONFIG["country_block"])
 
 def get_thresholds(cfg: Dict) -> Dict[str, Any]:
     return cfg.get("thresholds", DEFAULT_CONFIG["thresholds"])

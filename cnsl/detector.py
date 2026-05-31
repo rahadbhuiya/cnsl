@@ -4,13 +4,14 @@ cnsl/detector.py — Stateful, per-IP threat detection engine.
 Detection pipeline per event:
   1. Route event by kind (SSH, web, DB, firewall, syslog)
   2. Update per-IP sliding-window state
-  3. Evaluate detection rules
-  4. AbuseIPDB pre-check for known-bad IPs
-  5. Enrich with GeoIP
-  6. Correlate with cross-source rules (Phase 2)
-  7. Check behavioral baseline (Phase 2)
-  8. Log incident, persist, notify
-  9. Block if HIGH severity
+  3. Country-based block check (if enabled, fires before thresholds)
+  4. Evaluate detection rules
+  5. AbuseIPDB pre-check for known-bad IPs
+  6. Enrich with GeoIP
+  7. Correlate with cross-source rules (Phase 2)
+  8. Check behavioral baseline (Phase 2)
+  9. Log incident, persist, notify
+  10. Block if HIGH severity
 
 Detection rules:
   SSH:
@@ -29,6 +30,9 @@ Detection rules:
   Firewall (Phase 2):
     HIGH    honeypot_port        hit on never-legitimate port
 
+  Country-based (Phase 3):
+    HIGH    country_block        IP from a country in blocked_countries list
+
   Cross-source (Phase 2, via Correlator):
     HIGH    web_recon_then_ssh
     HIGH    multi_service_brute_force
@@ -45,7 +49,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 from .blocker import Blocker
-from .config  import safe_int, get_thresholds
+from .config  import safe_int, get_thresholds, get_country_block_cfg
 from .logger  import JsonLogger
 from .models  import Detection, Event, EventKind, Severity, iso_time, now
 
@@ -167,6 +171,14 @@ class Detector:
         self.repeat_threshold   = safe_int(ac.get("repeat_offender_threshold"),   3)
         self.repeat_window      = safe_int(ac.get("repeat_offender_window_sec"),  3600)
 
+        # Country-based blocking
+        cb = get_country_block_cfg(cfg)
+        self.country_block_enabled   = bool(cb.get("enabled", False))
+        self.blocked_countries: Set[str] = set(
+            c.upper() for c in cb.get("countries", []) if isinstance(c, str)
+        )
+        self.country_block_allowlist: Set[str] = set(cb.get("allowlist", []))
+
         # Logging flags
         lg = cfg.get("logging", {})
         self.log_hints        = bool(lg.get("log_net_hints",    False))
@@ -212,6 +224,10 @@ class Detector:
         # Log all auth/multi-log events
         await self.logger.log("event_auth", ev.to_dict())
 
+        # Country-based blocking — check before threshold evaluation
+        if self.country_block_enabled and self.blocked_countries and ip not in self.country_block_allowlist:
+            await self._check_country_block(ip, ev)
+
         st = self._state[ip]
         t  = ev.ts
         _prune_all(st, self.window_sec, t)
@@ -243,6 +259,74 @@ class Detector:
                 await self._handle_correlation(alert)
 
     #  SSH handlers 
+
+    #  Country-based blocking 
+
+    async def _check_country_block(self, ip: str, ev: Event) -> None:
+        """Block IP immediately if it originates from a blocked country.
+
+        Uses cached GeoIP to avoid an extra lookup — if the IP has never been
+        seen before the geo dict is empty and the check is a no-op (the block
+        fires on the next event once the cache is warm, or when the lookup
+        completes asynchronously).
+        """
+        if not self.geoip:
+            return
+
+        geo = self.geoip.get_cached(ip)
+        if not geo:
+            # Trigger a background lookup so future events benefit from the cache
+            try:
+                geo = await self.geoip.lookup(ip)
+            except Exception:
+                return
+
+        if not geo:
+            return
+
+        code = geo.get("countryCode", "").upper()
+        if not code or code not in self.blocked_countries:
+            return
+
+        if self.blocker.is_blocked(ip):
+            return
+
+        country = geo.get("country", code)
+        reason  = f"country_block: {country} ({code}) is in the blocked-countries list"
+
+        await self.logger.log("country_block_triggered", {
+            "ip":          ip,
+            "country":     country,
+            "countryCode": code,
+            "event_kind":  ev.kind,
+        })
+
+        detection = Detection(
+            src_ip=ip,
+            severity=Severity.HIGH,
+            reasons=[reason],
+            fail_count=0,
+            uniq_users=0,
+            window_sec=0,
+        )
+
+        if self.metrics:
+            self.metrics.inc_incident(Severity.HIGH)
+
+        if self.store:
+            try:
+                await self.store.save_incident(detection, geo)
+            except Exception:
+                pass
+
+        if self.notifier:
+            try:
+                await self.notifier.send(detection, geo)
+            except Exception:
+                pass
+
+        st = self._state[ip]
+        await self._block_ip(ip, reason, st, detection)
 
     async def _on_ssh_fail(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         st.fails.append((t, 1))

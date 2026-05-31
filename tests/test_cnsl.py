@@ -640,3 +640,130 @@ class TestDashboardSignature:
         sig = inspect.signature(start_dashboard)
         assert sig.parameters["ml_detector"].default is None
         assert sig.parameters["fim"].default is None
+
+# v1.2.0 — country blocking + email notification
+
+
+class TestCountryBlockConfig:
+    """country_block config section is loaded with correct defaults."""
+
+    def test_country_block_defaults(self):
+        from cnsl.config import DEFAULT_CONFIG
+        cb = DEFAULT_CONFIG.get("country_block", {})
+        assert cb.get("enabled") is False
+        assert cb.get("countries") == []
+        assert cb.get("allowlist") == []
+
+    def test_country_block_accessor(self):
+        from cnsl.config import get_country_block_cfg, DEFAULT_CONFIG
+        cfg = {"country_block": {"enabled": True, "countries": ["CN", "RU"], "allowlist": []}}
+        result = get_country_block_cfg(cfg)
+        assert result["enabled"] is True
+        assert "CN" in result["countries"]
+
+    def test_country_block_missing_key_uses_default(self):
+        from cnsl.config import get_country_block_cfg
+        # When key absent, falls back to DEFAULT_CONFIG value (enabled=False)
+        result = get_country_block_cfg({})
+        assert result["enabled"] is False
+
+
+class TestCountryBlockDetector:
+    """Detector correctly loads country_block settings and builds the blocked set."""
+
+    def _make_detector(self, countries=None, enabled=True):
+        from unittest.mock import MagicMock
+        from cnsl.detector import Detector
+        from cnsl.blocker import Blocker
+        from cnsl.logger import JsonLogger
+
+        logger = MagicMock()
+        blocker = MagicMock(spec=Blocker)
+        blocker.dry_run = True
+        blocker.is_blocked = MagicMock(return_value=False)
+
+        cfg = {
+            "country_block": {
+                "enabled": enabled,
+                "countries": countries or ["CN", "RU", "KP"],
+                "allowlist": ["203.0.113.5"],
+            }
+        }
+        return Detector(cfg, logger, blocker)
+
+    def test_blocked_countries_loaded(self):
+        d = self._make_detector(countries=["CN", "RU"])
+        assert "CN" in d.blocked_countries
+        assert "RU" in d.blocked_countries
+
+    def test_country_block_allowlist_loaded(self):
+        d = self._make_detector()
+        assert "203.0.113.5" in d.country_block_allowlist
+
+    def test_country_block_disabled(self):
+        d = self._make_detector(enabled=False)
+        assert d.country_block_enabled is False
+
+    def test_country_codes_uppercased(self):
+        """Lowercase codes in config are normalised to uppercase."""
+        d = self._make_detector(countries=["cn", "ru"])
+        assert "CN" in d.blocked_countries
+        assert "RU" in d.blocked_countries
+
+
+class TestEmailNotifyConfig:
+    """Email notification config section is present in DEFAULT_CONFIG and notify.py."""
+
+    def test_default_config_has_notifications(self):
+        from cnsl.config import DEFAULT_CONFIG
+        n = DEFAULT_CONFIG.get("notifications", {})
+        assert "telegram" in n
+        assert "discord" in n
+        assert "slack" in n
+
+    def test_notifier_email_skipped_when_disabled(self):
+        """Notifier.send must not crash when email is configured but disabled."""
+        import asyncio
+        from cnsl.notify import Notifier
+        from cnsl.models import Detection
+
+        cfg = {
+            "notifications": {
+                "min_severity": "LOW",
+                "email": {
+                    "enabled": False,
+                    "smtp_host": "smtp.example.com",
+                    "smtp_port": 587,
+                    "username": "u",
+                    "password": "p",
+                    "to": ["admin@example.com"],
+                },
+            }
+        }
+        notifier = Notifier(cfg)
+        d = Detection(src_ip="1.2.3.4", severity="HIGH",
+                      reasons=["test"], fail_count=1,
+                      uniq_users=1, window_sec=60)
+        # Must not raise
+        asyncio.run(notifier.send(d, None))
+
+    def test_smtp_send_swallows_connection_errors(self):
+        """_smtp_send must not raise even if the SMTP server is unreachable."""
+        from cnsl.notify import _smtp_send
+        from email.mime.multipart import MIMEMultipart
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "test"
+        msg["From"] = "a@example.com"
+        msg["To"] = "b@example.com"
+
+        # 127.0.0.1:1 — nothing listening, ConnectionRefusedError expected internally
+        _smtp_send(
+            host="127.0.0.1", port=1,
+            username="", password="",
+            from_addr="a@example.com",
+            to_addrs=["b@example.com"],
+            msg=msg,
+            use_tls=False, use_ssl=False,
+        )
+        # If we reach here the function swallowed the error correctly

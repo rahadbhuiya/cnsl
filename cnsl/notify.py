@@ -6,6 +6,7 @@ Supported channels:
   - Discord Webhook
   - Slack Webhook
   - Generic HTTP webhook (POST JSON)
+  - Email (SMTP / STARTTLS / SSL)
 
 Configure in config.json under "notifications": { ... }
 All channels are optional and independent — failure in one
@@ -16,6 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, List, Optional
 
 from .models import Detection, iso_time
@@ -129,6 +134,10 @@ class Notifier:
         if wh.get("enabled"):
             tasks.append(self._send_webhook(wh, detection, geo))
 
+        em = self._cfg.get("email", {})
+        if em.get("enabled"):
+            tasks.append(self._send_email(em, detection, geo, msg))
+
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             # Silently swallow errors so a broken channel never kills the engine
@@ -193,6 +202,115 @@ class Notifier:
         }
         await _post_json(cfg["url"], payload, headers=headers)
 
+    #  Email (SMTP) 
+
+    async def _send_email(
+        self,
+        cfg: Dict,
+        d: Detection,
+        geo: Optional[Dict],
+        plain_text: str,
+    ) -> None:
+        """Send alert via SMTP. Runs blocking smtplib in a thread executor."""
+        smtp_host = cfg.get("smtp_host", "")
+        smtp_port = int(cfg.get("smtp_port", 587))
+        username  = cfg.get("username", "")
+        password  = cfg.get("password", "")
+        from_addr = cfg.get("from", username)
+        to_addrs  = cfg.get("to", [])
+        use_tls   = cfg.get("use_tls", True)   # STARTTLS (port 587)
+        use_ssl   = cfg.get("use_ssl", False)   # Implicit SSL (port 465)
+        subject_prefix = cfg.get("subject_prefix", "[CNSL]")
+
+        if not smtp_host or not to_addrs:
+            return
+
+        subject = f"{subject_prefix} {d.severity} Alert — {d.src_ip}"
+
+        # Build HTML body
+        country = geo.get("country", "Unknown") if geo else "Unknown"
+        city    = geo.get("city", "") if geo else ""
+        isp     = geo.get("isp", "") if geo else ""
+        location = f"{country}, {city}" if city else country
+        color    = {"HIGH": "#e74c3c", "MEDIUM": "#e67e22", "LOW": "#3498db"}.get(
+            d.severity, "#95a5a6"
+        )
+        reasons_html = "".join(f"<li>{r}</li>" for r in d.reasons)
+
+        html_body = f"""
+<html><body style="font-family:monospace;background:#1a1a1a;color:#e0e0e0;padding:24px">
+<div style="max-width:600px;margin:auto;background:#2a2a2a;border-radius:8px;
+            border-left:4px solid {color};padding:20px">
+  <h2 style="color:{color};margin:0 0 16px">CNSL ALERT — {d.severity}</h2>
+  <table style="width:100%;border-collapse:collapse">
+    <tr><td style="padding:4px 0;color:#888;width:120px">IP</td>
+        <td style="color:#fff;font-weight:bold">{d.src_ip}</td></tr>
+    <tr><td style="padding:4px 0;color:#888">Location</td>
+        <td>{location}</td></tr>
+    <tr><td style="padding:4px 0;color:#888">ISP</td>
+        <td>{isp or "—"}</td></tr>
+    <tr><td style="padding:4px 0;color:#888">Fails</td>
+        <td>{d.fail_count} (window: {d.window_sec}s)</td></tr>
+    <tr><td style="padding:4px 0;color:#888">Unique users</td>
+        <td>{d.uniq_users}</td></tr>
+    <tr><td style="padding:4px 0;color:#888">Time</td>
+        <td>{iso_time()}</td></tr>
+  </table>
+  <h3 style="color:#aaa;margin:16px 0 8px">Detection Reasons</h3>
+  <ul style="margin:0;padding-left:20px;color:#ccc">{reasons_html}</ul>
+  <p style="margin:16px 0 0;font-size:11px;color:#666">Sent by CNSL — Correlated Network Security Layer</p>
+</div></body></html>"""
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = from_addr
+        msg["To"]      = ", ".join(to_addrs) if isinstance(to_addrs, list) else to_addrs
+        msg.attach(MIMEText(plain_text, "plain"))
+        msg.attach(MIMEText(html_body, "html"))
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: _smtp_send(
+                smtp_host, smtp_port, username, password,
+                from_addr, to_addrs, msg, use_tls, use_ssl,
+            ),
+        )
+
+
+
+# SMTP helper
+
+
+def _smtp_send(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    from_addr: str,
+    to_addrs,
+    msg: MIMEMultipart,
+    use_tls: bool,
+    use_ssl: bool,
+) -> None:
+    """Blocking SMTP send — run in executor. Errors are swallowed."""
+    try:
+        recipients = to_addrs if isinstance(to_addrs, list) else [to_addrs]
+        if use_ssl:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, context=ctx, timeout=15) as s:
+                if username and password:
+                    s.login(username, password)
+                s.sendmail(from_addr, recipients, msg.as_string())
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as s:
+                if use_tls:
+                    s.starttls(context=ssl.create_default_context())
+                if username and password:
+                    s.login(username, password)
+                s.sendmail(from_addr, recipients, msg.as_string())
+    except Exception:
+        pass  # Notification failure must never crash the engine
 
 
 # HTTP helper

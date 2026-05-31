@@ -26,6 +26,12 @@
     "127.0.0.1"
   ],
 
+  "country_block": {
+    "enabled":   false,
+    "countries": [],
+    "allowlist": []
+  },
+
   "store": {
     "db_path": "/var/lib/cnsl/cnsl_state.db"
   },
@@ -55,7 +61,19 @@
     },
     "discord": { "enabled": false, "webhook_url": "" },
     "slack":   { "enabled": false, "webhook_url": "" },
-    "webhook": { "enabled": false, "url": "" }
+    "webhook": { "enabled": false, "url": "" },
+    "email": {
+      "enabled":        false,
+      "smtp_host":      "smtp.gmail.com",
+      "smtp_port":      587,
+      "use_tls":        true,
+      "use_ssl":        false,
+      "username":       "your-email@gmail.com",
+      "password":       "your-app-password",
+      "from":           "CNSL Alerts <your-email@gmail.com>",
+      "to":             ["admin@example.com"],
+      "subject_prefix": "[CNSL]"
+    }
   },
 
   "geoip": {

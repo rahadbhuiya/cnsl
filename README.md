@@ -6,8 +6,8 @@
   <a href="https://github.com/rahadbhuiya/cnsl/actions"><img src="https://github.com/rahadbhuiya/cnsl/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/tests-48%20passing-brightgreen" alt="48 Tests Passing">
-  <img src="https://img.shields.io/badge/version-1.1.0-blue" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/tests-58%20passing-brightgreen" alt="58 Tests Passing">
+  <img src="https://img.shields.io/badge/version-1.2.0-blue" alt="Version 1.2.0">
   <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Linux">
 </p>
 
@@ -16,7 +16,7 @@
 Correlates SSH, web, database, and firewall signals to detect attacks  
 that no single log source can see alone — then blocks them automatically.
 
-[Quick Start](#quick-start) · [Features](#features) · [Dashboard](#dashboard) · [API](#rest-api) · [Docs](#how-to-run-step-by-step) · [Changelog](#changelog)
+[Quick Start](#quick-start) · [Features](#features) · [Dashboard](#dashboard) · [API](#rest-api) · [Docs](docs/) · [Changelog](#changelog)
 
 </div>
 
@@ -47,7 +47,7 @@ DB auth fail  from 45.33.32.1  --+
 | Live web dashboard | No | No | Yes |
 | GeoIP + threat intelligence | No | No | Yes |
 | File integrity monitoring | No | No | Yes |
-| Telegram / Discord / Slack | No | No | Yes |
+| Telegram / Discord / Slack / Email | No | No | Yes |
 | Redis distributed blocklist | No | No | Yes |
 | Prometheus + Grafana | No | No | Yes |
 | SOC2 / PCI-DSS compliance reports | No | No | Yes |
@@ -91,6 +91,7 @@ DB auth fail  from 45.33.32.1  --+
 | Detection | Privilege escalation (sudo/su after login) |
 | Correlation | 6 cross-source rules — web+SSH, multi-service, kill chain |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
+| Response | Country-based blocking — block entire countries before thresholds fire |
 | Response | Honeypot redirect — attacker lands on a fake Ubuntu shell (40+ commands) |
 | Response | Redis distributed blocklist — sync blocks across a server cluster |
 | Intelligence | GeoIP enrichment (MaxMind offline or ip-api.com fallback) |
@@ -196,6 +197,21 @@ Reports:
 
 ---
 
+## Documentation
+
+Detailed guides live in [`docs/`](docs/):
+
+| Guide | Contents |
+|:---|:---|
+| [Installation](docs/installation.md) | Install, Docker, systemd service, OS-specific paths |
+| [Configuration](docs/configuration.md) | Full config reference for every setting |
+| [API](docs/api.md) | REST endpoint list, auth, examples |
+| [Notifications](docs/notifications.md) | Telegram, Discord, Slack, Email, webhook setup |
+| [Country Blocking](docs/country-blocking.md) | Country-based blocking, ISO codes, allowlist |
+| [Architecture](docs/architecture.md) | Module map, event flow, concurrency model |
+
+---
+
 ## How to Run (Step by Step)
 
 ### Step 1 — Minimal run (dry-run, no config needed)
@@ -232,6 +248,12 @@ Minimum required changes:
     "127.0.0.1",
     "YOUR_OWN_IP_HERE"
   ],
+
+  "country_block": {
+    "enabled":   false,
+    "countries": [],
+    "allowlist": []
+  },
 
   "actions": {
     "dry_run": false,
@@ -597,7 +619,17 @@ GET /api/aggregate
   "min_severity": "MEDIUM",
   "telegram": { "enabled": true, "bot_token": "...", "chat_id": "..." },
   "discord":  { "enabled": true, "webhook_url": "..." },
-  "slack":    { "enabled": true, "webhook_url": "..." }
+  "slack":    { "enabled": true, "webhook_url": "..." },
+  "email": {
+    "enabled":   true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "use_tls":   true,
+    "username":  "alerts@example.com",
+    "password":  "your-app-password",
+    "from":      "CNSL Alerts <alerts@example.com>",
+    "to":        ["admin@example.com"]
+  }
 }
 ```
 
@@ -737,7 +769,7 @@ docker run --rm \
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v --timeout=60
-# 48 passed
+# 58 passed
 ```
 
 ---
@@ -747,7 +779,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py          package version (1.1.0)
+│   ├── __init__.py          package version (1.2.0)
 │   ├── __main__.py          python -m cnsl entrypoint
 │   │
 │   ├── models.py            Event, Detection dataclasses
@@ -763,7 +795,7 @@ cnsl/
 │   ├── normalizer.py        ECS/CEF event normalization
 │   ├── search_engine.py     KQL search, aggregations, Elasticsearch push
 │   │
-│   ├── detector.py          stateful per-IP detection engine
+│   ├── detector.py          stateful per-IP detection engine + country blocking
 │   ├── correlator.py        cross-source correlation rules (6 rules)
 │   ├── ml_detector.py       ML anomaly detection (IsolationForest, auto-trains)
 │   ├── threat_intel.py      AbuseIPDB + behavioral baseline
@@ -782,7 +814,7 @@ cnsl/
 │   ├── metrics.py           Prometheus metrics
 │   ├── grafana.py           Grafana dashboard template generator
 │   ├── reporter.py          PDF / HTML compliance reports
-│   ├── notify.py            Telegram, Discord, Slack, webhook
+│   ├── notify.py            Telegram, Discord, Slack, Email, webhook
 │   ├── store.py             SQLite persistence (aiosqlite)
 │   └── engine.py            main async loop + CLI argument parser
 │
@@ -791,6 +823,14 @@ cnsl/
 │
 ├── config/
 │   └── config.example.json  annotated example config
+│
+├── docs/
+│   ├── installation.md      install, Docker, systemd
+│   ├── configuration.md     full config reference
+│   ├── api.md               REST API endpoints + examples
+│   ├── notifications.md     Telegram, Discord, Slack, Email, webhook
+│   ├── country-blocking.md  country-based blocking guide
+│   └── architecture.md      module map, event flow, concurrency model
 │
 ├── .github/workflows/ci.yml
 ├── simulate.py              local test simulator (12 scenarios)
@@ -807,8 +847,8 @@ cnsl/
 - [ ] Alert Rule Engine — Sigma rule support, custom thresholds, enable/disable toggle
 - [ ] Case Management — incident tickets, assign to analyst, status tracking
 - [ ] Full UEBA — per-user behavior profiles, lateral movement detection
-- [ ] Country-based blocking (`block_countries: ["CN", "RU"]`)
-- [ ] Email notifications (SMTP)
+- [x] Country-based blocking — added in v1.2.0 (`country_block.countries: ["CN", "RU"]`)
+- [x] Email notifications (SMTP) — added in v1.2.0
 - [ ] 2FA for dashboard login
 - [ ] Community threat feed — opt-in shared blocklist
 - [ ] Kafka support for high-volume environments
@@ -844,6 +884,37 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v1.2.0 — Country blocking, Email notifications, Docs
+
+**New features**
+
+- `config.py` / `detector.py` — Country-based blocking. Set `country_block.enabled: true` and
+  `country_block.countries: ["CN", "RU"]` to block all traffic from specific countries before
+  detection thresholds fire. The first event from a blocked-country IP raises a `HIGH` severity
+  incident immediately. A per-rule `allowlist` lets you exempt specific trusted IPs.
+  Requires GeoIP to be enabled (MaxMind offline or ip-api.com fallback).
+
+- `notify.py` — Email (SMTP) notifications. Sends HTML + plaintext multipart alerts.
+  Supports STARTTLS (port 587), implicit SSL (port 465), and plain SMTP.
+  Configurable sender, multiple recipients, and subject prefix.
+  All SMTP I/O runs in a thread executor — the detection engine is never blocked.
+  Works with Gmail (App Password), Outlook, SendGrid, Postmark, and self-hosted mail servers.
+
+- `docs/` — Standalone documentation folder.
+  `installation.md`, `configuration.md`, `api.md`, `notifications.md`,
+  `country-blocking.md`, `architecture.md`.
+
+**Bug fixes**
+
+- `engine.py` — `--version` flag was reporting `CNSL 1.0.0` instead of the current version.
+  Now correctly reads from `__version__` in `__init__.py`.
+
+**Version**
+
+- `__init__.py`, `setup.py`, `engine.py` — bumped to `1.2.0`.
+
+---
 
 ### v1.1.0 — Remote ingestion, ECS normalization, search engine
 
