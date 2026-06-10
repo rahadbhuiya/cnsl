@@ -46,10 +46,10 @@ jobs:
       - name: Check version consistency
         run: |
           INIT_VER=$(python -c "from cnsl import __version__; print(__version__)")
-          SETUP_VER=$(python -c "import setup; import re; content=open('setup.py').read(); print(re.search(r'version=\"(.+?)\"', content).group(1))")
+          TOML_VER=$(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print(d['project']['version'])")
           ENGINE_VER=$(python -c "import re; content=open('cnsl/engine.py').read(); print(re.search(r'version=\"CNSL (.+?)\"', content).group(1))")
-          echo "__init__: $INIT_VER  setup.py: $SETUP_VER  engine.py: $ENGINE_VER"
-          [ "$INIT_VER" = "$SETUP_VER" ] && [ "$INIT_VER" = "$ENGINE_VER" ] || (echo "VERSION MISMATCH!" && exit 1)
+          echo "__init__: $INIT_VER  pyproject.toml: $TOML_VER  engine.py: $ENGINE_VER"
+          [ "$INIT_VER" = "$TOML_VER" ] && [ "$INIT_VER" = "$ENGINE_VER" ] || (echo "VERSION MISMATCH!" && exit 1)
 
   #  Lint 
   lint:
