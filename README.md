@@ -1,6 +1,5 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/rahadbhuiya/cnsl/main/docs/logo.png" alt="CNSL" width="130">
 
 # CNSL — Correlated Network Security Layer
 
