@@ -47,9 +47,13 @@ if TYPE_CHECKING:
 
 
 async def _collect_report_data(
-    store:       "Store",
-    fim:         Optional["FIMEngine"],
-    period_days: int,
+    store:         "Store",
+    fim:           Optional["FIMEngine"],
+    period_days:   int,
+    ueba:          Any = None,
+    case_manager:  Any = None,
+    rule_engine:   Any = None,
+    rate_limiter:  Any = None,
 ) -> Dict[str, Any]:
     """Pull all data needed for the report from SQLite."""
 
@@ -99,6 +103,69 @@ async def _collect_report_data(
         data["fim_alerts"] = []
         data["fim_alert_count"] = 0
         data["fim_critical"] = 0
+
+    # UEBA anomalies
+    if ueba and ueba.enabled:
+        try:
+            anomalies = await ueba.recent_anomalies(limit=1000)
+            period_anomalies = [a for a in anomalies if a.get("ts", 0) >= since]
+            data["ueba_anomalies"]    = period_anomalies
+            data["ueba_anomaly_count"] = len(period_anomalies)
+            data["ueba_profiles"]     = ueba.stats().get("total_profiles", 0)
+            data["ueba_anomalous_users"] = ueba.stats().get("anomalous_users", 0)
+            # Top anomalous users
+            profiles = ueba.list_profiles(limit=10, sort_by="anomaly_count")
+            data["ueba_top_users"] = [
+                p for p in profiles if p.get("anomaly_count", 0) > 0
+            ][:5]
+        except Exception:
+            data.update({"ueba_anomalies": [], "ueba_anomaly_count": 0,
+                         "ueba_profiles": 0, "ueba_anomalous_users": 0,
+                         "ueba_top_users": []})
+    else:
+        data.update({"ueba_anomalies": [], "ueba_anomaly_count": 0,
+                     "ueba_profiles": 0, "ueba_anomalous_users": 0,
+                     "ueba_top_users": []})
+
+    # Case management stats
+    if case_manager and case_manager.available:
+        try:
+            case_stats = await case_manager.stats()
+            data["cases"] = case_stats
+        except Exception:
+            data["cases"] = {}
+    else:
+        data["cases"] = {}
+
+    # Alert rule engine — rule violation counts
+    if rule_engine:
+        try:
+            rules = rule_engine.all_rules()
+            data["rules_summary"] = {
+                "total":    len(rules),
+                "enabled":  sum(1 for r in rules if r.get("enabled")),
+                "disabled": sum(1 for r in rules if not r.get("enabled")),
+                "overridden": sum(1 for r in rules if r.get("overridden")),
+            }
+            data["rules"] = rules
+        except Exception:
+            data["rules_summary"] = {}
+            data["rules"] = []
+    else:
+        data["rules_summary"] = {}
+        data["rules"] = []
+
+    # Rate limiter stats
+    if rate_limiter and rate_limiter.enabled:
+        try:
+            data["rate_limit_stats"] = rate_limiter.get_stats()
+            data["rate_limit_top"]   = rate_limiter.top_requesters(5)
+        except Exception:
+            data["rate_limit_stats"] = {}
+            data["rate_limit_top"]   = []
+    else:
+        data["rate_limit_stats"] = {}
+        data["rate_limit_top"]   = []
 
     return data
 
@@ -450,20 +517,32 @@ class Reporter:
     Generate security and compliance reports.
 
     Usage:
-        reporter = Reporter(store, fim, cfg)
+        reporter = Reporter(store, fim, cfg,
+                            ueba=ueba_engine,
+                            case_manager=case_manager,
+                            rule_engine=detector.rules,
+                            rate_limiter=rate_limiter)
         path = await reporter.generate(format="pdf", period_days=30)
     """
 
     def __init__(
         self,
-        store:  Optional["Store"],
-        fim:    Optional["FIMEngine"] = None,
-        cfg:    Dict[str, Any] = None,
+        store:        Optional["Store"],
+        fim:          Optional["FIMEngine"] = None,
+        cfg:          Dict[str, Any] = None,
+        ueba:         Any = None,
+        case_manager: Any = None,
+        rule_engine:  Any = None,
+        rate_limiter: Any = None,
     ):
-        self.store = store
-        self.fim   = fim
-        cfg        = cfg or {}
-        self._output_dir = cfg.get("reporting", {}).get("output_dir", "./reports")
+        self.store        = store
+        self.fim          = fim
+        self.ueba         = ueba
+        self.case_manager = case_manager
+        self.rule_engine  = rule_engine
+        self.rate_limiter = rate_limiter
+        cfg               = cfg or {}
+        self._output_dir  = cfg.get("reporting", {}).get("output_dir", "./reports")
 
     async def generate(
         self,
@@ -482,7 +561,13 @@ class Reporter:
                 f"cnsl_report_{ts_str}.{format}"
             )
 
-        data = await _collect_report_data(self.store, self.fim, period_days)
+        data = await _collect_report_data(
+            self.store, self.fim, period_days,
+            ueba=self.ueba,
+            case_manager=self.case_manager,
+            rule_engine=self.rule_engine,
+            rate_limiter=self.rate_limiter,
+        )
 
         loop = asyncio.get_running_loop()
 

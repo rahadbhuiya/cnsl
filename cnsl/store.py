@@ -17,6 +17,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .models import Detection, iso_time
+from .cases  import _CASE_SCHEMA
+from .ueba   import UEBA_SCHEMA
 
 
 
@@ -83,6 +85,8 @@ class Store:
             self._db = await aiosqlite.connect(self.db_path)
             self._db.row_factory = aiosqlite.Row
             await self._db.executescript(_SCHEMA)
+            await self._db.executescript(_CASE_SCHEMA)
+            await self._db.executescript(UEBA_SCHEMA)
             await self._db.commit()
             # Migration: add 'kind' column to existing DBs that don't have it
             try:

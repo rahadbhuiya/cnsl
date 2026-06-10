@@ -46,3 +46,6 @@ reportlab>=4.0.0
 
 # setuptools
 setuptools
+
+# 2FA (TOTP)
+pyotp>=2.9.0

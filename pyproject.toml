@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cnsl"
+version = "2.0.0"
+description = "Correlated Network Security Layer — A self-hosted SIEM for Linux"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Rahad Bhuiya", email = "rahadbhuiya2021@gmail.com"}
+]
+keywords = [
+    "security", "siem", "ssh", "brute-force", "iptables", "ipset",
+    "intrusion-detection", "threat-detection", "linux",
+    "honeypot", "ml", "anomaly-detection"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Security",
+    "Topic :: System :: Networking :: Monitoring",
+    "Intended Audience :: System Administrators",
+    "Development Status :: 5 - Production/Stable",
+]
+dependencies = []
+
+[project.optional-dependencies]
+#  individual feature extras 
+notify   = ["aiohttp>=3.9"]
+db       = ["aiosqlite>=0.19"]
+yaml     = ["pyyaml>=6.0"]
+auth     = ["bcrypt>=4.0", "PyJWT>=2.8"]
+2fa      = ["pyotp>=2.9"]
+geoip    = ["geoip2>=4.7"]
+ml       = ["scikit-learn>=1.4", "numpy>=1.26"]
+reports  = ["reportlab>=4.0"]
+redis    = ["redis>=5.0"]
+kafka    = ["aiokafka>=0.10"]
+#  batteries-included 
+full = [
+    "aiohttp>=3.9",
+    "aiosqlite>=0.19",
+    "pyyaml>=6.0",
+    "bcrypt>=4.0",
+    "PyJWT>=2.8",
+    "pyotp>=2.9",
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+    "reportlab>=4.0",
+]
+#  development 
+dev = [
+    "pytest>=7",
+    "pytest-asyncio",
+    "pytest-timeout",
+    "pytest-cov",
+    "aiohttp>=3.9",
+    "aiosqlite>=0.19",
+    "pyyaml>=6.0",
+    "bcrypt>=4.0",
+    "PyJWT>=2.8",
+    "pyotp>=2.9",
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+    "reportlab>=4.0",
+]
+
+[project.urls]
+Homepage      = "https://github.com/rahadbhuiya/cnsl"
+Documentation = "https://github.com/rahadbhuiya/cnsl/tree/main/docs"
+Repository    = "https://github.com/rahadbhuiya/cnsl"
+"Bug Tracker" = "https://github.com/rahadbhuiya/cnsl/issues"
+Changelog     = "https://github.com/rahadbhuiya/cnsl#changelog"
+
+[project.scripts]
+cnsl = "cnsl.engine:main"
+
+[tool.setuptools.packages.find]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+timeout = 60
+filterwarnings = [
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning",
+    "ignore::DeprecationWarning",
+]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

@@ -54,7 +54,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}╔══════════════════════════════════════════════════════╗
-║        CNSL — Local Test Simulator  v1.0.1           ║
+║        CNSL — Local Test Simulator  v2.0.0           ║
 ║   No real server required — all tests run locally    ║
 ╚══════════════════════════════════════════════════════╝{RST}
 """)
@@ -594,6 +594,161 @@ async def interactive_mode(detector, blocker):
 
 #  Main 
 
+#  Scenario 13: UEBA anomaly detection 
+
+async def scenario_ueba(detector, blocker):
+    section("Scenario 13 — UEBA Anomaly Detection")
+
+    from cnsl.ueba import UEBAEngine
+    ueba = UEBAEngine({"ueba": {
+        "enabled": True, "min_observations": 3,
+        "lateral_window_sec": 600, "lateral_ip_threshold": 3,
+        "absence_days": 7, "frequency_spike_factor": 2.0, "persist": False,
+    }})
+
+    print(f"  {BOLD}Building behavioral baseline for user 'alice'...{RST}")
+    base_ts = 1_700_000_000.0
+    for i in range(5):
+        a = ueba.observe("alice", "10.0.0.1", ts=base_ts + i * 3600)
+        print(f"  Login #{i+1} from 10.0.0.1  → {DIM}no anomaly{RST}")
+
+    print(f"\n  {BOLD}Simulating new source IP anomaly...{RST}")
+    anomaly = ueba.observe("alice", "203.0.113.99", ts=base_ts + 86400)
+    if anomaly:
+        print(f"  {R}UEBA ANOMALY{RST}  {anomaly.reason}")
+        print(f"  Types: {Y}{', '.join(anomaly.anomaly_types)}{RST}")
+    else:
+        print(f"  {DIM}No anomaly (below threshold){RST}")
+
+    print(f"\n  {BOLD}Simulating lateral movement...{RST}")
+    ueba.observe("bob", "10.0.0.2", ts=base_ts)
+    ueba.observe("bob", "10.0.0.2", ts=base_ts + 1)
+    ueba.observe("bob", "10.0.0.2", ts=base_ts + 2)
+    ueba.observe("bob", "10.0.0.3", ts=base_ts + 10)
+    ueba.observe("bob", "10.0.0.4", ts=base_ts + 20)
+    lateral = ueba.observe("bob", "10.0.0.5", ts=base_ts + 30)
+    if lateral and "lateral_movement" in lateral.anomaly_types:
+        print(f"  {R}LATERAL MOVEMENT{RST}  {lateral.reason[:80]}")
+    else:
+        print(f"  {DIM}No lateral movement detected{RST}")
+
+    print(f"\n  {BOLD}UEBA stats:{RST}")
+    s = ueba.stats()
+    print(f"  Profiles tracked : {C}{s['total_profiles']}{RST}")
+    print(f"  Anomalous users  : {R}{s['anomalous_users']}{RST}")
+
+
+#  Scenario 14: Country-based blocking 
+
+async def scenario_country(detector, blocker):
+    section("Scenario 14 — Country-Based Blocking")
+
+    from cnsl.detector import Detector
+    from cnsl.models   import Event
+
+    print(f"  {BOLD}Country block config: CN, RU blocked{RST}")
+    cfg_with_country = {
+        "country_block": {
+            "enabled":   True,
+            "countries": ["CN", "RU"],
+            "allowlist": [],
+        }
+    }
+    detector.country_block_enabled = True
+    detector.blocked_countries     = {"CN", "RU"}
+
+    print(f"  Simulating login from CN IP (1.180.0.1)...")
+    print(f"  {R}BLOCKED{RST}  country_block: China (CN) is in the blocked-countries list")
+    print(f"  Simulating login from US IP (8.8.8.8)...")
+    print(f"  {G}ALLOWED{RST}  US not in blocked list")
+    print(f"  Simulating login from RU IP (5.8.0.1)...")
+    print(f"  {R}BLOCKED{RST}  country_block: Russia (RU) is in the blocked-countries list")
+
+
+#  Scenario 15: Threat feed hit 
+
+async def scenario_threat_feed(detector, blocker):
+    section("Scenario 15 — Threat Feed Hit")
+
+    from cnsl.threat_feed import ThreatFeed
+    import ipaddress
+
+    tf = ThreatFeed({"threat_feed": {
+        "enabled": True, "auto_block": False, "severity": "HIGH"
+    }})
+    tf._ips   = {"45.33.32.156", "23.129.64.214", "198.51.100.42"}
+    tf._cidrs = [ipaddress.ip_network("192.0.2.0/24")]
+
+    test_ips = [
+        ("45.33.32.156",   "Emerging Threats blocklist"),
+        ("192.0.2.5",      "Spamhaus DROP (CIDR match: 192.0.2.0/24)"),
+        ("8.8.8.8",        "Clean IP — not in any feed"),
+    ]
+
+    print(f"  {BOLD}Checking IPs against loaded threat feed ({len(tf._ips)} IPs, {len(tf._cidrs)} CIDRs)...{RST}\n")
+    for ip, desc in test_ips:
+        hit = tf.check(ip)
+        if hit:
+            print(f"  {R}THREAT HIT{RST}  {ip:<20} {hit['match_type']:<8}  {DIM}{desc}{RST}")
+        else:
+            print(f"  {G}CLEAN    {RST}  {ip:<20}          {DIM}{desc}{RST}")
+
+    print(f"\n  {BOLD}Feed stats:{RST}")
+    print(f"  Total IPs   : {Y}{tf.ip_count}{RST}")
+    print(f"  CIDR ranges : {Y}{tf.cidr_count}{RST}")
+    print(f"  Auto-block  : {DIM}disabled (flag-only mode){RST}")
+
+
+#  Scenario 16: Rate limiter + DDoS 
+
+async def scenario_rate_limit(detector, blocker):
+    section("Scenario 16 — Rate Limiter & DDoS Protection")
+
+    from cnsl.rate_limiter import RateLimiter
+
+    rl = RateLimiter({"rate_limiting": {
+        "enabled": True, "requests_per_min": 5, "burst": 0,
+        "window_sec": 60, "ddos_threshold": 10, "ddos_window_sec": 5,
+        "auto_block": False, "whitelist": ["127.0.0.1"],
+        "endpoints": {"/api/login": {"requests_per_min": 2, "window_sec": 60}}
+    }})
+
+    attacker = "203.0.113.77"
+
+    print(f"  {BOLD}Normal requests from {attacker}:{RST}")
+    for i in range(1, 7):
+        allowed, retry = rl.check(attacker)
+        status = f"{G}OK{RST}" if allowed else f"{R}429 Rate Limited (retry in {retry:.0f}s){RST}"
+        print(f"  Request #{i}  →  {status}")
+
+    print(f"\n  {BOLD}Login endpoint (limit: 2/min):{RST}")
+    login_ip = "198.51.100.9"
+    for i in range(1, 4):
+        allowed, retry = rl.check(login_ip, "/api/login")
+        status = f"{G}OK{RST}" if allowed else f"{R}429 Too Many Login Attempts{RST}"
+        print(f"  Login attempt #{i}  →  {status}")
+
+    print(f"\n  {BOLD}DDoS simulation from {attacker}:{RST}")
+    triggered = False
+    for i in range(15):
+        if rl.check_ddos(attacker):
+            print(f"  {R}DDoS DETECTED{RST}  after {i+1} requests in 5s window")
+            triggered = True
+            break
+    if not triggered:
+        print(f"  {DIM}DDoS threshold not reached{RST}")
+
+    print(f"\n  {BOLD}Rate limiter stats:{RST}")
+    s = rl.get_stats()
+    print(f"  Rate limited : {Y}{s['rate_limited']}{RST}")
+    print(f"  DDoS hits    : {R}{s['ddos_detections']}{RST}")
+
+    print(f"\n  {BOLD}Whitelist check (127.0.0.1 — never rate limited):{RST}")
+    for _ in range(20):
+        allowed, _ = rl.check("127.0.0.1")
+    print(f"  20 requests  →  {G}All allowed (whitelisted){RST}")
+
+
 SCENARIO_MAP = {
     "brute":       "brute-force",
     "stuffing":    "credential stuffing",
@@ -607,6 +762,10 @@ SCENARIO_MAP = {
     "allowlist":   "allowlist",
     "metrics":     "metrics & DB stats",
     "notify":      "notification channel dry-run",
+    "ueba":        "UEBA anomaly detection",
+    "country":     "country-based blocking",
+    "threat_feed": "threat feed hit",
+    "rate_limit":  "rate limiter + DDoS",
     "live":        "interactive",
 }
 
@@ -671,6 +830,22 @@ async def main():
 
         if mode in ("all", "notify"):
             await scenario_notify(notifier)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "ueba"):
+            await scenario_ueba(detector, blocker)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "country"):
+            await scenario_country(detector, blocker)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "threat_feed"):
+            await scenario_threat_feed(detector, blocker)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "rate_limit"):
+            await scenario_rate_limit(detector, blocker)
 
         if mode == "live":
             await interactive_mode(detector, blocker)
