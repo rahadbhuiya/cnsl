@@ -2,10 +2,10 @@
 cnsl/rbac.py — Role-Based Access Control.
 
 Roles (least to most privileged):
-  viewer   — read-only: stats, incidents, blocks list, cases
-  analyst  — viewer + manual block/unblock + view FIM alerts + case management
+  viewer   — read-only: stats, incidents, blocks list
+  analyst  — viewer + manual block/unblock + view FIM alerts
   auditor  — analyst + generate reports + view all logs
-  admin    — full access including config, user management, case deletion
+  admin    — full access including config, user management
 
 Permission table:
   Permission              viewer  analyst  auditor  admin
@@ -15,11 +15,9 @@ Permission table:
   blocks_read             ✓       ✓        ✓        ✓
   top_attackers_read      ✓       ✓        ✓        ✓
   metrics_read            ✓       ✓        ✓        ✓
-  cases_read              ✓       ✓        ✓        ✓
   fim_read                        ✓        ✓        ✓
   block_write                     ✓        ✓        ✓
   unblock_write                   ✓        ✓        ✓
-  cases_write                     ✓        ✓        ✓
   report_generate                          ✓        ✓
   logs_read                                ✓        ✓
   asset_read                               ✓        ✓
@@ -27,7 +25,6 @@ Permission table:
   config_write                                      ✓
   user_manage                                       ✓
   honeypot_manage                                   ✓
-  cases_delete                                      ✓
 """
 
 from __future__ import annotations
@@ -59,11 +56,6 @@ class Perm:
     USER_MANAGE         = "user:manage"
     HONEYPOT_MANAGE     = "honeypot:manage"
 
-    # Case management permissions
-    CASES_READ          = "cases:read"
-    CASES_WRITE         = "cases:write"    # create, update status, assign, add notes
-    CASES_DELETE        = "cases:delete"   # admin only
-
 
 
 # Role definitions
@@ -75,14 +67,12 @@ _VIEWER_PERMS: FrozenSet[str] = frozenset({
     Perm.BLOCKS_READ,
     Perm.TOP_ATTACKERS_READ,
     Perm.METRICS_READ,
-    Perm.CASES_READ,
 })
 
 _ANALYST_PERMS: FrozenSet[str] = _VIEWER_PERMS | frozenset({
     Perm.FIM_READ,
     Perm.BLOCK_WRITE,
     Perm.UNBLOCK_WRITE,
-    Perm.CASES_WRITE,
 })
 
 _AUDITOR_PERMS: FrozenSet[str] = _ANALYST_PERMS | frozenset({
@@ -96,7 +86,6 @@ _ADMIN_PERMS: FrozenSet[str] = _AUDITOR_PERMS | frozenset({
     Perm.CONFIG_WRITE,
     Perm.USER_MANAGE,
     Perm.HONEYPOT_MANAGE,
-    Perm.CASES_DELETE,
 })
 
 ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {

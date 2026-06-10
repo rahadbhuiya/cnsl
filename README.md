@@ -1,18 +1,17 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/rahadbhuiya/cnsl/main/docs/logo.png" alt="CNSL" width="130">
-
 # CNSL — Correlated Network Security Layer
 
 <p>
   <a href="https://github.com/rahadbhuiya/cnsl/actions"><img src="https://github.com/rahadbhuiya/cnsl/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://codecov.io/gh/rahadbhuiya/cnsl"><img src="https://codecov.io/gh/rahadbhuiya/cnsl/branch/main/graph/badge.svg" alt="Coverage"></a>
-  <a href="https://pypi.org/project/cnsl"><img src="https://img.shields.io/pypi/v/cnsl" alt="PyPI"></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/tests-58%20passing-brightgreen" alt="58 Tests Passing">
+  <img src="https://img.shields.io/badge/version-1.2.0-blue" alt="Version 1.2.0">
+  <img src="https://img.shields.io/badge/platform-Linux-lightgrey" alt="Linux">
 </p>
 
-**A self-hosted SIEM for Linux — correlation, ML, honeypot, and search.**
+**A lightweight SIEM for Linux — correlation, ML, honeypot, and search.**
 
 Correlates SSH, web, database, and firewall signals to detect attacks  
 that no single log source can see alone — then blocks them automatically.
@@ -38,8 +37,6 @@ DB auth fail  from 45.33.32.1  --+
 ---
 
 ## CNSL vs Fail2ban vs SSHGuard
-
-Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service blocking is all you need, either one will serve you well. CNSL solves a different problem: **multi-source correlation** — detecting attackers that move across SSH, web, and database simultaneously.
 
 | Feature | Fail2ban | SSHGuard | CNSL |
 |:---|:---:|:---:|:---:|
@@ -156,15 +153,12 @@ pip install -e ".[dev]"     # + testing tools
 
 | Extra | Packages | Required for |
 |:---|:---|:---|
-| `full` | aiohttp, aiosqlite, pyyaml, bcrypt, PyJWT, pyotp, scikit-learn, numpy, reportlab | Dashboard, DB, auth, 2FA, ML, PDF reports |
+| `full` | aiohttp, aiosqlite, pyyaml, bcrypt, sklearn, numpy, reportlab | Dashboard, DB, auth, ML, PDF reports |
 | `auth` | bcrypt, PyJWT | Dashboard login |
-| `2fa` | pyotp | Two-factor authentication |
 | `db` | aiosqlite | SQLite persistence |
 | `geoip` | geoip2 | MaxMind offline GeoIP |
 | `ml` | scikit-learn, numpy | ML anomaly detection |
 | `reports` | reportlab | PDF compliance reports |
-| `redis` | redis | Distributed blocklist |
-| `kafka` | aiokafka | Kafka log ingestion |
 | `dev` | pytest + all above | Running tests |
 
 ---
@@ -214,17 +208,6 @@ Detailed guides live in [`docs/`](docs/):
 | [API](docs/api.md) | REST endpoint list, auth, examples |
 | [Notifications](docs/notifications.md) | Telegram, Discord, Slack, Email, webhook setup |
 | [Country Blocking](docs/country-blocking.md) | Country-based blocking, ISO codes, allowlist |
-| [2FA](docs/2fa.md) | Two-factor authentication setup, backup codes, API |
-| [Cases](docs/cases.md) | Case management — tickets, assignment, notes, API |
-| [Rules](docs/rules.md) | Alert rule engine — built-in rules, tuning, API |
-| [Threat Feed](docs/threat-feed.md) | Community threat feed — setup, feeds, API |
-| [Zeek](docs/zeek.md) | Zeek log ingestion — conn, ssh, http, dns, notice, weird |
-| [UEBA](docs/ueba.md) | User behavior analytics — profiles, lateral movement, anomalies |
-| [Agent](docs/agent.md) | Remote log forwarding agent — setup, systemd, WebSocket |
-| [Kafka](docs/kafka.md) | Kafka log ingestion — topics, parsers, high-volume tips |
-| [Tenants](docs/tenants.md) | Multi-tenant support — isolation model, config, API |
-| [Rate Limiting](docs/rate-limiting.md) | Rate limiting + DDoS protection — config, middleware, API |
-| [HuddleCluster](docs/huddle.md) | Self-organizing load balancing across CNSL nodes |
 | [Architecture](docs/architecture.md) | Module map, event flow, concurrency model |
 
 ---
@@ -287,7 +270,8 @@ Minimum required changes:
 }
 ```
 
-> **Important:** Always add your own IP to `allowlist` before setting `dry_run: false`.  
+> Always add your own IP to `allowlist` before setting `dry_run: false`.
+> Remove `::1` from `allowlist` if you want to detect attacks from localhost.
 > Use absolute paths for `db_path` — relative paths cause baselines to reset on restart.
 
 ---
@@ -514,7 +498,7 @@ Generate a secure key:
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-**Change the default credentials before deploying.** Default is `admin` / `cnsl-change-me`.
+Default credentials: `admin` / `cnsl-change-me` — change before deploying to production.
 
 ### Roles
 
@@ -785,7 +769,7 @@ docker run --rm \
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v --timeout=60
-# 250 passed
+# 58 passed
 ```
 
 ---
@@ -795,90 +779,63 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.0.0)
-│   ├── __main__.py              python -m cnsl entrypoint
+│   ├── __init__.py          package version (1.2.0)
+│   ├── __main__.py          python -m cnsl entrypoint
 │   │
-│   ├── models.py                Event, Detection dataclasses
-│   ├── config.py                config loading and all defaults
-│   ├── validator.py             startup config validation
-│   ├── logger.py                async JSON logger (text prefixes, no emoji)
+│   ├── models.py            Event, Detection dataclasses
+│   ├── config.py            config loading and all defaults
+│   ├── validator.py         startup config validation
+│   ├── logger.py            async JSON logger (text prefixes, no emoji)
 │   │
-│   ├── parsers.py               auth.log + tcpdump parsers (sshd + sshd-session)
-│   ├── log_sources.py           nginx, apache, mysql, ufw, syslog parsers
-│   ├── sources.py               async log file tailers
-│   ├── syslog_receiver.py       UDP/TCP syslog server (RFC 3164/5424)
-│   ├── zeek_parser.py           Zeek TSV/JSON log parser (6 log types)
-│   ├── kafka_consumer.py        async Kafka consumer (aiokafka + confluent fallback)
+│   ├── parsers.py           auth.log + tcpdump parsers (sshd + sshd-session)
+│   ├── log_sources.py       nginx, apache, mysql, ufw, syslog parsers
+│   ├── sources.py           async log file tailers
+│   ├── syslog_receiver.py   UDP/TCP syslog server (RFC 3164/5424)
 │   │
-│   ├── normalizer.py            ECS/CEF event normalization
-│   ├── search_engine.py         KQL search, aggregations, Elasticsearch push
+│   ├── normalizer.py        ECS/CEF event normalization
+│   ├── search_engine.py     KQL search, aggregations, Elasticsearch push
 │   │
-│   ├── detector.py              stateful per-IP detection engine + country blocking
-│   ├── correlator.py            cross-source correlation rules (6 rules)
-│   ├── rules.py                 alert rule engine (9 built-in rules, runtime tuning)
-│   ├── ml_detector.py           ML anomaly detection (IsolationForest, auto-trains)
-│   ├── threat_intel.py          AbuseIPDB + behavioral baseline
-│   ├── threat_feed.py           community threat feeds (6 feeds, CIDR matching)
-│   ├── ueba.py                  user/entity behavior analytics (5 anomaly types)
+│   ├── detector.py          stateful per-IP detection engine + country blocking
+│   ├── correlator.py        cross-source correlation rules (6 rules)
+│   ├── ml_detector.py       ML anomaly detection (IsolationForest, auto-trains)
+│   ├── threat_intel.py      AbuseIPDB + behavioral baseline
 │   │
-│   ├── blocker.py               iptables / ipset blocking backend
-│   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
-│   ├── redis_sync.py            distributed blocklist via Redis pub/sub
+│   ├── blocker.py           iptables / ipset blocking backend
+│   ├── honeypot.py          fake SSH server (40+ commands, virtual filesystem)
+│   ├── redis_sync.py        distributed blocklist via Redis pub/sub
 │   │
-│   ├── geoip.py                 GeoIP (MaxMind offline + ip-api.com)
-│   ├── assets.py                passive asset inventory
-│   ├── fim.py                   file integrity monitoring (files + directories)
+│   ├── geoip.py             GeoIP (MaxMind offline + ip-api.com)
+│   ├── assets.py            passive asset inventory
+│   ├── fim.py               file integrity monitoring (files + directories)
 │   │
-│   ├── auth.py                  JWT authentication + 2FA (TOTP)
-│   ├── rbac.py                  role-based access control (4 roles)
-│   ├── dashboard.py             web dashboard + REST API + SSE/WebSocket feed
-│   ├── metrics.py               Prometheus metrics
-│   ├── grafana.py               Grafana dashboard template generator
-│   ├── reporter.py              PDF / HTML compliance reports
-│   ├── notify.py                Telegram, Discord, Slack, Email, webhook
-│   ├── store.py                 SQLite persistence (aiosqlite)
-│   │
-│   ├── cases.py                 case management (tickets, notes, RBAC)
-│   ├── tenants.py               multi-tenant registry with per-tenant isolation
-│   ├── rate_limiter.py          sliding window rate limiting + DDoS detection
-│   ├── agent.py                 remote log forwarding agent (WebSocket, reconnect)
-│   ├── huddle_integration.py    self-organizing load balancing across nodes
-│   │
-│   └── engine.py                main async loop + CLI argument parser
+│   ├── auth.py              JWT authentication
+│   ├── rbac.py              role-based access control (4 roles)
+│   ├── dashboard.py         web dashboard + REST API + SSE feed
+│   ├── metrics.py           Prometheus metrics
+│   ├── grafana.py           Grafana dashboard template generator
+│   ├── reporter.py          PDF / HTML compliance reports
+│   ├── notify.py            Telegram, Discord, Slack, Email, webhook
+│   ├── store.py             SQLite persistence (aiosqlite)
+│   └── engine.py            main async loop + CLI argument parser
 │
 ├── tests/
-│   └── test_cnsl.py             250 unit tests
+│   └── test_cnsl.py         48 unit tests
 │
 ├── config/
-│   ├── config.example.json      annotated example config
-│   └── filebeat.yml             Filebeat config for Elasticsearch ingestion
+│   └── config.example.json  annotated example config
 │
 ├── docs/
-│   ├── installation.md          install, Docker, systemd
-│   ├── configuration.md         full config reference
-│   ├── api.md                   REST API endpoints + examples
-│   ├── notifications.md         Telegram, Discord, Slack, Email, webhook
-│   ├── country-blocking.md      country-based blocking guide
-│   ├── 2fa.md                   two-factor authentication setup
-│   ├── cases.md                 case management guide
-│   ├── rules.md                 alert rule engine guide
-│   ├── threat-feed.md           community threat feed guide
-│   ├── zeek.md                  Zeek log ingestion guide
-│   ├── ueba.md                  UEBA guide
-│   ├── agent.md                 remote agent setup guide
-│   ├── kafka.md                 Kafka ingestion guide
-│   ├── tenants.md               multi-tenant support guide
-│   ├── rate-limiting.md         rate limiting + DDoS protection
-│   ├── huddle.md                HuddleCluster load balancing
-│   └── architecture.md          module map, event flow, concurrency model
+│   ├── installation.md      install, Docker, systemd
+│   ├── configuration.md     full config reference
+│   ├── api.md               REST API endpoints + examples
+│   ├── notifications.md     Telegram, Discord, Slack, Email, webhook
+│   ├── country-blocking.md  country-based blocking guide
+│   └── architecture.md      module map, event flow, concurrency model
 │
-├── .github/
-│   └── workflows/ci.yml
-├── simulate.py                  local test simulator (12 scenarios)
+├── .github/workflows/ci.yml
+├── simulate.py              local test simulator (12 scenarios)
 ├── Dockerfile
-├── docker-compose.yml
 ├── setup.py
-├── pyproject.toml
 ├── requirements.txt
 └── README.md
 ```
@@ -887,19 +844,18 @@ cnsl/
 
 ## Roadmap
 
-- [x] Alert Rule Engine — added in v1.5.0 (9 built-in rules, runtime enable/disable/tune, API)
-- [x] Case Management — added in v1.4.0 (tickets, assignment, notes, RBAC)
-- [x] Full UEBA — added in v1.8.0 (per-user profiles, lateral movement, 5 anomaly types)
+- [ ] Alert Rule Engine — Sigma rule support, custom thresholds, enable/disable toggle
+- [ ] Case Management — incident tickets, assign to analyst, status tracking
+- [ ] Full UEBA — per-user behavior profiles, lateral movement detection
 - [x] Country-based blocking — added in v1.2.0 (`country_block.countries: ["CN", "RU"]`)
 - [x] Email notifications (SMTP) — added in v1.2.0
-- [x] 2FA for dashboard login — added in v1.3.0 (TOTP, backup codes, partial token flow)
-- [x] Community threat feed — added in v1.6.0 (6 feeds, auto-block, local file, API)
-- [x] Kafka support — added in v2.0.0 (aiokafka + confluent-kafka, all parsers)
-- [x] Zeek log ingestion — added in v1.7.0 (conn, ssh, http, dns, notice, weird; TSV+JSON)
-- [x] Multi-tenant support — added in v2.0.0 (tenant isolation, per-tenant rules)
-- [x] Agent system — added in v1.9.0 (WebSocket forwarding, reconnect, systemd)
-- [x] WebSocket — added in v1.9.0 (/ws bidirectional, /ws/agent ingestion, SSE kept)
-- [x] HuddleCluster integration — added in v2.0.0 (self-organizing load balancing, gossip, temperature scoring)
+- [ ] 2FA for dashboard login
+- [ ] Community threat feed — opt-in shared blocklist
+- [ ] Kafka support for high-volume environments
+- [ ] Zeek log ingestion
+- [ ] Multi-tenant support
+- [ ] Agent system for multi-server log collection
+- [ ] WebSocket instead of SSE for bidirectional dashboard control
 
 ---
 
@@ -920,7 +876,7 @@ Before enabling real blocking:
 
 1. Fork and create a feature branch
 2. Add or update tests in `tests/test_cnsl.py`
-3. Run `pytest tests/ -v --timeout=60` — all 250 must pass
+3. Run `pytest tests/ -v --timeout=60` — all 48 must pass
 4. Submit a pull request
 
 Code style: type hints on all public functions, docstrings on all public methods, no external dependencies in `cnsl/` core modules.
@@ -929,226 +885,112 @@ Code style: type hints on all public functions, docstrings on all public methods
 
 ## Changelog
 
-### v2.0.0 — Kafka, Multi-tenant, Rate Limiting, Enhanced Reports, HuddleCluster
-
-**New module: `cnsl/kafka_consumer.py`**
-- `KafkaConsumer` — async Kafka consumer using aiokafka (with confluent-kafka fallback)
-- Per-topic parser assignment: auth, nginx, apache, mysql, ufw, syslog, json, zeek_*
-- Exponential backoff reconnect, periodic offset commit
-- `GET /api/kafka` — stats endpoint
-
-**New module: `cnsl/tenants.py`**
-- `TenantManager` — multi-tenant registry with per-tenant isolation
-- `Tenant` — display name, users, notifications, allowlist, country_block, rule overrides
-- Per-tenant `RuleEngine` with lazy init and cache invalidation
-- Single-tenant mode: transparent wrapper, zero breaking changes
-- `GET /api/tenants`, `POST /api/tenants`, `DELETE /api/tenants/{id}`
-
-**New module: `cnsl/rate_limiter.py`**
-- `RateLimiter` — sliding window per-IP rate limiting + DDoS detection
-- Per-endpoint config (stricter limits for `/api/login`)
-- Auto-block via Blocker on DDoS threshold
-- aiohttp middleware: `make_rate_limit_middleware()`
-- `GET /api/rate-limit`, `GET /api/rate-limit/top`, `POST /api/rate-limit/reset/{ip}`
-
-**`cnsl/reporter.py`** — Enhanced compliance reports
-- Now includes: UEBA anomaly summary, case stats, rule engine state, rate limit stats
-- `Reporter.__init__()` accepts `ueba`, `case_manager`, `rule_engine`, `rate_limiter`
-
-**Tests** — 30 new tests: `TestRateLimiter` (10), `TestTenantManager` (12),
-`TestKafkaConsumer` (6), `TestReporterEnhanced` (2)
-— total **250 passing** (was 240)
-
-**Version** — bumped to `2.0.0`
-
----
-
-### v1.9.0 — Agent System + WebSocket
-
-**New module: `cnsl/agent.py`**
-- `AgentQueue` — bounded event queue with drop-oldest overflow and dropped-count tracking
-- `tail_file()` — async log file tailer with rotation detection
-- `ws_sender()` — WebSocket sender with exponential backoff reconnect
-- `run_agent()` — wires tailers + sender, prints queue/dropped stats every 60s
-- `load_agent_config()` — loads from `~/.cnsl-agent.json`, `/etc/cnsl/agent.json`, or `--config`
-- `main()` — CLI entrypoint: `python -m cnsl.agent --server wss://... --token ... --hostname web-01`
-- Supports: auth, nginx, apache, mysql, ufw, syslog log sources
-
-**`cnsl/dashboard.py`** — 2 new WebSocket endpoints
-- `GET /ws` — bidirectional WebSocket for dashboard browser
-  - Auth: first message `{"type":"auth","token":"..."}`
-  - Server→client: live detection events, pings
-  - Client→server: `{"type":"block","ip":"..."}`, `{"type":"unblock","ip":"..."}`, ping/pong
-  - RBAC enforced server-side; SSE (`/stream`) kept for backward compat
-- `GET /ws/agent` — agent ingestion endpoint
-  - Auth: `Authorization: Bearer TOKEN` header
-  - Agent→server: `{"type":"agent_events","host":"...","events":[...]}`
-  - Events processed through full detection pipeline (threat feed, UEBA, rules)
-
-**Tests** — 14 new tests — total **210 passing** (was 196)
-
-**Version** — bumped to `1.9.0`
-
----
-
-### v1.8.0 — Full UEBA (User and Entity Behavior Analytics)
-
-**New module: `cnsl/ueba.py`**
-- `UEBAEngine` — per-user behavioral profile engine with SQLite persistence
-- `UserProfile` — tracks login hours, known IPs, daily counts, recent IPs, anomaly log
-- `UEBAAnomaly` — typed anomaly result with reason string and anomaly_types list
-- 5 detection capabilities:
-  - **Unusual login hour** — login outside normal hours for this user
-  - **New source IP** — login from an IP this user has never used
-  - **Lateral movement** — same user active on N+ IPs in a short window
-  - **Login after absence** — login after >N days of inactivity
-  - **Frequency spike** — today's logins >> 7-day rolling average
-- `min_observations` learning period — no false positives during warmup
-- Async SQLite persistence (`ueba_profiles`, `ueba_anomalies` tables)
-
-**Tests** — 19 new tests — total **196 passing** (was 177)
-
-**Version** — bumped to `1.8.0`
-
----
-
-### v1.7.0 — Zeek Log Ingestion
-
-**New module: `cnsl/zeek_parser.py`**
-- `ZeekLogParser` — stateful line-by-line parser for Zeek TSV and JSON output
-- `_TSVState` — tracks `#fields` header per file, handles log rotation correctly
-- Parsers for 6 log types: `conn`, `ssh`, `http`, `dns`, `notice`, `weird`
-- `_shannon_entropy()` — DNS tunneling detection via high-entropy subdomain names
-- Both TSV (default Zeek) and JSON (`@load policy/tuning/json-logs`) formats supported
-
-**Tests** — 32 new tests — total **177 passing** (was 145)
-
-**Version** — bumped to `1.7.0`
-
----
-
-### v1.6.0 — Community Threat Feed
-
-**New module: `cnsl/threat_feed.py`**
-- `ThreatFeed` — downloads and caches known-bad IPs from 6 public feeds
-- Built-in feeds: Emerging Threats, Feodo Tracker, CINS Army, abuse.ch SSLBL,
-  Spamhaus DROP, Spamhaus EDROP (first 4 enabled by default)
-- Local custom blocklist file support (IPs and CIDRs)
-- Periodic background refresh (default: every hour)
-- O(1) plain-IP lookup, CIDR range matching via `ipaddress`
-- `auto_block` mode — blocks on first hit before thresholds fire
-
-**Tests** — 20 new tests — total **145 passing** (was 125)
-
-**Version** — bumped to `1.6.0`
-
----
-
-### v1.5.0 — Alert Rule Engine
-
-**New module: `cnsl/rules.py`**
-- `Rule` dataclass — id, name, description, severity, threshold, window_sec, enabled, tags
-- `RuleEngine` — manages all 9 built-in rules with config override and runtime mutation
-- Built-in rules: `ssh.brute_force`, `ssh.credential_stuffing`, `ssh.credential_breach`,
-  `web.scan_flood`, `web.auth_flood`, `web.exploit`, `db.brute_force`,
-  `fw.honeypot_port`, `net.repeat_offender`
-- Runtime API: `enable()`, `disable()`, `update()`, `reset()` — no restart required
-- Immutable built-in defaults — `reset()` always restores original values
-
-**Tests** — 22 new tests — total **125 passing** (was 103)
-
-**Version** — bumped to `1.5.0`
-
----
-
-### v1.4.0 — Case Management
-
-**New module: `cnsl/cases.py`**
-- `CaseManager` — full async SQLite-backed case lifecycle
-- Auto-create cases from every HIGH severity detection
-- Status transitions: `open` → `investigating` → `closed` / `false_positive`
-- Every status change and assignment logged as append-only system note (full audit trail)
-- Analyst notes — timestamped, append-only, author tracked
-
-**Tests** — 23 new tests — total **103 passing** (was 80)
-
-**Version** — bumped to `1.4.0`
-
----
-
-### v1.3.0 — Two-Factor Authentication (TOTP)
-
-- `auth.py` — TOTP 2FA (Google Authenticator / Authy compatible)
-  - Per-user enable/disable — existing accounts unaffected until opted in
-  - Two-step login: password → 6-digit OTP (partial token, 5 min expiry)
-  - 8 single-use backup codes generated on activation (SHA-256 hashed in storage)
-  - TOTP allows ±1 window (30s drift tolerance)
-  - Graceful degradation if `pyotp` not installed
-
-- `pyotp>=2.9.0` added to `requirements.txt` and `setup.py` extras
-
-**Tests** — 22 new tests — total **80 passing** (was 58)
-
-**Version** — bumped to `1.3.0`
-
----
-
 ### v1.2.0 — Country blocking, Email notifications, Docs
 
-- Country-based blocking via `country_block.countries: ["CN", "RU"]`
-- Email (SMTP) notifications — STARTTLS, implicit SSL, and plain SMTP
-- Standalone `docs/` folder with 6 guides
+**New features**
 
-**Version** — bumped to `1.2.0`
+- `config.py` / `detector.py` — Country-based blocking. Set `country_block.enabled: true` and
+  `country_block.countries: ["CN", "RU"]` to block all traffic from specific countries before
+  detection thresholds fire. The first event from a blocked-country IP raises a `HIGH` severity
+  incident immediately. A per-rule `allowlist` lets you exempt specific trusted IPs.
+  Requires GeoIP to be enabled (MaxMind offline or ip-api.com fallback).
+
+- `notify.py` — Email (SMTP) notifications. Sends HTML + plaintext multipart alerts.
+  Supports STARTTLS (port 587), implicit SSL (port 465), and plain SMTP.
+  Configurable sender, multiple recipients, and subject prefix.
+  All SMTP I/O runs in a thread executor — the detection engine is never blocked.
+  Works with Gmail (App Password), Outlook, SendGrid, Postmark, and self-hosted mail servers.
+
+- `docs/` — Standalone documentation folder.
+  `installation.md`, `configuration.md`, `api.md`, `notifications.md`,
+  `country-blocking.md`, `architecture.md`.
+
+**Bug fixes**
+
+- `engine.py` — `--version` flag was reporting `CNSL 1.0.0` instead of the current version.
+  Now correctly reads from `__version__` in `__init__.py`.
+
+**Version**
+
+- `__init__.py`, `setup.py`, `engine.py` — bumped to `1.2.0`.
 
 ---
 
 ### v1.1.0 — Remote ingestion, ECS normalization, search engine
 
-**New modules:** `syslog_receiver.py`, `normalizer.py`, `search_engine.py`
+**New modules**
 
-**Bug fixes:**
-- IPv6-mapped IPv4 addresses (`::ffff:1.2.3.4`) stripped to plain IPv4
-- Web log parser rewritten — bare 404 on normal paths no longer flagged as `WEB_SCAN`
-- File write errors handled gracefully instead of crashing the engine
-- `kind` column added to incidents table with automatic migration
+- `syslog_receiver.py` — UDP/TCP syslog server (RFC 3164 and RFC 5424). Routers, switches, firewalls, and remote Linux servers can ship logs directly to CNSL without a file agent. Parsed events go through the same detection pipeline as local logs. Configure with `syslog_receiver.enabled: true` and `udp_port: 5514` (no root required for ports above 1024).
 
-**Tests** — total **48 passing** (was 26)
+- `normalizer.py` — ECS-compatible event normalization. Every CNSL event is automatically normalized to a consistent schema regardless of source (SSH, web, MySQL, UFW, syslog, remote syslog). Supports ECS JSON export for Elasticsearch and CEF format for ArcSight/Splunk. CEF `rt=` field uses the event's actual timestamp.
 
-**Version** — bumped to `1.1.0`
+- `search_engine.py` — KQL-like full-text search, time-range filtering, and aggregations over the SQLite incident store. Optional Elasticsearch/OpenSearch push. New endpoints: `/api/search`, `/api/aggregate`, `/api/events`, `/api/export/ecs`, `/api/export/cef`, `/api/search/es-push`, `/api/search/es-status`.
+
+**Bug fixes**
+
+- `parsers.py` — IPv6-mapped IPv4 addresses (`::ffff:1.2.3.4`) are now stripped to plain IPv4 (`1.2.3.4`). Zone IDs (`fe80::1%eth0`) and brackets (`[::1]`) are also cleaned. The word `invalid` is no longer mistakenly extracted as a username from "Failed password for invalid user admin" lines.
+
+- `log_sources.py` — Web log parser completely rewritten. A bare 404 on a normal path is no longer flagged as `WEB_SCAN` — only scanner user-agents or exploit paths trigger alerts. Googlebot, Bingbot, and other known legitimate crawlers are whitelisted. Duplicate `parse_web_access` function removed.
+
+- `logger.py` — File write errors (disk full, file removed) are now handled gracefully instead of crashing the engine. Parent directories are created automatically if missing.
+
+- `store.py` — Added `kind` column to the incidents table. Automatic migration for existing databases (`ALTER TABLE ADD COLUMN` on startup). `save_incident()` now infers the event kind from reasons — `credential_breach` incidents correctly store `SSH_SUCCESS`, not `SSH_FAIL`. Old databases can be fixed manually: `UPDATE incidents SET kind='SSH_SUCCESS' WHERE reasons LIKE '%credential_breach%'`.
+
+- `search_engine.py` — Hourly aggregation now defaults to the last 30 days instead of last 24 hours, so data is visible even when there are no recent incidents.
+
+- `dashboard.py` — `kind` field is now read from the database column instead of being hardcoded as `SSH_FAIL` in normalized event endpoints. Added `search_engine` and `es_pusher` parameters to `start_dashboard()`.
+
+**Tests**
+
+- 48 tests total (was 26 in v1.0.0).
+- Added `TestSshdSessionParser` — 5 tests covering modern OpenSSH sshd-session format and IPv6.
+- Added `TestTelegramEscape` — 6 tests covering Markdown v1 special character escaping.
+- Added `TestStoreLowCount` — 2 tests verifying LOW severity is counted correctly in SQL.
+- Added `TestFIMDirectoryScanning` — 3 tests verifying directories in `watch_paths` are scanned recursively.
+- Added `TestMLRetrain` — 2 tests verifying ML timer logic (no training without data).
+- Added `TestDashboardSignature` — 2 tests verifying `ml_detector` and `fim` parameters are present.
+- `TestConfig` updated — tests `DEFAULT_CONFIG` directly instead of `load_config(None)` which now auto-discovers `/etc/cnsl/config.json`.
+- `TestParseAuthEvent.test_ipv6_address` updated — `::ffff:1.2.3.4` correctly strips to `1.2.3.4`.
+- sklearn pre-imported at module level so ML tests do not timeout on first import.
 
 ---
 
 ### v1.0.4 — Honeypot overhaul, FIM fix, emoji removed
 
-- `honeypot.py` — Full shell simulation rewrite. 40+ commands, persistent virtual filesystem
-- `fim.py` — Directories in `watch_paths` now scanned recursively with `os.walk()`
-- `notify.py` — All emoji removed, plain text messages, Telegram escaping fixed
-- `logger.py` — Emoji prefixes replaced with aligned text labels
+- `honeypot.py` — Full shell simulation rewrite. 40+ commands, persistent virtual filesystem, dynamic prompt, realistic file contents.
+- `fim.py` — Directories in `watch_paths` now scanned recursively with `os.walk()`.
+- `notify.py` — All emoji removed, plain text messages, Telegram escaping fixed.
+- `logger.py` — Emoji prefixes replaced with aligned text labels.
+- `reporter.py` — HTML uses inline SVG, PDF uses plain text.
 
 ---
 
 ### v1.0.3 — Critical runtime fixes
 
-- `parsers.py` — `sshd-session[PID]` regex added for modern OpenSSH
-- `config.py` — `/etc/cnsl/config.json` now auto-discovered on startup
-- Default `allowlist` — `::1` removed, `fails_threshold` lowered to 5
+- `parsers.py` — `sshd-session[PID]` regex added for modern OpenSSH.
+- `config.py` — `/etc/cnsl/config.json` now auto-discovered on startup.
+- Default `allowlist` — `::1` removed, `fails_threshold` lowered to 5.
 
 ---
 
 ### v1.0.2 — Dashboard overhaul
 
-- Tabbed UI with 7 tabs, 8 stat cards, timeline chart, PDF export, SVG icons
-- New endpoints: `/api/timeline`, `/api/ml-status`, `/api/honeypot`, `/api/fim`, `/api/system`, `/api/debug`
+- Tabbed UI with 7 tabs, 8 stat cards, timeline chart, PDF export, SVG icons.
+- ML tab, Honeypot tab, FIM tab, manual block form, live feed improvements.
+- New endpoints: `/api/timeline`, `/api/ml-status`, `/api/honeypot`, `/api/fim`, `/api/system`, `/api/debug`.
+- `engine.py` — `ml_detector` and `fim` parameters added to `start_dashboard()`.
+- `store.py` — LOW severity now counted correctly.
 
 ---
 
 ### v1.0.1 — Bug fixes
 
-- `engine_loop()` — `NameError` crash on first event fixed
-- RBAC enforced on block/unblock endpoints
-- Prometheus gauge decrements on unblock
-- Redis unblock propagation fixed
+- `engine_loop()` — `NameError` crash on first event fixed.
+- `start_dashboard()` — missing parameters fixed.
+- RBAC enforced on block/unblock endpoints.
+- Prometheus gauge decrements on unblock.
+- Redis unblock propagation fixed.
+- Subprocess resource leaks fixed.
 
 ---
 
@@ -1164,6 +1006,6 @@ MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 
-Thank You!
+Made with by <a href="https://github.com/rahadbhuiya">Rahad Bhuiya</a>
 
 </div>

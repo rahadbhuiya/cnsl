@@ -31,13 +31,6 @@ from .models          import Event, iso_time, now
 from .notify          import Notifier
 from .sources         import run_tcpdump, tail_authlog
 from .store           import Store
-from .cases           import CaseManager
-from .threat_feed     import ThreatFeed
-from .ueba            import UEBAEngine
-from .kafka_consumer  import KafkaConsumer
-from .tenants         import TenantManager
-from .rate_limiter    import RateLimiter
-from .huddle_integration import HuddleManager
 from .search_engine   import SearchEngine, ElasticsearchPusher
 from .syslog_receiver import SyslogReceiver
 
@@ -118,7 +111,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.0.0")
+    ap.add_argument("--version",     action="version", version="CNSL 1.2.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -126,15 +119,6 @@ Examples:
                     help="Export Grafana dashboard JSON and exit")
     ap.add_argument("--report-days",  type=int, default=30,
                     help="Report period in days (default: 30)")
-    # v2.0.0 flags
-    ap.add_argument("--tenant",        default=None, metavar="ID",
-                    help="Run as a specific tenant (multi-tenant mode)")
-    ap.add_argument("--no-kafka",      action="store_true",
-                    help="Disable Kafka ingestion even if enabled in config")
-    ap.add_argument("--no-rate-limit", action="store_true",
-                    help="Disable rate limiting even if enabled in config")
-    ap.add_argument("--agent-mode",    action="store_true",
-                    help="Run as a log-forwarding agent (shortcut for: python -m cnsl.agent)")
     return ap
 
 
@@ -183,51 +167,15 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if cfg.get("redis", {}).get("enabled"):
         await redis_sync.connect()
 
-    # Handle --agent-mode shortcut (before anything else)
-    if getattr(args, "agent_mode", False):
-        from .agent import run_agent, load_agent_config
-        agent_cfg = load_agent_config(args.config)
-        await run_agent(agent_cfg)
-        return
-
-    # Apply --no-kafka / --no-rate-limit overrides
-    if getattr(args, "no_kafka", False):
-        cfg.setdefault("kafka", {})["enabled"] = False
-    if getattr(args, "no_rate_limit", False):
-        cfg.setdefault("rate_limiting", {})["enabled"] = False
-
     store    = Store(cfg.get("store", {}).get("db_path", "./cnsl_state.db"))
     blocker.store = store      # wire in so remove_block() is called on unblock
+    reporter = Reporter(store=store, fim=fim_engine, cfg=cfg)
     if not (getattr(args, "no_db", False) or cfg.get("_no_db")):
         ok = await store.init()
         if not ok:
             await logger.log("store_warning", {"msg": "SQLite unavailable (install aiosqlite). Running without persistence."})
 
-    # Case management
-    case_manager = CaseManager(store)
-    if store.available:
-        await case_manager.init()
-
-    # Community threat feed
-    threat_feed = ThreatFeed(cfg)
-    if threat_feed.enabled:
-        await threat_feed.start()
-
-    # UEBA engine
-    ueba = UEBAEngine(cfg, store)
-    if ueba.enabled:
-        await ueba.init()
-
-    # Tenant manager
-    tenant_manager = TenantManager(cfg)
-
-    # Rate limiter
-    rate_limiter = RateLimiter(cfg)
-
-    # HuddleCluster integration (multi-node load balancing)
-    huddle = HuddleManager(cfg, metrics=metrics, logger=logger)
-
-    # Search engine
+    # Search engine — wraps SQLite with query/aggregation API
     search_engine = SearchEngine(
         db_path = cfg.get("store", {}).get("db_path", "./cnsl_state.db"),
         es_cfg  = cfg,
@@ -237,31 +185,12 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     # Optional Elasticsearch/OpenSearch push
     es_pusher = ElasticsearchPusher(cfg)
-
-    # Detector (must be before reporter and kafka)
+    
     detector = Detector(cfg, logger, blocker,
                         geoip=geoip,     store=store,
                         metrics=metrics,  notifier=notifier,
                         correlator=correlator, abuseipdb=abuseipdb,
-                        baseline=baseline, redis_sync=redis_sync,
-                        case_manager=case_manager,
-                        threat_feed=threat_feed,
-                        ueba=ueba)
-
-    # Reporter (after detector so rule_engine is available)
-    reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
-                        ueba=ueba, case_manager=case_manager,
-                        rule_engine=getattr(detector, "rules", None),
-                        rate_limiter=rate_limiter)
-
-    # Kafka consumer (after detector)
-    kafka = KafkaConsumer(cfg, detector, logger)
-    if kafka.enabled:
-        await kafka.start()
-
-    # HuddleCluster — start after detector so queue_ref is available
-    if huddle.enabled:
-        await huddle.start()
+                        baseline=baseline, redis_sync=redis_sync)
 
     # Patch engine loop to update asset inventory on every event
     _orig_handle = detector.handle
@@ -355,14 +284,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             honeypot=active_response, dry_run=dry_run,
                             ml_detector=ml_detector, fim=fim_engine,
                             search_engine=search_engine,
-                            es_pusher=es_pusher,
-                            case_manager=case_manager,
-                            threat_feed=threat_feed,
-                            ueba=ueba,
-                            tenant_manager=tenant_manager,
-                            rate_limiter=rate_limiter,
-                            kafka=kafka,
-                            huddle=huddle),
+                            es_pusher=es_pusher),
             name="dashboard",
         ))
 

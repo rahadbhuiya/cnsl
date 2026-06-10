@@ -8,10 +8,6 @@ Features:
   - Token blacklist (logout support)
   - Brute-force protection on login endpoint (5 attempts / 60s)
   - Default credentials: admin / cnsl-change-me  (forced change on first login)
-  - TOTP 2FA (Google Authenticator / Authy compatible)
-    - Per-user enable/disable
-    - 8 single-use backup codes
-    - QR code URI for authenticator app setup
 
 Config example:
   "auth": {
@@ -23,10 +19,7 @@ Config example:
       "admin": {
         "password_hash": "$2b$12$...",   <- bcrypt hash
         "role": "admin",
-        "must_change_password": false,
-        "totp_secret": null,             <- set by 2FA setup flow
-        "totp_enabled": false,
-        "totp_backup_codes": []          <- hashed backup codes
+        "must_change_password": false
       }
     }
   }
@@ -43,15 +36,8 @@ import json
 import secrets
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 import re
-
-# TOTP (pyotp optional — graceful degradation if not installed)
-try:
-    import pyotp as _pyotp
-    _HAS_PYOTP = True
-except ImportError:
-    _HAS_PYOTP = False
 
 
 # Lightweight JWT (no external dependency beyond stdlib)
@@ -159,78 +145,6 @@ def verify_password(password: str, hashed: str) -> bool:
     return False
 
 
-#  TOTP / 2FA helpers 
-
-TOTP_ISSUER       = "CNSL"
-BACKUP_CODE_COUNT = 8
-
-
-def totp_available() -> bool:
-    """True if pyotp is installed."""
-    return _HAS_PYOTP
-
-
-def generate_totp_secret() -> str:
-    """Generate a new random TOTP secret (base32)."""
-    if not _HAS_PYOTP:
-        raise RuntimeError("pyotp is not installed. Run: pip install pyotp")
-    return _pyotp.random_base32()
-
-
-def get_totp_uri(secret: str, username: str) -> str:
-    """Return an otpauth:// URI for QR code generation."""
-    if not _HAS_PYOTP:
-        raise RuntimeError("pyotp is not installed.")
-    totp = _pyotp.TOTP(secret)
-    return totp.provisioning_uri(name=username, issuer_name=TOTP_ISSUER)
-
-
-def verify_totp(secret: str, code: str) -> bool:
-    """Verify a 6-digit TOTP code. Allows ±1 window (30s drift tolerance)."""
-    if not _HAS_PYOTP or not secret or not code:
-        return False
-    try:
-        totp = _pyotp.TOTP(secret)
-        return totp.verify(code.strip(), valid_window=1)
-    except Exception:
-        return False
-
-
-def generate_backup_codes() -> Tuple[List[str], List[str]]:
-    """
-    Generate 8 single-use backup codes.
-    Returns (plaintext_codes, hashed_codes).
-    plaintext_codes shown to the user once, never stored.
-    hashed_codes stored in the user record.
-    """
-    codes     = [secrets.token_hex(4).upper() for _ in range(BACKUP_CODE_COUNT)]
-    formatted = [f"{c[:4]}-{c[4:]}" for c in codes]   # e.g. "A1B2-C3D4"
-    hashed    = [_hash_backup_code(c) for c in formatted]
-    return formatted, hashed
-
-
-def _hash_backup_code(code: str) -> str:
-    """SHA-256 hash of backup code (normalised — dashes/spaces stripped, uppercase)."""
-    normalised = code.replace("-", "").replace(" ", "").upper()
-    return hashlib.sha256(normalised.encode()).hexdigest()
-
-
-def verify_backup_code(code: str, hashed_codes: List[str]) -> Tuple[bool, List[str]]:
-    """
-    Check if code matches any stored hash.
-    Returns (matched, remaining_hashes_with_used_one_removed).
-    Backup codes are single-use — matched hash is removed.
-    """
-    normalised = code.replace("-", "").replace(" ", "").upper()
-    candidate  = hashlib.sha256(normalised.encode()).hexdigest()
-    remaining  = list(hashed_codes)
-    for h in hashed_codes:
-        if hmac.compare_digest(candidate, h):
-            remaining.remove(h)
-            return True, remaining
-    return False, hashed_codes
-
-
 
 # Default admin password (used when no users configured)
 
@@ -288,121 +202,27 @@ class AuthManager:
 
     def login(
         self, username: str, password: str, client_ip: str = "unknown"
-    ) -> Tuple[Optional[str], Optional[str], bool]:
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Attempt login. Returns (token_or_partial, error, needs_2fa).
-
-        Outcomes:
-          - Password wrong  → (None, error_msg, False)
-          - 2FA enabled     → (partial_token, None, True)
-          - 2FA not enabled → (full_access_token, None, False)
+        Attempt login. Returns (access_token, None) on success,
+        or (None, error_message) on failure.
         """
+        # Rate limit check
         if self._is_rate_limited(client_ip):
-            return None, "Too many login attempts. Try again in 60 seconds.", False
+            return None, "Too many login attempts. Try again in 60 seconds."
 
         self._record_attempt(client_ip)
 
         user = self._users.get(username)
         if not user:
-            return None, "Invalid credentials.", False
+            return None, "Invalid credentials."
 
         if not verify_password(password, user["password_hash"]):
-            return None, "Invalid credentials.", False
+            return None, "Invalid credentials."
 
+        # Success — clear attempts
         self._login_attempts.pop(client_ip, None)
 
-        totp_enabled = bool(user.get("totp_enabled") and user.get("totp_secret"))
-
-        if totp_enabled:
-            partial = {
-                "sub":     username,
-                "role":    user.get("role", "viewer"),
-                "mcp":     user.get("must_change_password", False),
-                "partial": True,
-                "iat":     int(time.time()),
-                "exp":     int(time.time()) + 300,
-                "jti":     secrets.token_hex(8),
-            }
-            return _sign_jwt(partial, self.secret), None, True
-
-        return self._issue_full_token(username, user), None, False
-
-    def verify_2fa(
-        self, partial_token: str, code: str, client_ip: str = "unknown"
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Complete 2FA. Accepts TOTP or backup code. Returns (token, error)."""
-        payload = _verify_jwt(partial_token, self.secret)
-        if payload is None or not payload.get("partial"):
-            return None, "Invalid or expired 2FA session."
-        username = payload.get("sub", "")
-        user     = self._users.get(username)
-        if not user:
-            return None, "User not found."
-        secret = user.get("totp_secret", "")
-        if verify_totp(secret, code):
-            return self._issue_full_token(username, user), None
-        backup_hashes = user.get("totp_backup_codes", [])
-        matched, remaining = verify_backup_code(code, backup_hashes)
-        if matched:
-            user["totp_backup_codes"] = remaining
-            return self._issue_full_token(username, user), None
-        return None, "Invalid authentication code."
-
-    def setup_2fa(self, username: str) -> Tuple[Optional[str], Optional[str]]:
-        """Generate pending TOTP secret. Returns (otpauth_uri, error)."""
-        if not _HAS_PYOTP:
-            return None, "pyotp not installed. Run: pip install pyotp"
-        user = self._users.get(username)
-        if not user:
-            return None, "User not found."
-        secret = generate_totp_secret()
-        user["totp_secret_pending"] = secret
-        return get_totp_uri(secret, username), None
-
-    def confirm_2fa(
-        self, username: str, code: str
-    ) -> Tuple[Optional[List[str]], Optional[str]]:
-        """Confirm setup with first OTP. Returns (backup_codes, error)."""
-        user = self._users.get(username)
-        if not user:
-            return None, "User not found."
-        pending = user.get("totp_secret_pending")
-        if not pending:
-            return None, "No pending 2FA setup. Call setup_2fa first."
-        if not verify_totp(pending, code):
-            return None, "Invalid code. Check your authenticator app and try again."
-        plain_codes, hashed_codes = generate_backup_codes()
-        user["totp_secret"]       = pending
-        user["totp_enabled"]      = True
-        user["totp_backup_codes"] = hashed_codes
-        user.pop("totp_secret_pending", None)
-        return plain_codes, None
-
-    def disable_2fa(self, username: str, password: str) -> Optional[str]:
-        """Disable 2FA. Requires password re-confirmation. Returns None on success."""
-        user = self._users.get(username)
-        if not user:
-            return "User not found."
-        if not verify_password(password, user["password_hash"]):
-            return "Incorrect password."
-        user["totp_enabled"]      = False
-        user["totp_secret"]       = None
-        user["totp_backup_codes"] = []
-        user.pop("totp_secret_pending", None)
-        return None
-
-    def get_2fa_status(self, username: str) -> Dict:
-        """Return 2FA status for a user."""
-        user         = self._users.get(username, {})
-        enabled      = bool(user.get("totp_enabled") and user.get("totp_secret"))
-        backup_count = len(user.get("totp_backup_codes", []))
-        return {
-            "enabled":           enabled,
-            "backup_codes_left": backup_count,
-            "pyotp_available":   _HAS_PYOTP,
-        }
-
-    def _issue_full_token(self, username: str, user: Dict) -> str:
         payload = {
             "sub":  username,
             "role": user.get("role", "viewer"),
@@ -411,12 +231,13 @@ class AuthManager:
             "exp":  int(time.time()) + self.access_expire_hours * 3600,
             "jti":  secrets.token_hex(8),
         }
-        return _sign_jwt(payload, self.secret)
+        token = _sign_jwt(payload, self.secret)
+        return token, None
 
     #  Verify 
 
     def verify_token(self, token: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """Returns (payload, None) or (None, error). Rejects partial tokens."""
+        """Returns (payload, None) or (None, error)."""
         if not token:
             return None, "No token provided."
         if token in self._blacklist:
@@ -424,14 +245,13 @@ class AuthManager:
         payload = _verify_jwt(token, self.secret)
         if payload is None:
             return None, "Invalid or expired token."
-        if payload.get("partial"):
-            return None, "2FA not completed."
         return payload, None
 
     #  Logout 
 
     def logout(self, token: str) -> None:
         self._blacklist.add(token)
+        # Trim blacklist periodically (keep it bounded)
         if len(self._blacklist) > 10000:
             self._blacklist = set(list(self._blacklist)[-5000:])
 

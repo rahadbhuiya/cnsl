@@ -1,21 +1,17 @@
-name: CNSL CI/CD
+name: CI
 
 on:
   push:
-    branches: [main]
-    tags:     ['v*']
+    branches: ["main", "dev"]
   pull_request:
-    branches: [main]
+    branches: ["main"]
 
 jobs:
-
-  #  Test 
   test:
-    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,171 +20,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install pyotp bcrypt aiosqlite pytest-timeout pytest-cov
 
       - name: Run tests
-        run: pytest tests/ -v --timeout=60 --cov=cnsl --cov-report=xml
+        run: pytest tests/ -v --tb=short
 
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: unittests
-          fail_ci_if_error: false
-
-      - name: Check version consistency
+      - name: Lint
         run: |
-          INIT_VER=$(python -c "from cnsl import __version__; print(__version__)")
-          SETUP_VER=$(python -c "import setup; import re; content=open('setup.py').read(); print(re.search(r'version=\"(.+?)\"', content).group(1))")
-          ENGINE_VER=$(python -c "import re; content=open('cnsl/engine.py').read(); print(re.search(r'version=\"CNSL (.+?)\"', content).group(1))")
-          echo "__init__: $INIT_VER  setup.py: $SETUP_VER  engine.py: $ENGINE_VER"
-          [ "$INIT_VER" = "$SETUP_VER" ] && [ "$INIT_VER" = "$ENGINE_VER" ] || (echo "VERSION MISMATCH!" && exit 1)
-
-  #  Lint 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install linters
-        run: pip install pyflakes
-      - name: Syntax check all modules
-        run: |
-          for f in cnsl/*.py; do
-            python -m py_compile "$f" && echo "OK: $f"
-          done
-      - name: Pyflakes (warnings only)
-        run: python -m pyflakes cnsl/ || true
-
-  #  PyPI Release 
-  publish:
-    name: Publish to PyPI
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    environment: pypi
-    permissions:
-      id-token: write   # required for trusted publishing
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build tools
-        run: pip install build twine
-
-      - name: Build distribution
-        run: python -m build
-
-      - name: Check distribution
-        run: twine check dist/*
-
-      - name: Publish to PyPI (trusted publishing)
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-  #  GitHub Release 
-  github-release:
-    name: Create GitHub Release
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build tools
-        run: pip install build
-
-      - name: Build distribution
-        run: python -m build
-
-      - name: Extract version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Extract changelog entry
-        id: changelog
-        run: |
-          python3 << 'PYEOF'
-          import re, os
-          tag = os.environ.get('GITHUB_REF', '').replace('refs/tags/', '')
-          content = open('README.md').read()
-          pattern = rf'(### {re.escape(tag)}.*?)(?=\n### v|\Z)'
-          m = re.search(pattern, content, re.DOTALL)
-          notes = m.group(1).strip() if m else f'Release {tag}'
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'NOTES<<EOF\n{notes}\nEOF\n')
-          PYEOF
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "CNSL ${{ steps.version.outputs.VERSION }}"
-          body: ${{ steps.changelog.outputs.NOTES }}
-          files: dist/*
-          draft: false
-          prerelease: false
-
-  #  Docker 
-  docker:
-    name: Build & Push Docker image
-    needs: [test, lint]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version
-        id: meta
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAGS=ghcr.io/${{ github.repository_owner }}/cnsl:$VERSION,ghcr.io/${{ github.repository_owner }}/cnsl:latest" >> $GITHUB_OUTPUT
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.TAGS }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          labels: |
-            org.opencontainers.image.version=${{ steps.meta.outputs.VERSION }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          pip install ruff
+          ruff check cnsl/ --ignore E501

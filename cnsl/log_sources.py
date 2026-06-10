@@ -8,7 +8,6 @@ Supported log sources:
   - mysql error log       (DB brute-force)
   - syslog                (sudo abuse, cron, general)
   - ufw.log               (firewall events)
-  - Zeek logs             (conn, ssh, http, dns, notice, weird)
 
 Each parser returns an Event with:
   - kind: source-specific event type
@@ -269,19 +268,15 @@ async def tail_log_file(
     """
     await logger.log("source_start", {"source": source, "path": path})
 
-    _file_warned = False
     while True:
         import os
         if not os.path.exists(path):
-            if not _file_warned:
-                await logger.log("source_waiting", {
-                    "source": source, "path": path,
-                    "msg": "File not found, waiting...",
-                })
-                _file_warned = True
-            await asyncio.sleep(60)   # check once per minute to avoid log spam
+            await logger.log("source_waiting", {
+                "source": source, "path": path,
+                "msg": "File not found, waiting...",
+            })
+            await asyncio.sleep(_RETRY_DELAY)
             continue
-        _file_warned = False  # reset if file appears
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -475,19 +470,15 @@ async def tail_log_file(
     """
     await logger.log("source_start", {"source": source, "path": path})
 
-    _file_warned = False
     while True:
         import os
         if not os.path.exists(path):
-            if not _file_warned:
-                await logger.log("source_waiting", {
-                    "source": source, "path": path,
-                    "msg": "File not found, waiting...",
-                })
-                _file_warned = True
-            await asyncio.sleep(60)   # check once per minute to avoid log spam
+            await logger.log("source_waiting", {
+                "source": source, "path": path,
+                "msg": "File not found, waiting...",
+            })
+            await asyncio.sleep(_RETRY_DELAY)
             continue
-        _file_warned = False  # reset if file appears
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -562,24 +553,5 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
                 name=f"logsrc_{name}",
             )
         )
-
-    # Zeek log sources
-    zeek_cfg = cfg.get("zeek", {})
-    if zeek_cfg.get("enabled"):
-        from .zeek_parser import make_zeek_parser, SUPPORTED_LOGS
-        import os
-        log_dir  = zeek_cfg.get("log_dir", "/opt/zeek/logs/current")
-        logs_cfg = zeek_cfg.get("logs", {})
-        for log_type in SUPPORTED_LOGS:
-            if not logs_cfg.get(log_type, True):
-                continue
-            log_path = os.path.join(log_dir, f"{log_type}.log")
-            zp = make_zeek_parser(log_type, cfg)
-            tasks.append(
-                _asyncio.create_task(
-                    tail_log_file(queue, log_path, zp.parse, logger, f"zeek_{log_type}"),
-                    name=f"zeek_{log_type}",
-                )
-            )
 
     return tasks

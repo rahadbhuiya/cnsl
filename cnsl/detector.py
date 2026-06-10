@@ -52,7 +52,6 @@ from .blocker import Blocker
 from .config  import safe_int, get_thresholds, get_country_block_cfg
 from .logger  import JsonLogger
 from .models  import Detection, Event, EventKind, Severity, iso_time, now
-from .rules   import RuleEngine
 
 if TYPE_CHECKING:
     from .correlator    import Correlator, CorrelationAlert
@@ -139,43 +138,38 @@ def _is_repeat_offender(st: IPState, threshold: int, window_sec: int, t: float) 
 class Detector:
     def __init__(
         self,
-        cfg:          Dict,
-        logger:       JsonLogger,
-        blocker:      Blocker,
-        geoip:        Optional["GeoIP"]              = None,
-        store:        Optional["Store"]              = None,
-        metrics:      Optional["Metrics"]            = None,
-        notifier:     Optional["Notifier"]           = None,
-        correlator:   Optional["Correlator"]         = None,
-        abuseipdb:    Optional["AbuseIPDB"]          = None,
-        baseline:     Optional["BehavioralBaseline"] = None,
-        redis_sync:   Optional["RedisSync"]          = None,
-        case_manager: Optional["CaseManager"]        = None,
-        threat_feed:  Optional["ThreatFeed"]         = None,
-        ueba:         Optional["UEBAEngine"]         = None,
+        cfg:        Dict,
+        logger:     JsonLogger,
+        blocker:    Blocker,
+        geoip:      Optional["GeoIP"]              = None,
+        store:      Optional["Store"]              = None,
+        metrics:    Optional["Metrics"]            = None,
+        notifier:   Optional["Notifier"]           = None,
+        correlator: Optional["Correlator"]         = None,
+        abuseipdb:  Optional["AbuseIPDB"]          = None,
+        baseline:   Optional["BehavioralBaseline"] = None,
+        redis_sync: Optional["RedisSync"]          = None,
     ):
-        # Rule engine — all thresholds are read from here at evaluation time
-        self.rules = RuleEngine(cfg)
-
         th = get_thresholds(cfg)
 
-        # Fallback window (used for pruning state — RuleEngine has per-rule windows)
-        self.window_sec       = safe_int(th.get("fails_window_sec"), 60)
-        self.cooldown_sec     = safe_int(th.get("incident_cooldown_sec"), 120)
+        # SSH thresholds
+        self.window_sec       = safe_int(th.get("fails_window_sec"),              60)
+        self.fails_threshold  = safe_int(th.get("fails_threshold"),                8)
+        self.user_threshold   = safe_int(th.get("unique_users_threshold"),         4)
+        self.breach_threshold = safe_int(th.get("success_after_fails_threshold"),  5)
+        self.cooldown_sec     = safe_int(th.get("incident_cooldown_sec"),        120)
 
-        # Kept for backward compat (correlator, baseline still read these)
-        self.fails_threshold  = self.rules.threshold("ssh.brute_force",          8)
-        self.user_threshold   = self.rules.threshold("ssh.credential_stuffing",  4)
-        self.breach_threshold = self.rules.threshold("ssh.credential_breach",    5)
-        self.web_scan_threshold  = self.rules.threshold("web.scan_flood",        20)
-        self.web_auth_threshold  = self.rules.threshold("web.auth_flood",        15)
-        self.db_fail_threshold   = self.rules.threshold("db.brute_force",         5)
+        # Web thresholds (Phase 2)
+        self.web_scan_threshold     = safe_int(th.get("web_scan_threshold"),     20)
+        self.web_auth_threshold     = safe_int(th.get("web_auth_fail_threshold"),15)
 
-        # Repeat offender escalation — now driven by net.repeat_offender rule
+        # DB thresholds (Phase 2)
+        self.db_fail_threshold      = safe_int(th.get("db_fail_threshold"),       5)
+
+        # Repeat offender escalation
         ac = cfg.get("actions", {})
-        # Keep for backward compat with correlator/baseline that may read these
-        self.repeat_threshold = self.rules.threshold("net.repeat_offender", 3)
-        self.repeat_window    = safe_int(ac.get("repeat_offender_window_sec"), 3600)
+        self.repeat_threshold   = safe_int(ac.get("repeat_offender_threshold"),   3)
+        self.repeat_window      = safe_int(ac.get("repeat_offender_window_sec"),  3600)
 
         # Country-based blocking
         cb = get_country_block_cfg(cfg)
@@ -192,19 +186,16 @@ class Detector:
         self.log_baseline     = bool(lg.get("log_baseline",     True))
 
         # Dependencies
-        self.logger       = logger
-        self.blocker      = blocker
-        self.geoip        = geoip
-        self.store        = store
-        self.metrics      = metrics
-        self.notifier     = notifier
-        self.correlator   = correlator
-        self.abuseipdb    = abuseipdb
-        self.baseline     = baseline
-        self.redis_sync   = redis_sync
-        self.case_manager = case_manager
-        self.threat_feed  = threat_feed
-        self.ueba         = ueba
+        self.logger     = logger
+        self.blocker    = blocker
+        self.geoip      = geoip
+        self.store      = store
+        self.metrics    = metrics
+        self.notifier   = notifier
+        self.correlator = correlator
+        self.abuseipdb  = abuseipdb
+        self.baseline   = baseline
+        self.redis_sync = redis_sync
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
@@ -232,10 +223,6 @@ class Detector:
 
         # Log all auth/multi-log events
         await self.logger.log("event_auth", ev.to_dict())
-
-        # Threat feed check — known-bad IPs blocked before any threshold
-        if self.threat_feed and self.threat_feed.enabled and ip not in self.country_block_allowlist:
-            await self._check_threat_feed(ip, ev)
 
         # Country-based blocking — check before threshold evaluation
         if self.country_block_enabled and self.blocked_countries and ip not in self.country_block_allowlist:
@@ -272,72 +259,6 @@ class Detector:
                 await self._handle_correlation(alert)
 
     #  SSH handlers 
-
-    #  Threat feed check 
-
-    async def _check_threat_feed(self, ip: str, ev: Event) -> None:
-        """Block IP immediately if it appears in any threat feed."""
-        if not self.threat_feed:
-            return
-
-        hit = self.threat_feed.check(ip)
-        if not hit:
-            return
-
-        if self.blocker.is_blocked(ip):
-            return
-
-        match_type = hit.get("match_type", "exact")
-        cidr       = hit.get("cidr", "")
-        reason     = (
-            f"threat_feed: IP matched community blocklist "
-            f"({'CIDR ' + cidr if cidr else 'exact match'})"
-        )
-
-        await self.logger.log("threat_feed_hit", {
-            "ip":         ip,
-            "match_type": match_type,
-            "cidr":       cidr,
-            "event_kind": ev.kind,
-        })
-
-        severity = self.threat_feed.severity
-
-        detection = Detection(
-            src_ip     = ip,
-            severity   = severity,
-            reasons    = [reason],
-            fail_count = 0,
-            uniq_users = 0,
-            window_sec = 0,
-        )
-
-        if self.metrics:
-            self.metrics.inc_incident(severity)
-
-        geo = self.geoip.get_cached(ip) if self.geoip else None
-
-        if self.store:
-            try:
-                await self.store.save_incident(detection, geo)
-            except Exception:
-                pass
-
-        if self.case_manager:
-            try:
-                await self.case_manager.create_from_incident(detection, geo)
-            except Exception:
-                pass
-
-        if self.notifier:
-            try:
-                await self.notifier.send(detection, geo)
-            except Exception:
-                pass
-
-        if self.threat_feed.auto_block:
-            st = self._state[ip]
-            await self._block_ip(ip, reason, st, detection)
 
     #  Country-based blocking 
 
@@ -395,12 +316,6 @@ class Detector:
         if self.store:
             try:
                 await self.store.save_incident(detection, geo)
-
-                if self.case_manager:
-                    try:
-                        await self.case_manager.create_from_incident(detection, geo)
-                    except Exception:
-                        pass
             except Exception:
                 pass
 
@@ -428,28 +343,23 @@ class Detector:
         uniq_users = _unique_users(st.users)
         sev, reasons = None, []
 
-        r_bf = self.rules.get("ssh.brute_force")
-        if r_bf and r_bf.enabled and fail_count >= r_bf.effective_threshold:
-            sev = r_bf.effective_severity
+        if fail_count >= self.fails_threshold:
+            sev = Severity.MEDIUM
             reasons.append(
                 f"brute_force: {fail_count} fails in {self.window_sec}s"
             )
 
-        r_cs = self.rules.get("ssh.credential_stuffing")
-        if r_cs and r_cs.enabled and uniq_users >= r_cs.effective_threshold:
-            sev = r_cs.effective_severity
+        if uniq_users >= self.user_threshold:
+            sev = Severity.MEDIUM
             reasons.append(
                 f"credential_stuffing: {uniq_users} unique users in {self.window_sec}s"
             )
 
         # Repeat offender escalation
-        r_ro = self.rules.get("net.repeat_offender")
-        if sev and r_ro and r_ro.enabled and _is_repeat_offender(
-            st, r_ro.effective_threshold, r_ro.effective_window, t
-        ):
+        if sev and _is_repeat_offender(st, self.repeat_threshold, self.repeat_window, t):
             sev = Severity.HIGH
             reasons.append(
-                f"repeat_offender: {r_ro.effective_threshold}+ incidents in last hour"
+                f"repeat_offender: {self.repeat_threshold}+ incidents in last hour"
             )
 
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="fail",
@@ -460,36 +370,11 @@ class Detector:
         fail_count = len(st.fails)
         sev, reasons = None, []
 
-        r_cb = self.rules.get("ssh.credential_breach")
-        if r_cb and r_cb.enabled and fail_count >= r_cb.effective_threshold:
-            sev = r_cb.effective_severity
+        if fail_count >= self.breach_threshold:
+            sev = Severity.HIGH
             reasons.append(
                 f"credential_breach: success after {fail_count} fails"
             )
-
-        # UEBA — observe successful login for behavioral profiling
-        if self.ueba and self.ueba.enabled and ev.user:
-            try:
-                anomaly = self.ueba.observe(username=ev.user, src_ip=ip, ts=t)
-                if anomaly:
-                    await self.logger.log("ueba_anomaly", anomaly.to_dict())
-                    if not sev:
-                        sev = "MEDIUM"
-                    reasons.append(f"ueba: {anomaly.reason}")
-                    # Persist async (fire-and-forget)
-                    if self.ueba.persist:
-                        import asyncio
-                        asyncio.create_task(
-                            self.ueba.save_event(ev.user, ip, anomaly)
-                        )
-                else:
-                    if self.ueba.persist:
-                        import asyncio
-                        asyncio.create_task(
-                            self.ueba.save_event(ev.user, ip)
-                        )
-            except Exception:
-                pass
 
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="success",
                                fail_count=fail_count, uniq_users=_unique_users(st.users),
@@ -510,19 +395,16 @@ class Detector:
         expl_count  = len(st.web_exploits)
         sev, reasons = None, []
 
-        r_sf = self.rules.get("web.scan_flood")
-        if r_sf and r_sf.enabled and scan_count >= r_sf.effective_threshold:
-            sev = r_sf.effective_severity
+        if scan_count >= self.web_scan_threshold:
+            sev = Severity.MEDIUM
             reasons.append(f"web_scan_flood: {scan_count} scan events in {self.window_sec}s")
 
-        r_af = self.rules.get("web.auth_flood")
-        if r_af and r_af.enabled and auth_count >= r_af.effective_threshold:
-            sev = r_af.effective_severity
+        if auth_count >= self.web_auth_threshold:
+            sev = Severity.MEDIUM
             reasons.append(f"web_auth_flood: {auth_count} 401/403 in {self.window_sec}s")
 
-        r_ex = self.rules.get("web.exploit")
-        if r_ex and r_ex.enabled and expl_count >= r_ex.effective_threshold:
-            sev = r_ex.effective_severity
+        if expl_count >= 1:
+            sev = Severity.MEDIUM
             path = ev.meta.get("path", "") if ev.meta else ""
             reasons.append(f"web_exploit_attempt: path={path}")
 
@@ -537,9 +419,8 @@ class Detector:
         db_count = len(st.db_fails)
         sev, reasons = None, []
 
-        r_db = self.rules.get("db.brute_force")
-        if r_db and r_db.enabled and db_count >= r_db.effective_threshold:
-            sev = r_db.effective_severity
+        if db_count >= self.db_fail_threshold:
+            sev = Severity.MEDIUM
             user = ev.user or "unknown"
             reasons.append(
                 f"db_brute_force: {db_count} DB auth failures (user={user})"
@@ -551,12 +432,13 @@ class Detector:
     #  Firewall handler (Phase 2) 
 
     async def _on_fw_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
-        r_hp = self.rules.get("fw.honeypot_port")
-        if ev.kind == "FW_HONEYPOT_PORT" and r_hp and r_hp.enabled:
+        # Honeypot port = instant HIGH — no threshold needed
+        if ev.kind == "FW_HONEYPOT_PORT":
             port    = ev.meta.get("dst_port", "?") if ev.meta else "?"
             reasons = [f"honeypot_port: connection to port {port} (never legitimate)"]
-            await self._maybe_fire(ip, st, t, r_hp.effective_severity, reasons,
+            await self._maybe_fire(ip, st, t, Severity.HIGH, reasons,
                                    trigger="fw", fail_count=1, uniq_users=0)
+        # Regular FW block — just log, don't alert on its own
         else:
             await self.logger.log("fw_block", {"ip": ip, "meta": ev.meta})
 
@@ -598,12 +480,6 @@ class Detector:
         if self.store:
             try:
                 await self.store.save_incident(detection, geo)
-
-                if self.case_manager:
-                    try:
-                        await self.case_manager.create_from_incident(detection, geo)
-                    except Exception:
-                        pass
             except Exception:
                 pass
 
@@ -687,12 +563,6 @@ class Detector:
         if self.store:
             try:
                 await self.store.save_incident(detection, geo)
-
-                if self.case_manager:
-                    try:
-                        await self.case_manager.create_from_incident(detection, geo)
-                    except Exception:
-                        pass
             except Exception:
                 pass
 
