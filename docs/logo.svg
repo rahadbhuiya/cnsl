@@ -1,0 +1,20 @@
+<svg width="340" height="130" viewBox="0 0 340 130" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>CNSL — Correlated Network Security Layer</title>
+  <desc>CNSL wordmark</desc>
+
+  <!-- Wordmark -->
+  <text x="0" y="66" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="54" font-weight="700" letter-spacing="-1" fill="#1a1a1a">CNSL</text>
+
+  <!-- Tagline -->
+  <text x="2" y="92" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="11.5" font-weight="400" letter-spacing="2.5" fill="#666">CORRELATED NETWORK SECURITY LAYER</text>
+
+  <!-- Separator -->
+  <line x1="2" y1="103" x2="338" y2="103" stroke="#0d6e30" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Sub-label -->
+  <text x="2" y="120" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        font-size="10" font-weight="500" letter-spacing="1.8" fill="#1d7a3a">SELF-HOSTED SIEM · LINUX</text>
+
+</svg>
