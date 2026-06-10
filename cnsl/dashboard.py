@@ -1,10 +1,10 @@
 """
-cnsl/dashboard.py — Live web dashboard with JWT auth, SSE, REST API.
+cnsl/dashboard.py — Live web dashboard with JWT auth, WebSocket, SSE, REST API.
 
 Routes:
   GET  /                     HTML dashboard (requires auth if enabled)
   GET  /login                Login page
-  POST /api/login            Get JWT token
+  POST /api/login            Get JWT token (2FA-aware)
   POST /api/logout           Revoke token
   GET  /api/stats            Engine summary + uptime + ssh_fails
   GET  /api/incidents        Recent incidents
@@ -17,7 +17,9 @@ Routes:
   GET  /api/honeypot         Honeypot status + recent sessions
   POST /api/block            Manual block
   POST /api/unblock          Manual unblock
-  GET  /stream               SSE live event stream
+  GET  /ws                   WebSocket live feed + bidirectional actions
+  GET  /ws/agent             WebSocket agent ingestion endpoint
+  GET  /stream               SSE live event stream (backward compat)
 """
 
 from __future__ import annotations
@@ -147,21 +149,79 @@ _LOGIN_HTML = """<!DOCTYPE html>
   <h1><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>CNSL</h1>
   <p class="sub">Correlated Network Security Layer</p>
   <div id="warn" class="warn" style="display:none">Default password active. Change after login.</div>
-  <label>Username</label>
-  <input type="text" id="user" value="admin" autocomplete="username">
-  <label>Password</label>
-  <input type="password" id="pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-  <button onclick="doLogin()">Sign in</button>
+
+  <!-- Step 1: username + password -->
+  <div id="step-login">
+    <label>Username</label>
+    <input type="text" id="user" value="admin" autocomplete="username">
+    <label>Password</label>
+    <input type="password" id="pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">Sign in</button>
+  </div>
+
+  <!-- Step 2: TOTP code (shown only when 2FA is required) -->
+  <div id="step-2fa" style="display:none">
+    <p style="color:#aaa;font-size:13px;margin:0 0 12px">Enter the 6-digit code from your authenticator app, or a backup code.</p>
+    <label>Authentication Code</label>
+    <input type="text" id="otp" maxlength="9" placeholder="000000" autocomplete="one-time-code"
+           style="letter-spacing:4px;font-size:20px;text-align:center"
+           onkeydown="if(event.key==='Enter')do2FA()">
+    <button onclick="do2FA()">Verify</button>
+    <button onclick="resetLogin()" style="background:#333;margin-top:6px">Back</button>
+  </div>
+
   <div class="err" id="err"></div>
 </div>
 <script>
+let _partialToken = null;
+
 async function doLogin(){
+  const err=document.getElementById('err');
+  err.style.display='none';
   const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username:document.getElementById('user').value,password:document.getElementById('pass').value})});
+    body:JSON.stringify({username:document.getElementById('user').value,
+                         password:document.getElementById('pass').value})});
   const d=await r.json();
-  if(d.token){localStorage.setItem('cnsl_token',d.token);location.href='/?token='+d.token;}
-  else{const e=document.getElementById('err');e.textContent=d.error||'Login failed';e.style.display='block';}
+  if(d.needs_2fa){
+    _partialToken=d.partial_token;
+    document.getElementById('step-login').style.display='none';
+    document.getElementById('step-2fa').style.display='block';
+    document.getElementById('otp').focus();
+  } else if(d.token){
+    localStorage.setItem('cnsl_token',d.token);
+    location.href='/?token='+d.token;
+  } else {
+    err.textContent=d.error||'Login failed';
+    err.style.display='block';
+  }
 }
+
+async function do2FA(){
+  const err=document.getElementById('err');
+  err.style.display='none';
+  const code=document.getElementById('otp').value.trim();
+  const r=await fetch('/api/2fa/verify',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({partial_token:_partialToken,code:code})});
+  const d=await r.json();
+  if(d.token){
+    localStorage.setItem('cnsl_token',d.token);
+    location.href='/?token='+d.token;
+  } else {
+    err.textContent=d.error||'Invalid code';
+    err.style.display='block';
+    document.getElementById('otp').value='';
+    document.getElementById('otp').focus();
+  }
+}
+
+function resetLogin(){
+  _partialToken=null;
+  document.getElementById('step-2fa').style.display='none';
+  document.getElementById('step-login').style.display='block';
+  document.getElementById('err').style.display='none';
+  document.getElementById('otp').value='';
+}
+
 fetch('/api/auth-info').then(r=>r.json()).then(d=>{if(d.default_password)document.getElementById('warn').style.display='block';}).catch(()=>{});
 </script>
 </body>
@@ -180,7 +240,8 @@ _HTML = """<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{--bg:#0f1117;--surf:#1a1d27;--bord:#2a2d3a;--text:#e2e8f0;--muted:#64748b;
-  --acc:#6366f1;--red:#ef4444;--amber:#f59e0b;--green:#22c55e;--blue:#3b82f6;--purple:#a855f7;}
+  --acc:#6366f1;--red:#ef4444;--amber:#f59e0b;--green:#22c55e;--blue:#3b82f6;--purple:#a855f7;
+  --surface2:#22263a;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{
   background:var(--bg);
@@ -188,6 +249,27 @@ body{
   font-family:'Segoe UI',system-ui,sans-serif;
   font-size:14px;
 }
+/* Force dark theme on ALL form elements */
+input,select,textarea,button{
+  color:var(--text);
+  background:var(--surf);
+  border:1px solid var(--bord);
+  font-family:inherit;
+  font-size:inherit;
+}
+input:focus,select:focus,textarea:focus{
+  outline:none;
+  border-color:var(--acc);
+}
+select option{
+  background:var(--surf);
+  color:var(--text);
+}
+/* Scrollbar */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--bord);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);}
 /* header */
 header{
   background:var(--surf);
@@ -495,6 +577,41 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M2 4h10M2 7h7M2 10h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
     </svg>
     Live Feed
+  </div>
+  <div class="tab" onclick="showTab('cases')" id="tab-cases">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <rect x="2" y="1.5" width="10" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M4.5 5h5M4.5 7.5h5M4.5 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Cases
+  </div>
+  <div class="tab" onclick="showTab('ueba')" id="tab-ueba">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="4.5" r="2.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M2 12c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    UEBA
+  </div>
+  <div class="tab" onclick="showTab('rules')" id="tab-rules">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M2 3.5h10M2 7h6M2 10.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      <circle cx="11" cy="7" r="1.5" stroke="currentColor" stroke-width="1.2"/>
+    </svg>
+    Rules
+  </div>
+  <div class="tab" onclick="showTab('ratelimit')" id="tab-ratelimit">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M7 4v3l2 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Rate Limit
+  </div>
+  <div class="tab" onclick="showTab('settings')" id="tab-settings">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M7 1.5v1M7 11.5v1M1.5 7h1M11.5 7h1M3.2 3.2l.7.7M10.1 10.1l.7.7M10.8 3.2l-.7.7M3.9 10.1l-.7.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Settings
   </div>
 </nav>
 
@@ -804,6 +921,142 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 </div>
 
+<!-- CASES -->
+<div class="page" id="page-cases">
+  <div class="stat-row" id="cases-stats" style="margin-bottom:14px"></div>
+  <div class="tbl-wrap">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Cases</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="cases-filter-status" onchange="loadCases()" style="background:var(--surface2);border:1px solid var(--bord);color:var(--text);padding:3px 8px;border-radius:4px;font-size:12px">
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="investigating">Investigating</option>
+          <option value="closed">Closed</option>
+          <option value="false_positive">False Positive</option>
+        </select>
+        <select id="cases-filter-sev" onchange="loadCases()" style="background:var(--surface2);border:1px solid var(--bord);color:var(--text);padding:3px 8px;border-radius:4px;font-size:12px">
+          <option value="">All severities</option>
+          <option value="HIGH">HIGH</option>
+          <option value="MEDIUM">MEDIUM</option>
+          <option value="LOW">LOW</option>
+        </select>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Severity</th><th>IP</th><th>Assigned</th><th>Updated</th></tr></thead>
+      <tbody id="cases-tbody"><tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- UEBA -->
+<div class="page" id="page-ueba">
+  <div class="stat-row" id="ueba-stats" style="margin-bottom:14px"></div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Recent Anomalies</span></div>
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Source IP</th><th>Types</th><th>Reason</th></tr></thead>
+      <tbody id="ueba-anomalies-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="tbl-wrap">
+    <div class="tbl-head"><span class="tbl-head-title">User Profiles</span><span style="font-size:11px;color:var(--muted)" id="ueba-profile-count"></span></div>
+    <table>
+      <thead><tr><th>Username</th><th>Logins</th><th>Anomalies</th><th>Known IPs</th><th>Last Seen</th></tr></thead>
+      <tbody id="ueba-profiles-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- RULES -->
+<div class="page" id="page-rules">
+  <div class="tbl-wrap">
+    <div class="tbl-head"><span class="tbl-head-title">Alert Rules</span><span style="font-size:11px;color:var(--muted)">Click a rule to edit threshold and severity</span></div>
+    <table>
+      <thead><tr><th>Rule ID</th><th>Name</th><th>Status</th><th>Severity</th><th>Threshold</th><th>Window</th><th>Actions</th></tr></thead>
+      <tbody id="rules-tbody"><tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <!-- Edit panel -->
+  <div id="rule-edit-panel" style="display:none;margin-top:14px;padding:16px;background:var(--surface2);border:1px solid var(--bord);border-radius:6px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)" id="rule-edit-title">Edit Rule</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Threshold</label>
+        <input id="rule-edit-threshold" type="number" min="1" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Severity</label>
+        <select id="rule-edit-severity" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+          <option value="LOW">LOW</option>
+          <option value="MEDIUM">MEDIUM</option>
+          <option value="HIGH">HIGH</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Window (sec)</label>
+        <input id="rule-edit-window" type="number" min="0" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green" onclick="saveRule()">Save</button>
+      <button class="btn" onclick="resetRule()" style="background:var(--surf);border:1px solid var(--bord)">Reset to Default</button>
+      <button class="btn" onclick="$('rule-edit-panel').style.display='none'" style="background:var(--surf);border:1px solid var(--bord)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- RATE LIMIT -->
+<div class="page" id="page-ratelimit">
+  <div class="stat-row" id="rl-stats" style="margin-bottom:14px"></div>
+  <div class="tbl-wrap">
+    <div class="tbl-head"><span class="tbl-head-title">Top Requesters</span><button class="btn btn-green" onclick="loadRateLimit()" style="font-size:11px;padding:3px 10px">Refresh</button></div>
+    <table>
+      <thead><tr><th>IP</th><th>Requests (window)</th><th>Actions</th></tr></thead>
+      <tbody id="rl-top-tbody"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="tbl-wrap" style="margin-top:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Active Rate-Limit Blocks</span></div>
+    <table>
+      <thead><tr><th>IP</th><th>Expires in</th><th>Actions</th></tr></thead>
+      <tbody id="rl-blocks-tbody"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="page" id="page-settings">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Module Status</span><span style="font-size:11px;color:var(--muted)">Live status of optional modules</span></div>
+    <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px" id="settings-modules"></div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Zeek Log Sources</span><span style="font-size:11px;color:var(--muted)" id="zeek-hint">Disable to stop "File not found" messages</span></div>
+    <div style="padding:16px">
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px">Zeek logs are enabled in config. If Zeek is not installed, disable them to prevent log spam.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="zeek-toggle-btns"></div>
+      <p style="font-size:11px;color:var(--muted);margin:12px 0 0">Note: Changes take effect on next restart. Edit <code>/etc/cnsl/config.json</code> to make permanent.</p>
+    </div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">HuddleCluster — Load Balancing</span></div>
+    <div style="padding:16px" id="settings-huddle">
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+        Self-organizing load balancer across multiple CNSL nodes.<br>
+        Temperature score = CNSL event load + queue fill + incident rate.
+      </p>
+      <div id="huddle-inner-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <div style="font-size:11px;color:var(--muted)" id="huddle-status-line">Loading...</div>
+    </div>
+  </div>
+    <div style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:12px" id="settings-config-ref"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const $=id=>document.getElementById(id);
 const fmtDate=ts=>ts?new Date(ts*1000).toLocaleString():'—';
@@ -817,6 +1070,264 @@ function showTab(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   $('tab-'+name).classList.add('active');
   $('page-'+name).classList.add('active');
+  if(name==='cases')     loadCases();
+  if(name==='ueba')      loadUEBA();
+  if(name==='rules')     loadRules();
+  if(name==='ratelimit') loadRateLimit();
+  if(name==='settings')  loadSettings();
+}
+
+//  Cases 
+let _editingRuleId = null;
+
+async function loadCases(){
+  const status = $('cases-filter-status').value;
+  const sev    = $('cases-filter-sev').value;
+  let url = `/api/cases?limit=100`;
+  if(status) url += `&status=${status}`;
+  if(sev)    url += `&severity=${sev}`;
+
+  // stats
+  const stats = await apiFetch('/api/cases/stats');
+  if(stats){
+    $('cases-stats').innerHTML = [
+      {l:'Total',v:stats.total||0,c:''},
+      {l:'Open',v:stats.open||0,c:'c-red'},
+      {l:'Investigating',v:stats.investigating||0,c:'c-yellow'},
+      {l:'Closed',v:stats.closed||0,c:'c-green'},
+      {l:'False Positive',v:stats.false_positive||0,c:'c-blue'},
+    ].map(s=>`<div class="stat"><div class="stat-lbl">${s.l}</div><div class="stat-val ${s.c}">${s.v}</div></div>`).join('');
+  }
+
+  const d = await apiFetch(url);
+  if(!d) return;
+  const STATUS_COLOR = {open:'c-red',investigating:'c-yellow',closed:'c-green',false_positive:'c-blue'};
+  $('cases-tbody').innerHTML = d.cases.length ? d.cases.map(c=>`
+    <tr>
+      <td style="color:var(--muted);font-size:11px">#${c.id}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.title}">${c.title}</td>
+      <td><span class="${STATUS_COLOR[c.status]||''}">${c.status}</span></td>
+      <td><span class="${c.severity==='HIGH'?'c-red':c.severity==='MEDIUM'?'c-yellow':'c-blue'}">${c.severity}</span></td>
+      <td style="font-family:monospace;font-size:12px">${c.src_ip||'—'}</td>
+      <td>${c.assigned_to||'<span style="color:var(--muted)">unassigned</span>'}</td>
+      <td style="color:var(--muted);font-size:11px">${fmtDate(c.updated_at)}</td>
+    </tr>`).join('') :
+    '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No cases found</td></tr>';
+}
+
+//  UEBA 
+async function loadUEBA(){
+  const stats = await apiFetch('/api/ueba');
+  if(stats && stats.enabled!==false){
+    $('ueba-stats').innerHTML = [
+      {l:'Total Profiles',v:stats.total_profiles||0,c:''},
+      {l:'Anomalous Users',v:stats.anomalous_users||0,c:'c-red'},
+      {l:'Total Logins',v:stats.total_logins_seen||0,c:'c-blue'},
+    ].map(s=>`<div class="stat"><div class="stat-lbl">${s.l}</div><div class="stat-val ${s.c}">${s.v}</div></div>`).join('');
+  } else {
+    $('ueba-stats').innerHTML = '<div class="stat"><div class="stat-lbl">Status</div><div class="stat-val" style="color:var(--muted)">Disabled</div></div>';
+  }
+
+  const an = await apiFetch('/api/ueba/anomalies?limit=50');
+  $('ueba-anomalies-tbody').innerHTML = an && an.anomalies && an.anomalies.length ?
+    an.anomalies.map(a=>`<tr>
+      <td style="color:var(--muted);font-size:11px">${fmtTime(a.ts)}</td>
+      <td style="font-weight:500">${a.username}</td>
+      <td style="font-family:monospace;font-size:12px">${a.src_ip||'—'}</td>
+      <td style="font-size:11px">${(a.anomaly_types||a.anomaly_type||'').toString().replace(',','<br>')}</td>
+      <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${a.reason}">${a.reason||'—'}</td>
+    </tr>`).join('') :
+    '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No anomalies detected</td></tr>';
+
+  const pr = await apiFetch('/api/ueba/profiles?sort_by=anomaly_count&limit=20');
+  if(pr && pr.profiles){
+    $('ueba-profile-count').textContent = `${pr.total} total`;
+    $('ueba-profiles-tbody').innerHTML = pr.profiles.length ?
+      pr.profiles.map(p=>`<tr>
+        <td style="font-weight:500">${p.username}</td>
+        <td>${p.total_logins}</td>
+        <td class="${p.anomaly_count>0?'c-red':''}">${p.anomaly_count}</td>
+        <td>${p.known_ip_count}</td>
+        <td style="color:var(--muted);font-size:11px">${fmtDate(p.last_seen)}</td>
+      </tr>`).join('') :
+      '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No profiles yet — observes successful SSH logins</td></tr>';
+  }
+}
+
+//  Rules 
+async function loadRules(){
+  const d = await apiFetch('/api/rules');
+  if(!d) return;
+  $('rules-tbody').innerHTML = d.rules.map(r=>`
+    <tr>
+      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${r.id}</td>
+      <td style="font-size:12px">${r.name}</td>
+      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">✎</span>':''}</td>
+      <td><span class="${r.effective_severity==='HIGH'?'c-red':r.effective_severity==='MEDIUM'?'c-yellow':'c-blue'}">${r.effective_severity}</span></td>
+      <td>${r.effective_threshold}</td>
+      <td>${r.effective_window}s</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn ${r.enabled?'':'btn-green'}" onclick="${r.enabled?`disableRule('${r.id}')`:`enableRule('${r.id}')`}" style="font-size:11px;padding:2px 8px">
+          ${r.enabled?'Disable':'Enable'}
+        </button>
+        <button class="btn" onclick="openRuleEdit('${r.id}',${r.effective_threshold},'${r.effective_severity}',${r.effective_window})" style="font-size:11px;padding:2px 8px">Edit</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function enableRule(id){
+  await apiFetch(`/api/rules/${id}/enable`,{method:'POST'});
+  loadRules();
+}
+async function disableRule(id){
+  await apiFetch(`/api/rules/${id}/disable`,{method:'POST'});
+  loadRules();
+}
+function openRuleEdit(id,threshold,severity,window_sec){
+  _editingRuleId = id;
+  $('rule-edit-title').textContent = `Edit: ${id}`;
+  $('rule-edit-threshold').value = threshold;
+  $('rule-edit-severity').value  = severity;
+  $('rule-edit-window').value    = window_sec;
+  $('rule-edit-panel').style.display = 'block';
+}
+async function saveRule(){
+  if(!_editingRuleId) return;
+  await apiFetch(`/api/rules/${_editingRuleId}`,{
+    method:'PATCH',
+    body:JSON.stringify({
+      threshold: parseInt($('rule-edit-threshold').value),
+      severity:  $('rule-edit-severity').value,
+      window_sec: parseInt($('rule-edit-window').value),
+    })
+  });
+  $('rule-edit-panel').style.display = 'none';
+  loadRules();
+}
+async function resetRule(){
+  if(!_editingRuleId) return;
+  await apiFetch(`/api/rules/${_editingRuleId}/reset`,{method:'POST'});
+  $('rule-edit-panel').style.display = 'none';
+  loadRules();
+}
+
+//  Rate Limit 
+async function loadRateLimit(){
+  const d = await apiFetch('/api/rate-limit');
+  if(!d){ $('rl-stats').innerHTML='<div class="stat"><div class="stat-lbl">Status</div><div class="stat-val" style="color:var(--muted)">Disabled</div></div>'; return; }
+  $('rl-stats').innerHTML = [
+    {l:'Enabled',v:d.enabled?'Yes':'No',c:d.enabled?'c-green':'c-red'},
+    {l:'Limit',v:`${d.requests_per_min||0}/min`,c:''},
+    {l:'DDoS Threshold',v:d.ddos_threshold||0,c:''},
+    {l:'Total Requests',v:d.total_requests||0,c:''},
+    {l:'Rate Limited',v:d.rate_limited||0,c:d.rate_limited>0?'c-yellow':''},
+    {l:'DDoS Detections',v:d.ddos_detections||0,c:d.ddos_detections>0?'c-red':''},
+    {l:'Active Blocks',v:d.active_blocks||0,c:d.active_blocks>0?'c-red':''},
+  ].map(s=>`<div class="stat"><div class="stat-lbl">${s.l}</div><div class="stat-val ${s.c}">${s.v}</div></div>`).join('');
+
+  const top = await apiFetch('/api/rate-limit/top?n=10');
+  $('rl-top-tbody').innerHTML = top && top.top && top.top.length ?
+    top.top.map(t=>`<tr>
+      <td style="font-family:monospace">${t.ip}</td>
+      <td>${t.requests}</td>
+      <td><button class="btn" onclick="rlReset('${t.ip}')" style="font-size:11px;padding:2px 8px">Reset</button></td>
+    </tr>`).join('') :
+    '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No data</td></tr>';
+
+  const blocks = d.active_block_ips||{};
+  const blockKeys = Object.keys(blocks);
+  $('rl-blocks-tbody').innerHTML = blockKeys.length ?
+    blockKeys.map(ip=>`<tr>
+      <td style="font-family:monospace">${ip}</td>
+      <td>${Math.round(blocks[ip])}s</td>
+      <td><button class="btn btn-green" onclick="rlReset('${ip}')" style="font-size:11px;padding:2px 8px">Reset</button></td>
+    </tr>`).join('') :
+    '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No active rate-limit blocks</td></tr>';
+}
+async function rlReset(ip){
+  await apiFetch(`/api/rate-limit/reset/${ip}`,{method:'POST'});
+  loadRateLimit();
+}
+
+//  Settings 
+async function loadSettings(){
+  // Module status
+  const debug = await apiFetch('/api/debug');
+  if(debug){
+    const modules = [
+      {k:'geoip',       label:'GeoIP'},
+      {k:'abuseipdb',   label:'AbuseIPDB'},
+      {k:'redis',       label:'Redis Sync'},
+      {k:'fim',         label:'File Integrity Monitoring'},
+      {k:'ml',          label:'ML Detection'},
+      {k:'honeypot',    label:'Honeypot'},
+      {k:'ueba',        label:'UEBA'},
+      {k:'threat_feed', label:'Threat Feed'},
+      {k:'kafka',       label:'Kafka'},
+      {k:'rate_limit',  label:'Rate Limiting'},
+      {k:'huddle',      label:'HuddleCluster'},
+    ];
+    $('settings-modules').innerHTML = modules.map(m=>{
+      const on = debug[m.k]===true || debug[m.k]==='enabled';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surf);border:1px solid var(--bord);border-radius:5px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${on?'#22c55e':'#475569'};flex-shrink:0"></span>
+        <span style="font-size:12px;color:${on?'var(--text)':'var(--muted)'}">${m.label}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Zeek toggle helper
+  const zeekLogs = ['conn','ssh','http','dns','notice','weird'];
+  $('zeek-toggle-btns').innerHTML = zeekLogs.map(l=>`
+    <button class="btn" onclick="alert('Edit zeek.logs.${l} in /etc/cnsl/config.json and restart CNSL')"
+      style="font-size:11px;padding:4px 12px">
+      ${l}.log
+    </button>`).join('');
+
+  // HuddleCluster status
+  const hd = await apiFetch('/api/huddle');
+  if(hd){
+    if(!hd.enabled){
+      $('huddle-status-line').textContent = 'Disabled — enable in config.json: "huddle": {"enabled": true, "nodes": [...]}';
+    } else {
+      const inner = hd.inner_servers||[];
+      const outer = hd.outer_servers||[];
+      $('huddle-inner-list').innerHTML = inner.map(s=>`
+        <div style="padding:8px 14px;background:var(--surf);border:1px solid var(--bord);border-radius:5px;min-width:120px">
+          <div style="font-size:11px;color:var(--muted)">INNER (active)</div>
+          <div style="font-size:12px;font-weight:600;margin:2px 0">${s.id}</div>
+          <div style="font-size:11px;color:var(--acc)">${s.host}:${s.port}</div>
+          <div style="font-size:11px;margin-top:4px">
+            temp: <span class="${s.temp>0.7?'c-red':s.temp>0.4?'c-yellow':'c-green'}">${(s.temp*100).toFixed(0)}%</span>
+            &nbsp;p95: ${s.p95}ms
+          </div>
+        </div>`).join('') +
+        outer.map(s=>`
+        <div style="padding:8px 14px;background:var(--surf);border:1px solid var(--bord);border-radius:5px;min-width:120px;opacity:0.6">
+          <div style="font-size:11px;color:var(--muted)">OUTER (resting)</div>
+          <div style="font-size:12px;font-weight:600;margin:2px 0">${s.id}</div>
+          <div style="font-size:11px;color:var(--muted)">${s.host}:${s.port}</div>
+          <div style="font-size:11px;margin-top:4px">temp: ${(s.temp*100).toFixed(0)}%</div>
+        </div>`).join('');
+      $('huddle-status-line').textContent =
+        `Rotations: ${hd.rotations||0}  |  Fairness: ${((hd.fairness||1)*100).toFixed(0)}%  |  Local: ${hd.local_id||'—'}  temp: ${((hd.local_temp||0)*100).toFixed(0)}%`;
+    }
+  }
+
+  // Config reference
+  $('settings-config-ref').innerHTML = [
+    {k:'zeek.enabled',     v:'Disable to stop Zeek "waiting" messages'},
+    {k:'ueba.enabled',     v:'Per-user behavioral profiling'},
+    {k:'threat_feed.enabled', v:'Community blocklist (Emerging Threats etc.)'},
+    {k:'rate_limiting.enabled',v:'Per-IP rate limiting + DDoS protection'},
+    {k:'kafka.enabled',    v:'Kafka log ingestion'},
+    {k:'country_block.enabled',v:'Block entire countries by ISO code'},
+    {k:'fim.enabled',      v:'File integrity monitoring'},
+    {k:'ml.enabled',       v:'ML anomaly detection (IsolationForest)'},
+  ].map(r=>`<div style="padding:8px 0;border-bottom:1px solid var(--bord)">
+    <code style="font-size:11px;color:var(--acc)">${r.k}</code>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">${r.v}</div>
+  </div>`).join('');
 }
 
 //  Auth 
@@ -1357,25 +1868,35 @@ class _RateLimiter:
 
 
 async def start_dashboard(
-    host:          str,
-    port:          int,
-    detector:      "Detector",
-    blocker:       "Blocker",
-    store:         "Store",
-    metrics:       "Metrics",
-    logger:        "JsonLogger",
-    auth:          "AuthManager",
-    dry_run:       bool = True,
-    rbac:          Any = None,
-    assets:        Any = None,
-    honeypot:      Any = None,
-    ml_detector:   Any = None,
-    fim:           Any = None,
-    search_engine: Any = None,
-    es_pusher:     Any = None,
+    host:           str,
+    port:           int,
+    detector:       "Detector",
+    blocker:        "Blocker",
+    store:          "Store",
+    metrics:        "Metrics",
+    logger:         "JsonLogger",
+    auth:           "AuthManager",
+    dry_run:        bool = True,
+    rbac:           Any = None,
+    assets:         Any = None,
+    honeypot:       Any = None,
+    ml_detector:    Any = None,
+    fim:            Any = None,
+    search_engine:  Any = None,
+    es_pusher:      Any = None,
+    case_manager:   Any = None,
+    threat_feed:    Any = None,
+    ueba:           Any = None,
+    tenant_manager: Any = None,
+    rate_limiter:   Any = None,
+    kafka:          Any = None,
+    huddle:         Any = None,
 ) -> None:
     try:
         from aiohttp import web
+        import aiohttp
+        import json as _json_mod
+        json = _json_mod
     except ImportError:
         await logger.log("dashboard_error", {"error": "aiohttp not installed. Run: pip install aiohttp"})
         return
@@ -1462,16 +1983,532 @@ async def start_dashboard(
         body = await req.json()
         username = body.get("username", "")
         password = body.get("password", "")
-        token, err = auth.login(username, password, client_ip=ip)
+        token, err, needs_2fa = auth.login(username, password, client_ip=ip)
         if err:
             await logger.log("auth_login_fail", {"ip": ip, "username": username})
             return web.json_response({"error": err}, status=401)
+        if needs_2fa:
+            await logger.log("auth_2fa_required", {"ip": ip, "username": username})
+            return web.json_response({"needs_2fa": True, "partial_token": token})
         payload, _ = auth.verify_token(token)
         await logger.log("auth_login_ok", {"ip": ip, "username": username})
         return web.json_response({
             "token": token,
             "must_change_password": payload.get("mcp", False),
         })
+
+    @router.post("/api/2fa/verify")
+    async def api_2fa_verify(req: web.Request) -> web.Response:
+        """Exchange partial token + OTP code for a full access token."""
+        ip   = _get_client_ip(req)
+        body = await req.json()
+        partial_token = body.get("partial_token", "")
+        code          = body.get("code", "")
+        token, err = auth.verify_2fa(partial_token, code, client_ip=ip)
+        if err:
+            await logger.log("auth_2fa_fail", {"ip": ip})
+            return web.json_response({"error": err}, status=401)
+        payload, _ = auth.verify_token(token)
+        await logger.log("auth_2fa_ok", {"ip": ip, "username": payload.get("sub")})
+        return web.json_response({
+            "token": token,
+            "must_change_password": payload.get("mcp", False),
+        })
+
+    @router.post("/api/2fa/setup")
+    async def api_2fa_setup(req: web.Request) -> web.Response:
+        """Generate a new TOTP secret and return the otpauth:// URI."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        username = payload["sub"]
+        uri, err = auth.setup_2fa(username)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        return web.json_response({"uri": uri, "username": username})
+
+    @router.post("/api/2fa/confirm")
+    async def api_2fa_confirm(req: web.Request) -> web.Response:
+        """Confirm 2FA setup with first OTP — activates 2FA and returns backup codes."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        body     = await req.json()
+        code     = body.get("code", "")
+        username = payload["sub"]
+        backup_codes, err = auth.confirm_2fa(username, code)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("auth_2fa_enabled", {"username": username})
+        return web.json_response({"ok": True, "backup_codes": backup_codes})
+
+    @router.post("/api/2fa/disable")
+    async def api_2fa_disable(req: web.Request) -> web.Response:
+        """Disable 2FA — requires password confirmation."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        body     = await req.json()
+        password = body.get("password", "")
+        username = payload["sub"]
+        err = auth.disable_2fa(username, password)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("auth_2fa_disabled", {"username": username})
+        return web.json_response({"ok": True})
+
+    @router.get("/api/2fa/status")
+    async def api_2fa_status(req: web.Request) -> web.Response:
+        """Return 2FA status for the authenticated user."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        status = auth.get_2fa_status(payload["sub"])
+        return web.json_response(status)
+
+    #  HuddleCluster API 
+
+    @router.get("/api/huddle")
+    async def api_huddle_stats(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not huddle:
+            return web.json_response({"enabled": False})
+        return web.json_response(huddle.get_stats())
+
+    #  Rate Limiter API 
+
+    @router.get("/api/rate-limit")
+    async def api_rate_limit_stats(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not rate_limiter or not rate_limiter.enabled:
+            return web.json_response({"enabled": False})
+        return web.json_response(rate_limiter.get_stats())
+
+    @router.get("/api/rate-limit/top")
+    async def api_rate_limit_top(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not rate_limiter or not rate_limiter.enabled:
+            return web.json_response({"top": []})
+        n = int(req.rel_url.query.get("n", 10))
+        return web.json_response({"top": rate_limiter.top_requesters(n)})
+
+    @router.post("/api/rate-limit/reset/{ip}")
+    async def api_rate_limit_reset(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "block:write"):
+            return web.json_response(guard, status=403)
+        ip = req.match_info["ip"]
+        if rate_limiter:
+            rate_limiter.reset_ip(ip)
+        return web.json_response({"ok": True, "ip": ip})
+
+    #  Tenants API 
+
+    @router.get("/api/tenants")
+    async def api_tenants_list(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "config:read"):
+            return web.json_response(guard, status=403)
+        if not tenant_manager:
+            return web.json_response({"enabled": False, "tenants": []})
+        return web.json_response(tenant_manager.stats())
+
+    @router.post("/api/tenants")
+    async def api_tenant_create(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "config:write"):
+            return web.json_response(guard, status=403)
+        if not tenant_manager:
+            return web.json_response({"error": "Tenant manager unavailable"}, status=503)
+        body = await req.json()
+        tid  = body.get("id", "").strip()
+        err  = tenant_manager.add_tenant(tid, body)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("tenant_created", {"id": tid, "by": payload["sub"]})
+        return web.json_response({"ok": True, "id": tid}, status=201)
+
+    @router.delete("/api/tenants/{tenant_id}")
+    async def api_tenant_delete(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "config:write"):
+            return web.json_response(guard, status=403)
+        if not tenant_manager:
+            return web.json_response({"error": "Tenant manager unavailable"}, status=503)
+        tid  = req.match_info["tenant_id"]
+        err  = tenant_manager.remove_tenant(tid)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("tenant_deleted", {"id": tid, "by": payload["sub"]})
+        return web.json_response({"ok": True})
+
+    #  Kafka API 
+
+    @router.get("/api/kafka")
+    async def api_kafka_stats(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not kafka:
+            return web.json_response({"enabled": False})
+        return web.json_response(kafka.get_stats())
+
+    #  UEBA API 
+
+    @router.get("/api/ueba")
+    async def api_ueba_stats(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not ueba or not ueba.enabled:
+            return web.json_response({"enabled": False, "total_profiles": 0})
+        return web.json_response({"enabled": True, **ueba.stats()})
+
+    @router.get("/api/ueba/profiles")
+    async def api_ueba_profiles(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not ueba or not ueba.enabled:
+            return web.json_response({"profiles": []})
+        q       = req.rel_url.query
+        limit   = min(int(q.get("limit", 50)), 200)
+        offset  = int(q.get("offset", 0))
+        sort_by = q.get("sort_by", "anomaly_count")
+        profiles = ueba.list_profiles(limit=limit, offset=offset, sort_by=sort_by)
+        return web.json_response({
+            "profiles": profiles,
+            "total":    ueba.profile_count,
+        })
+
+    @router.get("/api/ueba/profiles/{username}")
+    async def api_ueba_profile_get(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not ueba or not ueba.enabled:
+            return web.json_response({"error": "UEBA not enabled"}, status=503)
+        username = req.match_info["username"]
+        profile  = ueba.get_profile(username)
+        if not profile:
+            return web.json_response({"error": "User not found"}, status=404)
+        return web.json_response(profile)
+
+    @router.get("/api/ueba/anomalies")
+    async def api_ueba_anomalies(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not ueba or not ueba.enabled:
+            return web.json_response({"anomalies": []})
+        q        = req.rel_url.query
+        limit    = min(int(q.get("limit", 50)), 200)
+        username = q.get("username")
+        anomalies = await ueba.recent_anomalies(limit=limit, username=username)
+        return web.json_response({"anomalies": anomalies, "total": len(anomalies)})
+
+    #  Threat Feed API 
+
+    @router.get("/api/threat-feed")
+    async def api_threat_feed_status(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not threat_feed:
+            return web.json_response({"enabled": False, "total_ips": 0, "feeds": []})
+        return web.json_response(threat_feed.get_stats())
+
+    @router.post("/api/threat-feed/refresh")
+    async def api_threat_feed_refresh(req: web.Request) -> web.Response:
+        """Manually trigger a feed refresh. analyst+ only."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "block:write"):
+            return web.json_response(guard, status=403)
+        if not threat_feed or not threat_feed.enabled:
+            return web.json_response({"error": "Threat feed not enabled."}, status=400)
+        stats = await threat_feed.refresh()
+        await logger.log("threat_feed_manual_refresh", {
+            "by": payload["sub"], "total_ips": stats.get("total_ips", 0)
+        })
+        return web.json_response({"ok": True, "stats": stats})
+
+    @router.post("/api/threat-feed/check")
+    async def api_threat_feed_check(req: web.Request) -> web.Response:
+        """Check a specific IP against the loaded feed."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        body = await req.json()
+        ip   = body.get("ip", "").strip()
+        if not ip:
+            return web.json_response({"error": "ip required"}, status=400)
+        if not threat_feed or not threat_feed.enabled:
+            return web.json_response({"ip": ip, "listed": False, "hit": None})
+        hit = threat_feed.check(ip)
+        return web.json_response({"ip": ip, "listed": bool(hit), "hit": hit})
+
+    #  Alert Rule Engine API 
+
+    @router.get("/api/rules")
+    async def api_rules_list(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        rules = detector.rules.all_rules()
+        return web.json_response({"rules": rules, "total": len(rules)})
+
+    @router.get("/api/rules/{rule_id:.*}")
+    async def api_rule_get(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        rule_id = req.match_info["rule_id"]
+        rule = detector.rules.get(rule_id)
+        if not rule:
+            return web.json_response({"error": f"Rule '{rule_id}' not found."}, status=404)
+        return web.json_response(rule.to_dict())
+
+    @router.patch("/api/rules/{rule_id:.*}")
+    async def api_rule_update(req: web.Request) -> web.Response:
+        """Update rule fields: enabled, threshold, severity, window_sec. analyst+ only."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "block:write"):   # analyst+
+            return web.json_response(guard, status=403)
+        rule_id = req.match_info["rule_id"]
+        body    = await req.json()
+        err = detector.rules.update(
+            rule_id,
+            enabled   = body.get("enabled"),
+            threshold = body.get("threshold"),
+            severity  = body.get("severity"),
+            window    = body.get("window_sec"),
+        )
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("rule_updated", {
+            "rule_id": rule_id, "by": payload["sub"], "changes": body
+        })
+        return web.json_response({"ok": True, "rule": detector.rules.get(rule_id).to_dict()})
+
+    @router.post("/api/rules/{rule_id:.*}/enable")
+    async def api_rule_enable(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "block:write"):
+            return web.json_response(guard, status=403)
+        rule_id = req.match_info["rule_id"]
+        err = detector.rules.enable(rule_id)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("rule_enabled", {"rule_id": rule_id, "by": payload["sub"]})
+        return web.json_response({"ok": True})
+
+    @router.post("/api/rules/{rule_id:.*}/disable")
+    async def api_rule_disable(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "block:write"):
+            return web.json_response(guard, status=403)
+        rule_id = req.match_info["rule_id"]
+        err = detector.rules.disable(rule_id)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("rule_disabled", {"rule_id": rule_id, "by": payload["sub"]})
+        return web.json_response({"ok": True})
+
+    @router.post("/api/rules/{rule_id:.*}/reset")
+    async def api_rule_reset(req: web.Request) -> web.Response:
+        """Reset rule to built-in defaults. admin only."""
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "config:write"):
+            return web.json_response(guard, status=403)
+        rule_id = req.match_info["rule_id"]
+        err = detector.rules.reset(rule_id)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("rule_reset", {"rule_id": rule_id, "by": payload["sub"]})
+        return web.json_response({"ok": True, "rule": detector.rules.get(rule_id).to_dict()})
+
+    #  Case Management API 
+
+    @router.get("/api/cases")
+    async def api_cases_list(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:read"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"cases": [], "total": 0})
+        q      = req.rel_url.query
+        status = q.get("status")
+        assigned = q.get("assigned_to")
+        severity = q.get("severity")
+        limit  = min(int(q.get("limit", 50)), 200)
+        offset = int(q.get("offset", 0))
+        cases = await case_manager.list_cases(
+            status=status, assigned_to=assigned,
+            severity=severity, limit=limit, offset=offset,
+        )
+        total = await case_manager.count(status=status, assigned_to=assigned, severity=severity)
+        return web.json_response({"cases": cases, "total": total, "limit": limit, "offset": offset})
+
+    @router.get("/api/cases/stats")
+    async def api_cases_stats(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if not case_manager:
+            return web.json_response({})
+        return web.json_response(await case_manager.stats())
+
+    @router.get("/api/cases/{case_id}")
+    async def api_case_get(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:read"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        try:
+            case_id = int(req.match_info["case_id"])
+        except ValueError:
+            return web.json_response({"error": "Invalid case id"}, status=400)
+        case = await case_manager.get(case_id)
+        if not case:
+            return web.json_response({"error": "Not found"}, status=404)
+        return web.json_response(case)
+
+    @router.post("/api/cases")
+    async def api_case_create(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:write"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        body = await req.json()
+        title    = body.get("title", "").strip()
+        severity = body.get("severity", "MEDIUM").upper()
+        if not title:
+            return web.json_response({"error": "title is required"}, status=400)
+        case_id = await case_manager.create_manual(
+            title=title,
+            severity=severity,
+            src_ip=body.get("src_ip", ""),
+            assigned_to=body.get("assigned_to"),
+            created_by=payload["sub"],
+            incident_id=body.get("incident_id"),
+            reasons=body.get("reasons", []),
+            country=body.get("country", ""),
+            isp=body.get("isp", ""),
+        )
+        await logger.log("case_created", {"id": case_id, "by": payload["sub"], "title": title})
+        return web.json_response({"ok": True, "case_id": case_id}, status=201)
+
+    @router.patch("/api/cases/{case_id}/status")
+    async def api_case_status(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:write"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        try:
+            case_id = int(req.match_info["case_id"])
+        except ValueError:
+            return web.json_response({"error": "Invalid case id"}, status=400)
+        body   = await req.json()
+        status = body.get("status", "")
+        err = await case_manager.update_status(case_id, status, actor=payload["sub"])
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("case_status_updated", {"id": case_id, "status": status, "by": payload["sub"]})
+        return web.json_response({"ok": True})
+
+    @router.patch("/api/cases/{case_id}/assign")
+    async def api_case_assign(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:write"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        try:
+            case_id = int(req.match_info["case_id"])
+        except ValueError:
+            return web.json_response({"error": "Invalid case id"}, status=400)
+        body     = await req.json()
+        assignee = body.get("assigned_to")   # None = unassign
+        err = await case_manager.assign(case_id, assignee, actor=payload["sub"])
+        if err:
+            return web.json_response({"error": err}, status=400)
+        return web.json_response({"ok": True})
+
+    @router.post("/api/cases/{case_id}/notes")
+    async def api_case_add_note(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:write"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        try:
+            case_id = int(req.match_info["case_id"])
+        except ValueError:
+            return web.json_response({"error": "Invalid case id"}, status=400)
+        body = await req.json()
+        note_body = body.get("body", "").strip()
+        err = await case_manager.add_note(case_id, author=payload["sub"], body=note_body)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        return web.json_response({"ok": True})
+
+    @router.delete("/api/cases/{case_id}")
+    async def api_case_delete(req: web.Request) -> web.Response:
+        payload, err = _require_auth(req)
+        if err:
+            return web.json_response({"error": err}, status=401)
+        if guard := rbac.require(payload["role"], "cases:delete"):
+            return web.json_response(guard, status=403)
+        if not case_manager:
+            return web.json_response({"error": "Case management unavailable"}, status=503)
+        try:
+            case_id = int(req.match_info["case_id"])
+        except ValueError:
+            return web.json_response({"error": "Invalid case id"}, status=400)
+        err = await case_manager.delete(case_id)
+        if err:
+            return web.json_response({"error": err}, status=400)
+        await logger.log("case_deleted", {"id": case_id, "by": payload["sub"]})
+        return web.json_response({"ok": True})
 
     @router.post("/api/logout")
     async def api_logout(req: web.Request) -> web.Response:
@@ -1903,7 +2940,7 @@ async def start_dashboard(
         await logger.log("dashboard_manual_unblock", {"ip": ip, "by": user_payload.get("sub")})
         return web.json_response({"unblocked": True, "ip": ip})
 
-    #  SSE 
+    #  SSE (kept for backward compatibility) 
 
     @router.get("/stream")
     async def sse_stream(req: web.Request) -> web.Response:
@@ -1940,6 +2977,183 @@ async def start_dashboard(
                 pass
 
         return resp
+
+    #  WebSocket — bidirectional live feed + actions 
+
+    @router.get("/ws")
+    async def ws_handler(req: web.Request) -> web.WebSocketResponse:
+        """
+        WebSocket endpoint — replaces SSE with a bidirectional channel.
+
+        Auth: send {"type":"auth","token":"..."} as first message.
+
+        Server → client messages:
+          {"type":"event",  "data": {...}}   — live detection event
+          {"type":"ping"}                    — keepalive
+
+        Client → server messages:
+          {"type":"block",   "ip": "1.2.3.4"}
+          {"type":"unblock", "ip": "1.2.3.4"}
+          {"type":"ping"}
+        """
+        ws = web.WebSocketResponse(heartbeat=20)
+        await ws.prepare(req)
+
+        # Auth handshake — first message must be {"type":"auth","token":"..."}
+        ws_payload = None
+        try:
+            first = await asyncio.wait_for(ws.receive(), timeout=10)
+            if first.type != aiohttp.WSMsgType.TEXT:
+                await ws.close(code=4001, message=b"expected auth message")
+                return ws
+            data = json.loads(first.data)
+            if data.get("type") != "auth" or not data.get("token"):
+                await ws.close(code=4001, message=b"missing auth token")
+                return ws
+            ws_payload, err = auth.verify_token(data["token"])
+            if err:
+                await ws.close(code=4003, message=err.encode())
+                return ws
+        except (asyncio.TimeoutError, json.JSONDecodeError, Exception):
+            await ws.close(code=4001, message=b"auth timeout")
+            return ws
+
+        await ws.send_json({"type": "auth_ok", "role": ws_payload["role"]})
+
+        # Subscribe to live events
+        q: asyncio.Queue = asyncio.Queue(maxsize=200)
+        _subscribers.append(q)
+
+        async def _reader() -> None:
+            """Handle inbound client messages (block/unblock actions)."""
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    break
+                try:
+                    cmd = json.loads(msg.data)
+                except json.JSONDecodeError:
+                    continue
+                cmd_type = cmd.get("type", "")
+                ip       = cmd.get("ip", "").strip()
+
+                if cmd_type == "block" and ip:
+                    if rbac.can(ws_payload["role"], "block:write"):
+                        blocker.block(ip, duration=900, reason="manual_ws")
+                        await logger.log("ws_block", {"ip": ip, "by": ws_payload["sub"]})
+                        await ws.send_json({"type": "block_ok", "ip": ip})
+                    else:
+                        await ws.send_json({"type": "error", "msg": "insufficient permissions"})
+
+                elif cmd_type == "unblock" and ip:
+                    if rbac.can(ws_payload["role"], "unblock:write"):
+                        blocker.unblock(ip)
+                        await logger.log("ws_unblock", {"ip": ip, "by": ws_payload["sub"]})
+                        await ws.send_json({"type": "unblock_ok", "ip": ip})
+                    else:
+                        await ws.send_json({"type": "error", "msg": "insufficient permissions"})
+
+                elif cmd_type == "ping":
+                    await ws.send_json({"type": "pong"})
+
+        async def _writer() -> None:
+            """Push queued events to the client."""
+            while not ws.closed:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=15.0)
+                    await ws.send_str(f'{{"type":"event","data":{msg}}}')
+                except asyncio.TimeoutError:
+                    try:
+                        await ws.send_json({"type": "ping"})
+                    except Exception:
+                        break
+                except Exception:
+                    break
+
+        try:
+            await asyncio.gather(_reader(), _writer(), return_exceptions=True)
+        finally:
+            try:
+                _subscribers.remove(q)
+            except ValueError:
+                pass
+
+        return ws
+
+    #  WebSocket — Agent ingestion endpoint 
+
+    @router.get("/ws/agent")
+    async def ws_agent_handler(req: web.Request) -> web.WebSocketResponse:
+        """
+        WebSocket endpoint for CNSL agents running on remote servers.
+
+        Agents connect here, authenticate via Bearer token in headers,
+        then stream batches of log events.
+
+        Agent → server: {"type":"agent_events","host":"...","events":[...]}
+        Server → agent: {"ok":true} (handshake ack) or {"type":"pong"}
+        """
+        # Auth from header (agents don't do an interactive handshake)
+        token_str = req.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        if not token_str:
+            # Try query param for agent connections
+            token_str = req.rel_url.query.get("token", "")
+        ws_payload, err = auth.verify_token(token_str)
+        if err:
+            # Return 401 before upgrading
+            raise web.HTTPUnauthorized(reason=err)
+
+        ws = web.WebSocketResponse(heartbeat=30)
+        await ws.prepare(req)
+
+        agent_host = "unknown"
+
+        async for msg in ws:
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                break
+            try:
+                data = json.loads(msg.data)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = data.get("type", "")
+
+            if msg_type == "agent_hello":
+                agent_host = data.get("hostname", "unknown")
+                await logger.log("agent_connected", {
+                    "host": agent_host, "version": data.get("version"),
+                    "platform": data.get("platform"),
+                })
+                await ws.send_json({"ok": True, "msg": f"Welcome {agent_host}"})
+
+            elif msg_type == "agent_events":
+                events = data.get("events", [])
+                agent_host = data.get("host", agent_host)
+                for ev_dict in events:
+                    try:
+                        from .models import Event
+                        # Reconstruct Event from dict, tag with agent host
+                        ev_dict.setdefault("source", f"agent:{agent_host}")
+                        ev_dict.setdefault("meta", {})
+                        if isinstance(ev_dict.get("meta"), dict):
+                            ev_dict["meta"]["_agent_host"] = agent_host
+                        ev = Event(
+                            ts     = ev_dict.get("ts", 0),
+                            source = ev_dict.get("source", "agent"),
+                            kind   = ev_dict.get("kind", "UNKNOWN"),
+                            src_ip = ev_dict.get("src_ip", ""),
+                            user   = ev_dict.get("user"),
+                            meta   = ev_dict.get("meta", {}),
+                        )
+                        if ev.src_ip:
+                            await detector.handle(ev)
+                    except Exception:
+                        pass
+
+            elif msg_type == "ping":
+                await ws.send_json({"type": "pong"})
+
+        await logger.log("agent_disconnected", {"host": agent_host})
+        return ws
 
     #  Start 
 

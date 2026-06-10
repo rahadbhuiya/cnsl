@@ -76,6 +76,114 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "repeat_offender_window_sec": 3600,
     },
 
+    #  HuddleCluster — multi-node load balancing 
+    # github.com/rahadbhuiya/HuddleCluster
+    "huddle": {
+        "enabled":                   False,
+        "nodes":                     [],     # [{id, host, port, weight}]
+        "max_inner_size":            2,      # active CNSL nodes at a time
+        "heat_threshold":            0.75,   # temp above this → evict to outer ring
+        "cool_threshold":            0.35,   # temp below this → promote to inner ring
+        "gossip":                    False,  # UDP multicast temp sharing
+        "gossip_port":               7946,
+        "health_check":              True,   # GET /api/stats on each node
+        "health_check_interval_sec": 15,
+        "state_file":                None,   # persist cluster state across restarts
+    },
+
+    #  Kafka ingestion 
+    "kafka": {
+        "enabled":           False,
+        "bootstrap_servers": "localhost:9092",
+        "group_id":          "cnsl-consumer",
+        "auto_offset_reset": "latest",
+        "topics":            {},
+        "batch_size":        100,
+        "poll_timeout_ms":   1000,
+        "commit_interval":   5,
+    },
+
+    #  Multi-tenant 
+    "tenants": {
+        "enabled":        False,
+        "default_tenant": "default",
+        "list":           {},
+    },
+
+    #  Rate limiting + DDoS protection 
+    "rate_limiting": {
+        "enabled":                False,
+        "requests_per_min":       60,
+        "burst":                  20,
+        "window_sec":             60,
+        "ddos_threshold":         500,
+        "ddos_window_sec":        10,
+        "auto_block":             True,
+        "auto_block_duration_sec":900,
+        "whitelist":              ["127.0.0.1", "::1"],
+        "endpoints": {
+            "/api/login": {"requests_per_min": 10, "window_sec": 60},
+        },
+    },
+
+    #  Agent ingestion (remote log forwarding) 
+    # This section is used by cnsl.agent running on remote servers.
+    # The server-side accepts agent connections on /ws/agent.
+    "agent": {
+        "enabled":        True,    # accept agent connections on /ws/agent
+    },
+
+    #  UEBA — User and Entity Behavior Analytics 
+    "ueba": {
+        "enabled":               False,
+        "min_observations":      10,      # logins before anomaly detection starts
+        "lateral_window_sec":    600,     # window for lateral movement detection
+        "lateral_ip_threshold":  3,       # distinct IPs before lateral movement alert
+        "absence_days":          7,       # days before "login after absence" fires
+        "frequency_spike_factor":3.0,     # today's logins / avg before spike alert
+        "persist":               True,    # persist profiles to SQLite
+    },
+
+    #  Zeek (Bro) log ingestion 
+    "zeek": {
+        "enabled":                False,
+        "log_dir":                "/opt/zeek/logs/current",
+        "format":                 "tsv",     # "tsv" or "json"
+        "dns_entropy_threshold":  3.5,       # Shannon entropy for DNS tunneling
+        "conn_scan_threshold":    20,        # distinct ports before port-scan alert
+        "logs": {
+            "conn":   True,
+            "ssh":    True,
+            "http":   True,
+            "dns":    True,
+            "notice": True,
+            "weird":  True,
+        },
+    },
+
+    #  Community Threat Feed 
+    "threat_feed": {
+        "enabled":              False,
+        "auto_block":           False,       # True = block immediately on feed hit
+        "severity":             "HIGH",
+        "refresh_interval_sec": 3600,
+        "local_file":           None,
+        "feeds": {
+            "emerging_threats": True,
+            "feodo_tracker":    True,
+            "cins_army":        True,
+            "abuse_ch_sslbl":   True,
+            "spamhaus_drop":    False,
+            "spamhaus_edrop":   False,
+        },
+    },
+
+    #  Alert Rule Engine 
+    # Per-rule overrides. Unknown keys are ignored.
+    # Each entry can have: enabled (bool), threshold (int), severity (str), window_sec (int)
+    # Example: "ssh.brute_force": { "enabled": true, "threshold": 5, "severity": "HIGH" }
+    "rules": {},
+
     #  Allowlist — never blocked 
     "allowlist": [
         "127.0.0.1",
@@ -108,6 +216,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "access_token_expire_hours":  8,
         "refresh_token_expire_days":  7,
         "users":                      {},     # populated by user
+        # 2FA fields are per-user: totp_enabled, totp_secret, totp_backup_codes
     },
 
     #  Redis distributed blocklist 
