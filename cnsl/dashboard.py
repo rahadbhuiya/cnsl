@@ -1891,6 +1891,7 @@ async def start_dashboard(
     rate_limiter:   Any = None,
     kafka:          Any = None,
     huddle:         Any = None,
+    notifier:       Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -3154,6 +3155,28 @@ async def start_dashboard(
 
         await logger.log("agent_disconnected", {"host": agent_host})
         return ws
+
+    @router.post("/api/notify/test")
+    async def api_notify_test(req: web.Request) -> web.Response:
+        """Send a test message to all enabled notification channels."""
+        if (r := _rate_check(req)): return r
+        user_payload, err = _require_auth(req)
+        if err: return err
+        if (r := _require_perm(user_payload, "block:write")): return r
+        if notifier is None:
+            return web.json_response({"error": "Notifier not wired"}, status=400)
+        results = await notifier.test_channels()
+        return web.json_response({"results": results})
+
+    @router.post("/api/auth/rotate-secret")
+    async def api_rotate_secret(req: web.Request) -> web.Response:
+        """Rotate JWT signing secret — invalidates ALL active sessions."""
+        if (r := _rate_check(req)): return r
+        user_payload, err = _require_auth(req)
+        if err: return err
+        if (r := _require_perm(user_payload, "admin")): return r
+        auth.rotate_secret()
+        return web.json_response({"ok": True, "message": "Secret rotated — all sessions invalidated."})
 
     #  Start 
 

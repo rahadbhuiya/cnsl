@@ -137,6 +137,11 @@
         "admin@example.com"
       ],
       "subject_prefix": "[CNSL]"
+    },
+    "dedup_window_sec": 300,
+    "daily_digest": {
+      "enabled": false,
+      "hour": 8
     }
   },
   "geoip": {
@@ -152,7 +157,8 @@
         "role": "admin",
         "must_change_password": false
       }
-    }
+    },
+    "session_timeout_minutes": 0
   },
   "queue": {
     "maxsize": 10000

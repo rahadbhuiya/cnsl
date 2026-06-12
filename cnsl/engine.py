@@ -118,7 +118,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.0.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.1.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -126,7 +126,7 @@ Examples:
                     help="Export Grafana dashboard JSON and exit")
     ap.add_argument("--report-days",  type=int, default=30,
                     help="Report period in days (default: 30)")
-    # v2.0.0 flags
+    # v2.1.0 flags
     ap.add_argument("--tenant",        default=None, metavar="ID",
                     help="Run as a specific tenant (multi-tenant mode)")
     ap.add_argument("--no-kafka",      action="store_true",
@@ -135,6 +135,12 @@ Examples:
                     help="Disable rate limiting even if enabled in config")
     ap.add_argument("--agent-mode",    action="store_true",
                     help="Run as a log-forwarding agent (shortcut for: python -m cnsl.agent)")
+    ap.add_argument("--status",        action="store_true",
+                    help="Show running status and block counts, then exit")
+    ap.add_argument("--init",          action="store_true",
+                    help="Interactive setup wizard — create /etc/cnsl/config.json")
+    ap.add_argument("--check-update",  action="store_true",
+                    help="Check if a newer version is available on PyPI")
     return ap
 
 
@@ -167,6 +173,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     geoip    = GeoIP(cfg) if not (getattr(args, "no_geoip", False) or cfg.get("_no_geoip")) else None
     metrics  = Metrics()
     notifier = Notifier(cfg)
+    notifier.start()  # start daily digest background task
     blocker.metrics = metrics  # wire in so dec_block() is called on unblock
 
     correlator = Correlator()
@@ -362,7 +369,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             tenant_manager=tenant_manager,
                             rate_limiter=rate_limiter,
                             kafka=kafka,
-                            huddle=huddle),
+                            huddle=huddle,
+                            notifier=notifier),
             name="dashboard",
         ))
 
@@ -410,6 +418,107 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+def _run_init_wizard() -> None:
+    """Interactive setup wizard — creates /etc/cnsl/config.json."""
+    import json, os, pathlib, secrets as _sec
+    print("CNSL Setup Wizard")
+    print("-" * 40)
+    out_path  = input("Config path [/etc/cnsl/config.json]: ").strip() or "/etc/cnsl/config.json"
+    own_ip    = input("Your server/allowlist IP (e.g. 1.2.3.4): ").strip() or "127.0.0.1"
+    dry_run   = input("Enable dry-run mode? (real blocking disabled) [Y/n]: ").strip().lower()
+    execute   = dry_run in ("n", "no")
+    dashboard = input("Enable web dashboard? [Y/n]: ").strip().lower() not in ("n", "no")
+
+    print("\n--- Notifications (leave blank to skip) ---")
+    tg_token  = input("Telegram bot token: ").strip()
+    tg_chat   = input("Telegram chat ID: ").strip() if tg_token else ""
+
+    email_host = input("SMTP host (e.g. smtp.gmail.com): ").strip()
+    email_cfg  = None
+    if email_host:
+        email_port = input("SMTP port [587]: ").strip() or "587"
+        email_user = input("SMTP username: ").strip()
+        email_pass = input("SMTP password: ").strip()
+        email_to   = input("Alert recipient email: ").strip()
+        email_cfg  = {
+            "enabled":   True,
+            "smtp_host": email_host,
+            "smtp_port": int(email_port),
+            "use_tls":   True,
+            "username":  email_user,
+            "password":  email_pass,
+            "from":      f"CNSL Alerts <{email_user}>",
+            "to":        [email_to],
+        }
+
+    cfg: Dict[str, Any] = {
+        "allowlist": ["127.0.0.1", own_ip],
+        "actions": {"dry_run": not execute, "block_duration_sec": 900},
+        "auth": {"enabled": dashboard, "secret_key": _sec.token_hex(32)},
+        "store": {"db_path": "/var/lib/cnsl/cnsl_state.db"},
+        "notifications": {
+            "min_severity": "MEDIUM",
+            "dedup_window_sec": 300,
+            "daily_digest": {"enabled": bool(tg_token or email_cfg), "hour": 8},
+        },
+    }
+    if tg_token and tg_chat:
+        cfg["notifications"]["telegram"] = {"enabled": True, "bot_token": tg_token, "chat_id": tg_chat}
+    if email_cfg:
+        cfg["notifications"]["email"] = email_cfg
+
+    pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(cfg, f, indent=2)
+    print(f"\nConfig written to {out_path}")
+    print(f"Run: sudo python -m cnsl --config {out_path}" + (" --dashboard" if dashboard else ""))
+
+
+async def _show_status(cfg: Dict) -> None:
+    """Print running status and block counts."""
+    from .store import Store
+    import os
+    db_path = cfg.get("store", {}).get("db_path", "./cnsl_state.db")
+    if not os.path.exists(db_path):
+        print("CNSL status: no database found — not running or no events yet.")
+        return
+    s = Store(db_path)
+    await s.init()
+    try:
+        st      = await s.stats()
+        blocks  = await s.active_blocks()
+        print("CNSL Status")
+        print("-" * 30)
+        print(f"  Database   : {db_path}")
+        print(f"  Events     : {st.get('total', 0)}")
+        print(f"  HIGH       : {st.get('high', 0)}")
+        print(f"  MEDIUM     : {st.get('medium', 0)}")
+        print(f"  Unique IPs : {st.get('unique_ips', 0)}")
+        print(f"  Blocked IPs: {len(blocks)}")
+        print(f"  Dry-run    : {cfg.get('actions', {}).get('dry_run', True)}")
+    finally:
+        await s.close()
+
+
+async def _check_update() -> None:
+    """Check PyPI for a newer CNSL version."""
+    import json as _json
+    from cnsl import __version__
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://pypi.org/pypi/cnsl/json", timeout=aiohttp.ClientTimeout(total=5)) as r:
+                data = await r.json()
+        latest = data["info"]["version"]
+        if latest == __version__:
+            print(f"CNSL {__version__} is up to date.")
+        else:
+            print(f"Update available: {__version__} → {latest}")
+            print("Run: pip install --upgrade cnsl")
+    except Exception as e:
+        print(f"Could not check for updates: {e}")
+
+
 def main() -> None:
     ap = build_arg_parser()
     args = ap.parse_args()
@@ -430,6 +539,21 @@ def main() -> None:
         path = export_dashboard()
         print(f"Grafana dashboard exported to: {path}")
         print("Import in Grafana: Dashboards → Import → Upload JSON file")
+        return
+
+    # Init wizard
+    if getattr(args, 'init', False):
+        _run_init_wizard()
+        return
+
+    # Status
+    if getattr(args, 'status', False):
+        asyncio.run(_show_status(cfg))
+        return
+
+    # Update check
+    if getattr(args, 'check_update', False):
+        asyncio.run(_check_update())
         return
 
     # Report-only mode

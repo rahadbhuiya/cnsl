@@ -15,6 +15,38 @@ Only alerts at or above `min_severity` are sent. Values: `LOW`, `MEDIUM`, `HIGH`
 
 ---
 
+## Alert Deduplication
+
+Suppress duplicate alerts from the same IP+severity within a time window:
+
+```json
+"notifications": {
+  "dedup_window_sec": 300
+}
+```
+
+Default: `300` seconds (5 minutes). Set to `0` to disable deduplication.
+
+---
+
+## Daily Digest
+
+Send a daily summary of all alerts to Telegram and/or Slack:
+
+```json
+"notifications": {
+  "daily_digest": {
+    "enabled": true,
+    "hour": 8
+  }
+}
+```
+
+- `hour` — UTC hour to send the digest (0–23, default: 8)
+- Digest includes total alert count, HIGH/MEDIUM/LOW breakdown, unique IPs, and top 3 events
+
+---
+
 ## Telegram
 
 1. Create a bot via `@BotFather` on Telegram → copy the bot token
@@ -144,7 +176,13 @@ Payload schema:
 
 ## Testing Notifications
 
-Use the simulator to trigger a test alert:
+**From the dashboard (recommended):**
+```
+POST /api/notify/test
+```
+Returns per-channel results: `{"results": {"telegram": "ok", "slack": "error: ..."}}`. Requires `admin` role.
+
+**From the command line:**
 ```bash
 python simulate.py notify
 ```

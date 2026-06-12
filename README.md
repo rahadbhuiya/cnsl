@@ -119,6 +119,14 @@ Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service block
 ## Quick Start
 
 ```bash
+# Option A — pip install (recommended)
+pip install cnsl[full]
+sudo python -m cnsl --no-tcpdump
+
+# Update (Option A)
+pip install --upgrade cnsl
+
+# Option B — from source
 # 1. Clone
 git clone https://github.com/rahadbhuiya/cnsl.git
 cd cnsl
@@ -126,6 +134,10 @@ cd cnsl
 # 2. Install (use a virtualenv)
 python3 -m venv venv
 source venv/bin/activate
+pip install -e ".[full]"
+
+# Update (Option B)
+git pull origin main
 pip install -e ".[full]"
 
 # 3. Run in safe dry-run mode (no real blocks)
@@ -185,6 +197,11 @@ Features:
   --no-tcpdump         Auth.log only, lower CPU
   --no-geoip           Disable GeoIP enrichment
   --no-db              Disable SQLite persistence
+
+Ops:
+  --init               Interactive setup wizard — create /etc/cnsl/config.json
+  --status             Show event count, blocked IPs, and config summary, then exit
+  --check-update       Check if a newer version is available on PyPI
 
 Reports:
   --report FORMAT      Generate report and exit  (html | pdf | json)
@@ -504,7 +521,8 @@ Export PDF button in the header generates a full security report from live data 
 ```json
 "auth": {
   "enabled": true,
-  "secret_key": "REPLACE_WITH_RANDOM_SECRET"
+  "secret_key": "REPLACE_WITH_RANDOM_SECRET",
+  "session_timeout_minutes": 60
 }
 ```
 
@@ -632,6 +650,11 @@ GET /api/aggregate
 ```json
 "notifications": {
   "min_severity": "MEDIUM",
+  "dedup_window_sec": 300,
+  "daily_digest": {
+    "enabled": true,
+    "hour": 8
+  },
   "telegram": { "enabled": true, "bot_token": "...", "chat_id": "..." },
   "discord":  { "enabled": true, "webhook_url": "..." },
   "slack":    { "enabled": true, "webhook_url": "..." },
@@ -647,6 +670,9 @@ GET /api/aggregate
   }
 }
 ```
+
+- `dedup_window_sec` — suppress duplicate alerts from the same IP+event type within this window (default: 300s)
+- `daily_digest` — send a summary of all alerts at the configured hour via Telegram/Slack
 
 Messages use clean plain text — no emoji. ISP names and detection reasons with special characters are automatically escaped so Telegram formatting never breaks.
 
@@ -722,6 +748,8 @@ POST /api/block                  {"ip": "1.2.3.4"}  analyst+ only
 POST /api/unblock                {"ip": "1.2.3.4"}  analyst+ only
 POST /api/report                 {"format": "html", "days": 30}
 POST /api/search/es-push         Push incidents to Elasticsearch
+POST /api/notify/test            Test all enabled notification channels  admin only
+POST /api/auth/rotate-secret     Rotate JWT secret, invalidate all sessions  admin only
 ```
 
 ---
@@ -794,7 +822,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.0.0)
+│   ├── __init__.py              package version (2.1.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 │   │
 │   ├── models.py                Event, Detection dataclasses
@@ -886,6 +914,10 @@ cnsl/
 
 ## Roadmap
 
+- [x] Alert deduplication + daily digest — added in v2.1.0
+- [x] Session timeout + secret rotation — added in v2.1.0
+- [x] `cnsl --init` setup wizard — added in v2.1.0
+- [x] `cnsl --status` + `--check-update` — added in v2.1.0
 - [x] Alert Rule Engine — added in v1.5.0 (9 built-in rules, runtime enable/disable/tune, API)
 - [x] Case Management — added in v1.4.0 (tickets, assignment, notes, RBAC)
 - [x] Full UEBA — added in v1.8.0 (per-user profiles, lateral movement, 5 anomaly types)
@@ -927,6 +959,32 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.1.0 — Security, Monitoring, Ops improvements
+
+**`cnsl/auth.py`** — Security
+- `session_timeout_minutes` config — sessions expire after inactivity (0 = disabled)
+- `rotate_secret()` — invalidates all active tokens and generates a new JWT signing secret
+
+**`cnsl/notify.py`** — Monitoring
+- Alert deduplication — `dedup_window_sec` suppresses repeat alerts from the same IP+event type (default: 300s)
+- Daily digest — sends a summary of all alerts at a configured hour via Telegram/Slack (`daily_digest.enabled`, `daily_digest.hour`)
+- `test_channels()` — sends a test message to all enabled channels and returns per-channel results
+
+**`cnsl/engine.py`** — Usability + Ops
+- `--init` — interactive setup wizard, creates `/etc/cnsl/config.json` with guided prompts (Telegram + email/SMTP)
+- `--status` — shows event count, blocked IP count, and dry-run state from the database, then exits
+- `--check-update` — checks PyPI for a newer version and prints upgrade instructions if available
+
+**`cnsl/dashboard.py`** — API
+- `POST /api/notify/test` — sends a test message to all enabled notification channels, returns per-channel results (`admin` only)
+- `POST /api/auth/rotate-secret` — rotates JWT signing secret and invalidates all active sessions (`admin` only)
+
+**`cnsl/validator.py`** — Usability
+- Root permission check — clear error message when `dry_run=false` but CNSL is not run as root
+- Validation for `dedup_window_sec`, `daily_digest.hour`, `session_timeout_minutes`
+
+---
 
 ### v2.0.0 — Kafka, Multi-tenant, Rate Limiting, Enhanced Reports, HuddleCluster
 

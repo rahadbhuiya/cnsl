@@ -19,6 +19,8 @@ import asyncio
 import json
 import smtplib
 import ssl
+import time
+from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, List, Optional
@@ -109,11 +111,40 @@ class Notifier:
         self._cfg = cfg.get("notifications", {})
         self._min_sev = self._cfg.get("min_severity", "MEDIUM")
         self._sev_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        # Alert deduplication: (ip, kind) -> last sent timestamp
+        self._dedup_window = int(self._cfg.get("dedup_window_sec", 300))  # 5 min default
+        self._last_sent: Dict[tuple, float] = {}
+        # Daily digest buffer
+        self._digest_buffer: List[Detection] = []
+        self._digest_task: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        """Start background daily digest task."""
+        digest_cfg = self._cfg.get("daily_digest", {})
+        if digest_cfg.get("enabled"):
+            self._digest_task = asyncio.ensure_future(self._digest_loop())
+
+    def stop(self) -> None:
+        if self._digest_task:
+            self._digest_task.cancel()
 
     async def send(self, detection: Detection, geo: Optional[Dict] = None) -> None:
         """Send alert to all enabled channels (fire-and-forget, errors swallowed)."""
         if self._sev_order.get(detection.severity, 0) < self._sev_order.get(self._min_sev, 1):
             return
+
+        # Deduplication check
+        if self._dedup_window > 0:
+            dedup_key = (detection.src_ip, detection.severity)
+            last = self._last_sent.get(dedup_key, 0)
+            if time.time() - last < self._dedup_window:
+                # Buffer for digest even if deduped
+                self._digest_buffer.append(detection)
+                return
+            self._last_sent[dedup_key] = time.time()
+
+        # Buffer for daily digest
+        self._digest_buffer.append(detection)
 
         msg = _build_message(detection, geo)
         tasks = []
@@ -141,6 +172,83 @@ class Notifier:
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             # Silently swallow errors so a broken channel never kills the engine
+
+    async def test_channels(self) -> Dict[str, str]:
+        """Send a test message to all enabled channels. Returns {channel: 'ok'|error}."""
+        results: Dict[str, str] = {}
+        test_text = "[CNSL] Webhook test — channels are working correctly."
+
+        async def _try(name: str, coro) -> None:
+            try:
+                await coro
+                results[name] = "ok"
+            except Exception as e:
+                results[name] = str(e)
+
+        tg = self._cfg.get("telegram", {})
+        if tg.get("enabled"):
+            await _try("telegram", self._send_telegram(tg["bot_token"], tg["chat_id"], test_text))
+
+        dc = self._cfg.get("discord", {})
+        if dc.get("enabled"):
+            await _try("discord", _post_json(dc["webhook_url"], {"content": test_text}))
+
+        sl = self._cfg.get("slack", {})
+        if sl.get("enabled"):
+            await _try("slack", _post_json(sl["webhook_url"], {"text": test_text}))
+
+        wh = self._cfg.get("webhook", {})
+        if wh.get("enabled"):
+            await _try("webhook", _post_json(wh["url"], {"message": test_text},
+                       headers=wh.get("headers", {})))
+
+        return results
+
+    async def _digest_loop(self) -> None:
+        """Send daily digest at configured hour (default 08:00)."""
+        import datetime
+        digest_cfg = self._cfg.get("daily_digest", {})
+        target_hour = int(digest_cfg.get("hour", 8))
+        while True:
+            now = datetime.datetime.now()
+            next_run = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+            if next_run <= now:
+                next_run += datetime.timedelta(days=1)
+            await asyncio.sleep((next_run - now).total_seconds())
+            await self._send_digest()
+
+    async def _send_digest(self) -> None:
+        """Send buffered daily summary to all enabled channels."""
+        if not self._digest_buffer:
+            return
+        events = self._digest_buffer[:]
+        self._digest_buffer.clear()
+        high = sum(1 for e in events if e.severity == "HIGH")
+        med  = sum(1 for e in events if e.severity == "MEDIUM")
+        low  = sum(1 for e in events if e.severity == "LOW")
+        unique_ips = len({e.src_ip for e in events})
+        msg = (
+            f"[CNSL] Daily Digest\n"
+            f"Total alerts: {len(events)} | HIGH: {high} MEDIUM: {med} LOW: {low}\n"
+            f"Unique IPs: {unique_ips}\n"
+        )
+        if events:
+            top = sorted(events, key=lambda e: self._sev_order.get(e.severity, 0), reverse=True)[:3]
+            msg += "Top events:\n" + "\n".join(
+                f"  {e.severity} {e.src_ip} — {e.kind}" for e in top
+            )
+        tg = self._cfg.get("telegram", {})
+        if tg.get("enabled"):
+            try:
+                await self._send_telegram(tg["bot_token"], tg["chat_id"], msg)
+            except Exception:
+                pass
+        sl = self._cfg.get("slack", {})
+        if sl.get("enabled"):
+            try:
+                await self._send_slack(sl["webhook_url"], msg)
+            except Exception:
+                pass
 
     # Telegram 
 

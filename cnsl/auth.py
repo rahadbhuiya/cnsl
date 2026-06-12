@@ -262,6 +262,8 @@ class AuthManager:
         self.secret  = auth_cfg.get("secret_key") or secrets.token_hex(32)
         self.access_expire_hours  = int(auth_cfg.get("access_token_expire_hours", 8))
         self.refresh_expire_days  = int(auth_cfg.get("refresh_token_expire_days", 7))
+        self.session_timeout_min  = int(auth_cfg.get("session_timeout_minutes", 0))  # 0 = disabled
+        self._last_activity: Dict[str, float] = {}  # token_id -> last seen timestamp
 
         # Load users from config
         self._users: Dict[str, Dict] = {}
@@ -426,7 +428,22 @@ class AuthManager:
             return None, "Invalid or expired token."
         if payload.get("partial"):
             return None, "2FA not completed."
+        # Session inactivity timeout
+        if self.session_timeout_min > 0:
+            tid = payload.get("jti", token[:16])
+            last = self._last_activity.get(tid, 0)
+            if last and (time.time() - last) > self.session_timeout_min * 60:
+                self._last_activity.pop(tid, None)
+                return None, "Session expired due to inactivity."
+            self._last_activity[tid] = time.time()
         return payload, None
+
+    def rotate_secret(self) -> str:
+        """Rotate the JWT signing secret — invalidates ALL active tokens."""
+        self.secret = secrets.token_hex(32)
+        self._blacklist.clear()
+        self._last_activity.clear()
+        return self.secret
 
     #  Logout 
 

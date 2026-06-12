@@ -104,6 +104,33 @@ def validate_config(cfg: Dict[str, Any]) -> List[str]:
             if not dc.get("webhook_url"):
                 errors.append("notifications.discord.webhook_url is required when enabled")
 
+        dedup = notif.get("dedup_window_sec")
+        if dedup is not None and (not isinstance(dedup, int) or dedup < 0):
+            errors.append("notifications.dedup_window_sec must be a non-negative integer")
+
+        digest = notif.get("daily_digest", {})
+        if isinstance(digest, dict) and digest.get("enabled"):
+            h = digest.get("hour", 8)
+            if not isinstance(h, int) or not (0 <= h <= 23):
+                errors.append("notifications.daily_digest.hour must be 0-23")
+
+    #  Auth extended 
+    auth = cfg.get("auth", {})
+    if isinstance(auth, dict):
+        sto = auth.get("session_timeout_minutes")
+        if sto is not None and (not isinstance(sto, int) or sto < 0):
+            errors.append("auth.session_timeout_minutes must be a non-negative integer")
+
+    #  Runtime permission check 
+    import os
+    ac = cfg.get("actions", {})
+    if isinstance(ac, dict) and not ac.get("dry_run", True):
+        if os.geteuid() != 0:
+            errors.append(
+                "CNSL must be run as root (sudo) when dry_run=false — "
+                "iptables/ipset require root privileges."
+            )
+
     return errors
 
 

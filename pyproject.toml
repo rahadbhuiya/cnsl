@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnsl"
-version = "2.0.0"
+version = "2.1.0"
 description = "Correlated Network Security Layer — A self-hosted SIEM for Linux"
 readme = "README.md"
 license = "MIT"
@@ -84,6 +84,9 @@ cnsl = "cnsl.engine:main"
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+cnsl = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"

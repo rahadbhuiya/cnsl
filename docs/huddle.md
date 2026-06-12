@@ -120,7 +120,7 @@ sudo ufw allow 7946/udp
 # docker-compose.yml (3-node cluster)
 services:
   cnsl-01:
-    image: cnsl:2.0.0
+    image: cnsl:2.1.0
     environment:
       - CNSL_NODE_ID=cnsl-01
     ports: ["8765:8765"]
@@ -128,7 +128,7 @@ services:
       - ./config/config-01.json:/etc/cnsl/config.json
 
   cnsl-02:
-    image: cnsl:2.0.0
+    image: cnsl:2.1.0
     environment:
       - CNSL_NODE_ID=cnsl-02
     ports: ["8766:8765"]
@@ -136,7 +136,7 @@ services:
       - ./config/config-02.json:/etc/cnsl/config.json
 
   cnsl-03:
-    image: cnsl:2.0.0
+    image: cnsl:2.1.0
     environment:
       - CNSL_NODE_ID=cnsl-03
     ports: ["8767:8765"]
