@@ -75,7 +75,7 @@ FEED_SOURCES: List[FeedSource] = [
     FeedSource(
         key  = "cins_army",
         name = "CINS Army Score",
-        url  = "http://cinsscore.com/list/ci-badguys.txt",
+        url  = "https://cinsscore.com/list/ci-badguys.txt",
     ),
     FeedSource(
         key  = "abuse_ch_sslbl",

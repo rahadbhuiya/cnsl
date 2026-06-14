@@ -28,7 +28,7 @@ _PRIVATE_NETS = [
     ipaddress.ip_network("169.254.0.0/16"),
 ]
 
-_API_URL     = "http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,isp,org,as,proxy,hosting"
+_API_URL     = "https://ip-api.com/json/{ip}?fields=status,country,countryCode,city,isp,org,as,proxy,hosting"
 _CACHE_TTL   = 3600 * 6
 _REQUEST_GAP = 1.4
 

@@ -54,7 +54,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}╔══════════════════════════════════════════════════════╗
-║        CNSL — Local Test Simulator  v2.1.0           ║
+║        CNSL — Local Test Simulator  v2.1.1           ║
 ║   No real server required — all tests run locally    ║
 ╚══════════════════════════════════════════════════════╝{RST}
 """)

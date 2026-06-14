@@ -822,8 +822,10 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.1.0)
+│   ├── __init__.py              package version (2.1.1)
 │   ├── __main__.py              python -m cnsl entrypoint
+|   |
+|   |── py.typed
 │   │
 │   ├── models.py                Event, Detection dataclasses
 │   ├── config.py                config loading and all defaults
@@ -904,7 +906,6 @@ cnsl/
 ├── simulate.py                  local test simulator (12 scenarios)
 ├── Dockerfile
 ├── docker-compose.yml
-├── setup.py
 ├── pyproject.toml
 ├── requirements.txt
 └── README.md
@@ -959,6 +960,34 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.1.1 — Security patches & packaging fixes
+
+**`cnsl/api.py`** — Security
+- `POST /block` and `POST /unblock` now require `X-CNSL-Secret` header matching `api.secret_value` in config — unauthenticated requests return `403`
+- Both endpoints validate the IP string via `ipaddress.ip_address()` before passing it to the blocker — invalid input returns `400`
+- Auth failures are logged via `api_auth_failure` event
+
+**`cnsl/dashboard.py`** — Security + Fix
+- Added `escHtml()` helper; all network-controlled data (IP addresses, country, hostnames, commands, file paths, usernames, case titles, rule names, server IDs) now escaped before `innerHTML` injection — closes stored XSS vectors in incidents, blocks, attackers, honeypot sessions, FIM alerts, cases, UEBA anomalies/profiles, and HuddleCluster node list
+- Dashboard header badge updated to `v2.1.1`
+
+**`cnsl/threat_feed.py`** — Security
+- CINS Army feed URL switched from `http://` to `https://` — prevents MITM feed tampering
+
+**`cnsl/geoip.py`** — Security
+- ip-api.com fallback URL switched from `http://` to `https://` — IP lookups no longer sent in plaintext
+
+**`cnsl/` package** — Packaging
+- Added missing `cnsl/py.typed` marker file (PEP 561) — type checker integration now works correctly
+
+**`requirements.txt`** — Packaging
+- Added trailing newline — prevents last package being silently dropped by some pip versions
+
+**`docker-compose.yml`** — Bug fix
+- Fixed merged Kafka env vars: `KAFKA_LISTENER_SECURITY_PROTOCOL_MAP` and `KAFKA_INTER_BROKER_LISTENER_NAME` were on a single line — Kafka container failed to start
+
+---
 
 ### v2.1.0 — Security, Monitoring, Ops improvements
 

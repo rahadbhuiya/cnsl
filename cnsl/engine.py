@@ -118,7 +118,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.1.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.1.1")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -126,7 +126,7 @@ Examples:
                     help="Export Grafana dashboard JSON and exit")
     ap.add_argument("--report-days",  type=int, default=30,
                     help="Report period in days (default: 30)")
-    # v2.1.0 flags
+    # v2.1.1 flags
     ap.add_argument("--tenant",        default=None, metavar="ID",
                     help="Run as a specific tenant (multi-tenant mode)")
     ap.add_argument("--no-kafka",      action="store_true",

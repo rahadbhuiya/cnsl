@@ -510,7 +510,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="hdr-title">CNSL</span>
-    <span class="badge">v1.1.0</span>
+    <span class="badge">v2.1.1</span>
   </div>
   <div class="live-dot" title="Live"></div>
   <button class="hdr-btn" id="pdf-btn" onclick="exportPDF()" title="Export PDF report">
@@ -1059,6 +1059,12 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 <script>
 const $=id=>document.getElementById(id);
+function escHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
 const fmtDate=ts=>ts?new Date(ts*1000).toLocaleString():'—';
 const fmtTime=ts=>ts?new Date(ts*1000).toLocaleTimeString():'—';
 const token=()=>localStorage.getItem('cnsl_token')||'';
@@ -1105,11 +1111,11 @@ async function loadCases(){
   $('cases-tbody').innerHTML = d.cases.length ? d.cases.map(c=>`
     <tr>
       <td style="color:var(--muted);font-size:11px">#${c.id}</td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.title}">${c.title}</td>
-      <td><span class="${STATUS_COLOR[c.status]||''}">${c.status}</span></td>
-      <td><span class="${c.severity==='HIGH'?'c-red':c.severity==='MEDIUM'?'c-yellow':'c-blue'}">${c.severity}</span></td>
-      <td style="font-family:monospace;font-size:12px">${c.src_ip||'—'}</td>
-      <td>${c.assigned_to||'<span style="color:var(--muted)">unassigned</span>'}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(c.title)}">${escHtml(c.title)}</td>
+      <td><span class="${STATUS_COLOR[c.status]||''}">${escHtml(c.status)}</span></td>
+      <td><span class="${c.severity==='HIGH'?'c-red':c.severity==='MEDIUM'?'c-yellow':'c-blue'}">${escHtml(c.severity)}</span></td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(c.src_ip||'—')}</td>
+      <td>${c.assigned_to?escHtml(c.assigned_to):'<span style="color:var(--muted)">unassigned</span>'}</td>
       <td style="color:var(--muted);font-size:11px">${fmtDate(c.updated_at)}</td>
     </tr>`).join('') :
     '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No cases found</td></tr>';
@@ -1132,10 +1138,10 @@ async function loadUEBA(){
   $('ueba-anomalies-tbody').innerHTML = an && an.anomalies && an.anomalies.length ?
     an.anomalies.map(a=>`<tr>
       <td style="color:var(--muted);font-size:11px">${fmtTime(a.ts)}</td>
-      <td style="font-weight:500">${a.username}</td>
-      <td style="font-family:monospace;font-size:12px">${a.src_ip||'—'}</td>
-      <td style="font-size:11px">${(a.anomaly_types||a.anomaly_type||'').toString().replace(',','<br>')}</td>
-      <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${a.reason}">${a.reason||'—'}</td>
+      <td style="font-weight:500">${escHtml(a.username)}</td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(a.src_ip||'—')}</td>
+      <td style="font-size:11px">${escHtml((a.anomaly_types||a.anomaly_type||'').toString()).replace(',','<br>')}</td>
+      <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(a.reason)}">${escHtml(a.reason||'—')}</td>
     </tr>`).join('') :
     '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No anomalies detected</td></tr>';
 
@@ -1144,7 +1150,7 @@ async function loadUEBA(){
     $('ueba-profile-count').textContent = `${pr.total} total`;
     $('ueba-profiles-tbody').innerHTML = pr.profiles.length ?
       pr.profiles.map(p=>`<tr>
-        <td style="font-weight:500">${p.username}</td>
+        <td style="font-weight:500">${escHtml(p.username)}</td>
         <td>${p.total_logins}</td>
         <td class="${p.anomaly_count>0?'c-red':''}">${p.anomaly_count}</td>
         <td>${p.known_ip_count}</td>
@@ -1295,8 +1301,8 @@ async function loadSettings(){
       $('huddle-inner-list').innerHTML = inner.map(s=>`
         <div style="padding:8px 14px;background:var(--surf);border:1px solid var(--bord);border-radius:5px;min-width:120px">
           <div style="font-size:11px;color:var(--muted)">INNER (active)</div>
-          <div style="font-size:12px;font-weight:600;margin:2px 0">${s.id}</div>
-          <div style="font-size:11px;color:var(--acc)">${s.host}:${s.port}</div>
+          <div style="font-size:12px;font-weight:600;margin:2px 0">${escHtml(s.id)}</div>
+          <div style="font-size:11px;color:var(--acc)">${escHtml(s.host)}:${escHtml(String(s.port))}</div>
           <div style="font-size:11px;margin-top:4px">
             temp: <span class="${s.temp>0.7?'c-red':s.temp>0.4?'c-yellow':'c-green'}">${(s.temp*100).toFixed(0)}%</span>
             &nbsp;p95: ${s.p95}ms
@@ -1305,8 +1311,8 @@ async function loadSettings(){
         outer.map(s=>`
         <div style="padding:8px 14px;background:var(--surf);border:1px solid var(--bord);border-radius:5px;min-width:120px;opacity:0.6">
           <div style="font-size:11px;color:var(--muted)">OUTER (resting)</div>
-          <div style="font-size:12px;font-weight:600;margin:2px 0">${s.id}</div>
-          <div style="font-size:11px;color:var(--muted)">${s.host}:${s.port}</div>
+          <div style="font-size:12px;font-weight:600;margin:2px 0">${escHtml(s.id)}</div>
+          <div style="font-size:11px;color:var(--muted)">${escHtml(s.host)}:${escHtml(String(s.port))}</div>
           <div style="font-size:11px;margin-top:4px">temp: ${(s.temp*100).toFixed(0)}%</div>
         </div>`).join('');
       $('huddle-status-line').textContent =
@@ -1429,12 +1435,12 @@ async function fetchIncidents(){
   tb.innerHTML=rows.slice(0,50).map(r=>`
     <tr>
       <td style="color:var(--muted);font-size:11px">${fmtDate(r.ts)}</td>
-      <td class="mono">${r.src_ip||'—'}</td>
-      <td style="font-size:12px">${r.flag||''} ${r.country||'—'}</td>
-      <td><span class="sev sev-${r.severity}">${r.severity}</span></td>
+      <td class="mono">${escHtml(r.src_ip||'—')}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')}</td>
+      <td><span class="sev sev-${escHtml(r.severity)}">${escHtml(r.severity)}</span></td>
       <td style="color:var(--muted)">${r.fail_count||0}</td>
       <td style="font-size:11px;color:var(--muted);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-        ${(r.reasons||[]).join(', ')||'—'}
+        ${(r.reasons||[]).map(escHtml).join(', ')||'—'}
       </td>
     </tr>`).join('');
 }
@@ -1449,11 +1455,11 @@ async function fetchBlocks(){
   }
   tb.innerHTML=rows.map(r=>`
     <tr>
-      <td class="mono">${r.ip}</td>
-      <td style="font-size:12px">${r.flag||''} ${r.country||'—'}</td>
+      <td class="mono">${escHtml(r.ip)}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')}</td>
       <td style="font-size:11px;color:var(--muted)">${fmtDate(r.blocked_at)}</td>
       <td style="font-size:11px;color:var(--amber)">${fmtDate(r.unblock_at)}</td>
-      <td><button class="btn btn-green" onclick="doUnblock('${r.ip}')">Unblock</button></td>
+      <td><button class="btn btn-green" onclick="doUnblock('${escHtml(r.ip)}')">Unblock</button></td>
     </tr>`).join('');
 }
 
@@ -1462,8 +1468,8 @@ async function fetchTopAttackers(){
   if(!rows||!rows.length)return;
   $('attackers-body').innerHTML=rows.map(r=>`
     <tr>
-      <td class="mono">${r.src_ip}</td>
-      <td style="font-size:12px">${r.flag||''} ${r.country||'—'} ${r.city?'· '+r.city:''}</td>
+      <td class="mono">${escHtml(r.src_ip)}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')} ${r.city?'· '+escHtml(r.city):''}</td>
       <td class="c-red" style="font-weight:600">${r.incident_count}</td>
       <td style="font-size:11px;color:var(--muted)">${fmtDate(r.last_seen)}</td>
     </tr>`).join('');
@@ -1485,11 +1491,11 @@ async function fetchHoneypot(){
   }
   tb.innerHTML=sess.map(s=>`
     <tr>
-      <td class="mono">${s.attacker_ip}</td>
+      <td class="mono">${escHtml(s.attacker_ip)}</td>
       <td style="font-size:11px;color:var(--muted)">${s.time||fmtDate(s.start_time)}</td>
       <td style="color:var(--muted)">${Math.round(s.duration_sec||0)}s</td>
       <td style="color:var(--amber)">${(s.auth_attempts||[]).length}</td>
-      <td class="cmds">${(s.commands||[]).join(' | ')||'—'}</td>
+      <td class="cmds">${(s.commands||[]).map(escHtml).join(' | ')||'—'}</td>
     </tr>`).join('');
 }
 
@@ -1501,7 +1507,7 @@ async function fetchFIM(){
   $('fim-disabled-msg').style.display=enabled?'none':'flex';
   $('fim-watch-paths').style.display=enabled?'block':'none';
   if(!enabled)return;
-  $('fim-paths-list').innerHTML=(d.watch_paths||[]).map(p=>`<div>${p}</div>`).join('');
+  $('fim-paths-list').innerHTML=(d.watch_paths||[]).map(p=>`<div>${escHtml(p)}</div>`).join('');
   const tb=$('fim-body');
   const alerts=d.alerts||[];
   if(!alerts.length){
@@ -1511,9 +1517,9 @@ async function fetchFIM(){
   tb.innerHTML=alerts.map(a=>`
     <tr>
       <td style="font-size:11px;color:var(--muted)">${a.time||fmtDate(a.ts)}</td>
-      <td class="mono" style="font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.path}</td>
-      <td><span class="chg chg-${a.change}">${a.change}</span></td>
-      <td><span class="sev sev-${a.severity}">${a.severity}</span></td>
+      <td class="mono" style="font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.path)}</td>
+      <td><span class="chg chg-${escHtml(a.change)}">${escHtml(a.change)}</span></td>
+      <td><span class="sev sev-${escHtml(a.severity)}">${escHtml(a.severity)}</span></td>
     </tr>`).join('');
 }
 
