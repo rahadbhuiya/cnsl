@@ -613,6 +613,16 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </svg>
     Settings
   </div>
+  <div class="tab" onclick="showTab('killchain')" id="tab-killchain">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="2" cy="7" r="1.2" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="7" cy="3" r="1.2" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="12" cy="7" r="1.2" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="7" cy="11" r="1.2" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M3.2 7h2.6M7 4.2v1.6M8.2 7h2.6M7 8.2v1.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Kill Chain
+  </div>
 </nav>
 
 <!-- banners -->
@@ -1027,6 +1037,51 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 <!-- SETTINGS -->
+<div class="page" id="page-killchain">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Kill Chain Overview</span>
+      <span style="font-size:11px;color:var(--muted)">Attack progression per source IP</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--muted)">
+          <input type="checkbox" id="kc-complete-only" onchange="loadKillChain()"> Complete only
+        </label>
+        <select id="kc-min-score" onchange="loadKillChain()" style="font-size:11px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px">
+          <option value="0">All scores</option>
+          <option value="0.3">Score >= 0.3</option>
+          <option value="0.5">Score >= 0.5</option>
+          <option value="0.7">Score >= 0.7</option>
+        </select>
+        <button onclick="loadKillChain()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+      </div>
+    </div>
+    <div id="kc-stats-bar" style="padding:10px 16px;display:flex;gap:24px;border-bottom:1px solid var(--border);font-size:12px"></div>
+    <table id="kc-table">
+      <thead><tr>
+        <th>Source IP</th>
+        <th>Max Stage</th>
+        <th>Score</th>
+        <th>Complete</th>
+        <th>Events</th>
+        <th>Last Seen</th>
+        <th>Location</th>
+        <th>Detail</th>
+      </tr></thead>
+      <tbody id="kc-tbody"></tbody>
+    </table>
+  </div>
+  <div id="kc-detail-wrap" style="display:none">
+    <div class="tbl-wrap">
+      <div class="tbl-head">
+        <span class="tbl-head-title" id="kc-detail-title">Kill Chain Detail</span>
+        <button onclick="document.getElementById('kc-detail-wrap').style.display='none'" style="font-size:11px;padding:3px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer">Close</button>
+      </div>
+      <div id="kc-detail-stages" style="padding:16px;display:flex;gap:0;flex-wrap:nowrap;overflow-x:auto"></div>
+      <div id="kc-detail-meta" style="padding:0 16px 16px;font-size:12px;color:var(--muted)"></div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-settings">
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head"><span class="tbl-head-title">Module Status</span><span style="font-size:11px;color:var(--muted)">Live status of optional modules</span></div>
@@ -1081,6 +1136,7 @@ function showTab(name){
   if(name==='rules')     loadRules();
   if(name==='ratelimit') loadRateLimit();
   if(name==='settings')  loadSettings();
+  if(name==='killchain') loadKillChain();
 }
 
 //  Cases 
@@ -1256,6 +1312,101 @@ async function rlReset(ip){
 }
 
 //  Settings 
+async function loadKillChain(){
+  const completeOnly = document.getElementById('kc-complete-only').checked;
+  const minScore     = document.getElementById('kc-min-score').value;
+  const url = `/api/kill-chain?limit=200&min_score=${minScore}&complete_only=${completeOnly}`;
+  const [chains, stats] = await Promise.all([
+    apiFetch(url),
+    apiFetch('/api/kill-chain/stats'),
+  ]);
+
+  // Stats bar
+  if(stats){
+    const bar = document.getElementById('kc-stats-bar');
+    const pct  = stats.total_chains ? Math.round(stats.complete_chains / stats.total_chains * 100) : 0;
+    bar.innerHTML = [
+      `<span><b>${stats.total_chains}</b> chains tracked</span>`,
+      `<span><b>${stats.complete_chains}</b> complete (${pct}%)</span>`,
+      `<span>Avg score <b>${stats.avg_score}</b></span>`,
+      Object.entries(stats.stage_distribution || {}).map(([s,c])=>
+        `<span>${s}: <b>${c}</b></span>`
+      ).join(''),
+    ].join('<span style="color:var(--border)">|</span>');
+  }
+
+  if(!chains || !chains.length){
+    document.getElementById('kc-tbody').innerHTML =
+      '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">No kill chains recorded yet</td></tr>';
+    return;
+  }
+
+  const STAGE_COLORS = ['#6c757d','#dc3545','#fd7e14','#e74c3c','#9b59b6','#3498db','#1abc9c'];
+  const tbody = document.getElementById('kc-tbody');
+  tbody.innerHTML = chains.map(c => {
+    const maxColor = STAGE_COLORS[c.max_stage] || '#6c757d';
+    const scorePct = Math.round(c.score * 100);
+    const completeBadge = c.complete
+      ? '<span style="background:#e74c3c;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px">COMPLETE</span>'
+      : '<span style="background:var(--surface-2,#2a2a2a);color:var(--muted);padding:2px 6px;border-radius:3px;font-size:10px">partial</span>';
+    const geo = [c.geo_city, c.geo_country].filter(Boolean).join(', ') || '-';
+    return `<tr>
+      <td><code>${escHtml(c.ip)}</code></td>
+      <td><span style="color:${maxColor};font-weight:600">${escHtml(c.max_stage_name)}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:60px;height:6px;background:var(--surface-2,#2a2a2a);border-radius:3px">
+            <div style="width:${scorePct}%;height:6px;background:${maxColor};border-radius:3px"></div>
+          </div>
+          <span style="font-size:11px">${scorePct}%</span>
+        </div>
+      </td>
+      <td>${completeBadge}</td>
+      <td>${c.event_count}</td>
+      <td style="font-size:11px">${escHtml(c.last_seen)}</td>
+      <td style="font-size:11px">${escHtml(geo)}</td>
+      <td><button onclick="showKcDetail('${escHtml(c.ip)}')" style="font-size:11px;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer">View</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function showKcDetail(ip){
+  const chain = await apiFetch(`/api/kill-chain/${encodeURIComponent(ip)}`);
+  if(!chain) return;
+  document.getElementById('kc-detail-wrap').style.display = 'block';
+  document.getElementById('kc-detail-title').textContent = `Kill Chain: ${ip}`;
+
+  const STAGE_COLORS  = ['#6c757d','#dc3545','#fd7e14','#e74c3c','#9b59b6','#3498db','#1abc9c'];
+  const STAGE_NAMES   = ['Reconnaissance','Weaponization','Delivery','Exploitation','Installation','C2','Actions'];
+  const stagesEl = document.getElementById('kc-detail-stages');
+
+  stagesEl.innerHTML = STAGE_NAMES.map((name, i) => {
+    const observed = chain.stages && chain.stages[String(i)];
+    const color    = observed ? STAGE_COLORS[i] : 'var(--surface-2,#2a2a2a)';
+    const textCol  = observed ? '#fff' : 'var(--muted)';
+    const count    = observed ? observed.count : 0;
+    const kinds    = observed ? (observed.event_kinds || []).slice(0,3).join(', ') : '';
+    const arrow    = i < STAGE_NAMES.length - 1
+      ? `<div style="display:flex;align-items:center;padding-top:24px;color:${observed ? STAGE_COLORS[i] : 'var(--border)'};font-size:18px">&#8594;</div>`
+      : '';
+    return `<div style="display:flex;align-items:flex-start">
+      <div style="min-width:120px;max-width:140px;background:${color};color:${textCol};border-radius:6px;padding:10px 12px;font-size:11px">
+        <div style="font-weight:700;margin-bottom:4px">${name}</div>
+        ${observed
+          ? `<div>Events: <b>${count}</b></div><div style="margin-top:4px;word-break:break-all;opacity:.85">${escHtml(kinds)}</div>`
+          : '<div style="opacity:.6">Not observed</div>'
+        }
+      </div>${arrow}
+    </div>`;
+  }).join('');
+
+  const geo = [chain.geo_city, chain.geo_country].filter(Boolean).join(', ');
+  document.getElementById('kc-detail-meta').innerHTML =
+    `First seen: ${escHtml(chain.first_seen)} &nbsp;|&nbsp; Last seen: ${escHtml(chain.last_seen)}` +
+    (geo ? ` &nbsp;|&nbsp; Location: ${escHtml(geo)}` : '') +
+    ` &nbsp;|&nbsp; Score: ${Math.round(chain.score * 100)}%`;
+}
+
 async function loadSettings(){
   // Module status
   const debug = await apiFetch('/api/debug');
@@ -1898,6 +2049,7 @@ async def start_dashboard(
     kafka:          Any = None,
     huddle:         Any = None,
     notifier:       Any = None,
+    kill_chain:     Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -2726,6 +2878,50 @@ async def start_dashboard(
         result = await es_pusher.push(norms)
         return web.json_response(result)
 
+    # ------------------------------------------------------------------ Kill Chain API
+
+    @router.get("/api/kill-chain")
+    async def api_kill_chain_list(req: web.Request) -> web.Response:
+        """Return all active kill chains sorted by score descending."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if kill_chain is None:
+            return web.json_response({"error": "Kill chain tracker not enabled"}, status=400)
+        limit         = int(req.rel_url.query.get("limit", 100))
+        min_score     = float(req.rel_url.query.get("min_score", 0.0))
+        complete_only = req.rel_url.query.get("complete_only", "").lower() == "true"
+        chains = kill_chain.get_all(
+            limit=limit,
+            min_score=min_score,
+            complete_only=complete_only,
+        )
+        return web.json_response([c.to_dict() for c in chains])
+
+    @router.get("/api/kill-chain/stats")
+    async def api_kill_chain_stats(req: web.Request) -> web.Response:
+        """Return aggregate kill chain statistics."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if kill_chain is None:
+            return web.json_response({"error": "Kill chain tracker not enabled"}, status=400)
+        return web.json_response(kill_chain.stats())
+
+    @router.get("/api/kill-chain/{ip}")
+    async def api_kill_chain_ip(req: web.Request) -> web.Response:
+        """Return full kill chain detail for one source IP."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if kill_chain is None:
+            return web.json_response({"error": "Kill chain tracker not enabled"}, status=400)
+        ip    = req.match_info.get("ip", "")
+        chain = kill_chain.get_chain(ip)
+        if chain is None:
+            return web.json_response({"error": f"No kill chain found for {ip}"}, status=404)
+        return web.json_response(chain.to_dict())
+
     @router.get("/api/debug")
     async def api_debug(req: web.Request) -> web.Response:
         """Diagnostic endpoint — shows what modules are wired."""
@@ -2741,6 +2937,8 @@ async def start_dashboard(
             "search_engine_ready":  getattr(search_engine, "available", False),
             "es_pusher_wired":      es_pusher is not None,
             "es_pusher_enabled":    getattr(es_pusher, "enabled", False),
+            "kill_chain_wired":     kill_chain is not None,
+            "kill_chain_enabled":   getattr(kill_chain, "enabled", False),
         })
 
     @router.get("/api/ml-status")

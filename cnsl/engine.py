@@ -40,6 +40,7 @@ from .rate_limiter    import RateLimiter
 from .huddle_integration import HuddleManager
 from .search_engine   import SearchEngine, ElasticsearchPusher
 from .syslog_receiver import SyslogReceiver
+from .kill_chain      import KillChainTracker
 
 
 
@@ -118,7 +119,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.1.1")
+    ap.add_argument("--version",     action="version", version="CNSL 2.2.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -225,6 +226,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if ueba.enabled:
         await ueba.init()
 
+    # Kill chain tracker
+    kill_chain_tracker = KillChainTracker(cfg)
+    if store.available:
+        await kill_chain_tracker.load_all(store)
+
     # Tenant manager
     tenant_manager = TenantManager(cfg)
 
@@ -253,7 +259,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         baseline=baseline, redis_sync=redis_sync,
                         case_manager=case_manager,
                         threat_feed=threat_feed,
-                        ueba=ueba)
+                        ueba=ueba,
+                        kill_chain=kill_chain_tracker)
 
     # Reporter (after detector so rule_engine is available)
     reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
@@ -370,7 +377,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             rate_limiter=rate_limiter,
                             kafka=kafka,
                             huddle=huddle,
-                            notifier=notifier),
+                            notifier=notifier,
+                            kill_chain=kill_chain_tracker),
             name="dashboard",
         ))
 

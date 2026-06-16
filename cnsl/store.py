@@ -17,8 +17,9 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .models import Detection, iso_time
-from .cases  import _CASE_SCHEMA
-from .ueba   import UEBA_SCHEMA
+from .cases      import _CASE_SCHEMA
+from .ueba        import UEBA_SCHEMA
+from .kill_chain  import KC_SCHEMA
 
 
 
@@ -87,6 +88,7 @@ class Store:
             await self._db.executescript(_SCHEMA)
             await self._db.executescript(_CASE_SCHEMA)
             await self._db.executescript(UEBA_SCHEMA)
+            await self._db.executescript(KC_SCHEMA)
             await self._db.commit()
             # Migration: add 'kind' column to existing DBs that don't have it
             try:
@@ -244,6 +246,32 @@ class Store:
             (time.time(),),
         ) as cur:
             rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    # Generic helpers (used by kill_chain, etc.)
+
+    async def db_execute(self, sql: str, params: Any = None) -> None:
+        """Execute a write query (INSERT/UPDATE/DELETE)."""
+        if not self._available or self._db is None:
+            return
+        if params is None:
+            await self._db.execute(sql)
+        elif isinstance(params, dict):
+            await self._db.execute(sql, params)
+        else:
+            await self._db.execute(sql, params)
+        await self._db.commit()
+
+    async def db_fetchall(self, sql: str, params: Any = None) -> List[Dict]:
+        """Execute a read query and return all rows as dicts."""
+        if not self._available or self._db is None:
+            return []
+        if params is None:
+            async with self._db.execute(sql) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with self._db.execute(sql, params) as cur:
+                rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
     async def close(self) -> None:

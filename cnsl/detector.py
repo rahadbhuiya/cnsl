@@ -153,6 +153,7 @@ class Detector:
         case_manager: Optional["CaseManager"]        = None,
         threat_feed:  Optional["ThreatFeed"]         = None,
         ueba:         Optional["UEBAEngine"]         = None,
+        kill_chain:   Optional[Any]                  = None,
     ):
         # Rule engine — all thresholds are read from here at evaluation time
         self.rules = RuleEngine(cfg)
@@ -205,6 +206,7 @@ class Detector:
         self.case_manager = case_manager
         self.threat_feed  = threat_feed
         self.ueba         = ueba
+        self.kill_chain   = kill_chain
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
@@ -419,6 +421,14 @@ class Detector:
         if ev.user:
             st.users.append((t, ev.user))
 
+        # Kill chain: SSH fail = Delivery stage
+        if self.kill_chain:
+            try:
+                geo = self.geoip.get_cached(ip) if self.geoip else None
+                self.kill_chain.update(ip, "SSH_FAIL", geo=geo)
+            except Exception:
+                pass
+
         if self.metrics:
             geo     = self.geoip.get_cached(ip) if self.geoip else None
             country = geo.get("country", "") if geo else ""
@@ -491,6 +501,14 @@ class Detector:
             except Exception:
                 pass
 
+        # Kill chain: SSH success after failures = Exploitation stage
+        if self.kill_chain:
+            try:
+                geo = self.geoip.get_cached(ip) if self.geoip else None
+                self.kill_chain.update(ip, "SSH_SUCCESS", geo=geo)
+            except Exception:
+                pass
+
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="success",
                                fail_count=fail_count, uniq_users=_unique_users(st.users),
                                user=ev.user)
@@ -526,6 +544,20 @@ class Detector:
             path = ev.meta.get("path", "") if ev.meta else ""
             reasons.append(f"web_exploit_attempt: path={path}")
 
+        # Kill chain: map web event kind to appropriate stage
+        if self.kill_chain:
+            try:
+                geo = self.geoip.get_cached(ip) if self.geoip else None
+                kc_kind = {
+                    "WEB_SCAN":            "WEB_SCAN",
+                    "WEB_AUTH_FAIL":       "WEB_AUTH_FAIL",
+                    "WEB_EXPLOIT_ATTEMPT": "WEB_EXPLOIT_ATTEMPT",
+                }.get(ev.kind)
+                if kc_kind:
+                    self.kill_chain.update(ip, kc_kind, geo=geo)
+            except Exception:
+                pass
+
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="web",
                                fail_count=scan_count + auth_count + expl_count,
                                uniq_users=0)
@@ -545,6 +577,14 @@ class Detector:
                 f"db_brute_force: {db_count} DB auth failures (user={user})"
             )
 
+        # Kill chain: DB auth fail = Delivery stage
+        if self.kill_chain:
+            try:
+                geo = self.geoip.get_cached(ip) if self.geoip else None
+                self.kill_chain.update(ip, "DB_AUTH_FAIL", geo=geo)
+            except Exception:
+                pass
+
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="db",
                                fail_count=db_count, uniq_users=0)
 
@@ -555,15 +595,34 @@ class Detector:
         if ev.kind == "FW_HONEYPOT_PORT" and r_hp and r_hp.enabled:
             port    = ev.meta.get("dst_port", "?") if ev.meta else "?"
             reasons = [f"honeypot_port: connection to port {port} (never legitimate)"]
+            # Kill chain: honeypot hit = Reconnaissance stage
+            if self.kill_chain:
+                try:
+                    geo = self.geoip.get_cached(ip) if self.geoip else None
+                    self.kill_chain.update(ip, "FW_HONEYPOT_PORT", geo=geo)
+                except Exception:
+                    pass
             await self._maybe_fire(ip, st, t, r_hp.effective_severity, reasons,
                                    trigger="fw", fail_count=1, uniq_users=0)
         else:
+            # Kill chain: FW block = Reconnaissance stage
+            if self.kill_chain:
+                try:
+                    geo = self.geoip.get_cached(ip) if self.geoip else None
+                    self.kill_chain.update(ip, "FW_BLOCK", geo=geo)
+                except Exception:
+                    pass
             await self.logger.log("fw_block", {"ip": ip, "meta": ev.meta})
 
-    #  Syslog handler (Phase 2) 
-
     async def _on_sys_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
-        # sudo/su fail alone is LOW — correlator will escalate if SSH login preceded it
+        # Kill chain: sudo/su fail = Installation stage
+        if self.kill_chain and ev.kind in ("SUDO_FAIL", "SU_FAIL"):
+            try:
+                geo = self.geoip.get_cached(ip) if self.geoip else None
+                self.kill_chain.update(ip, ev.kind, geo=geo)
+            except Exception:
+                pass
+        # sudo/su fail alone is LOW -- correlator will escalate if SSH login preceded it
         await self.logger.log("privilege_event", {
             "ip":   ip,
             "kind": ev.kind,
@@ -615,6 +674,14 @@ class Detector:
 
         if alert.severity == Severity.HIGH:
             await self._block_ip(ip, f"correlation:{alert.rule_name}", st, detection)
+
+        # Kill chain: map correlation rule to stage
+        if self.kill_chain:
+            try:
+                geo = await self._get_geo(ip)
+                self.kill_chain.update_from_correlation(ip, alert.rule_name, geo=geo)
+            except Exception:
+                pass
 
     #  Core: fire incident 
 

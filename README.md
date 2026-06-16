@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
 </p>
 
-**A self-hosted SIEM for Linux — correlation, ML, honeypot, and search.**
+**A self-hosted SIEM for Linux -- correlation, ML, honeypot, kill chain tracking, and search.**
 
 Correlates SSH, web, database, and firewall signals to detect attacks  
 that no single log source can see alone — then blocks them automatically.
@@ -91,7 +91,10 @@ Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service block
 | Detection | Web scanner + exploit paths (false positive resistant) |
 | Detection | Database brute-force (MySQL), firewall honeypot ports |
 | Detection | Privilege escalation (sudo/su after login) |
-| Correlation | 6 cross-source rules — web+SSH, multi-service, kill chain |
+| Correlation | 6 cross-source rules -- web+SSH, multi-service, kill chain |
+| Kill Chain | Per-IP attack progression graph across 7 stages (Recon to Actions) |
+| Kill Chain | Confidence score (0-100%), complete-chain detection, SQLite persistence |
+| Kill Chain | Dashboard tab with stage timeline, IP detail view, and aggregate stats |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
 | Response | Country-based blocking — block entire countries before thresholds fire |
 | Response | Honeypot redirect — attacker lands on a fake Ubuntu shell (40+ commands) |
@@ -506,6 +509,7 @@ Enable with `--dashboard`. Access at `http://127.0.0.1:8765`
 | FIM | Watched paths list, file integrity alerts |
 | ML | Enabled/trained status, training progress bar, samples collected, last trained time |
 | Live Feed | Every event streamed in real time via SSE |
+| Kill Chain | Per-IP attack progression across 7 stages, score bar, complete-chain badge, detail view |
 
 Export PDF button in the header generates a full security report from live data — uses browser print, no extra tools needed.
 
@@ -822,7 +826,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.1.1)
+│   ├── __init__.py              package version (2.2.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 |   |
 |   |── py.typed
@@ -849,6 +853,7 @@ cnsl/
 │   ├── threat_intel.py          AbuseIPDB + behavioral baseline
 │   ├── threat_feed.py           community threat feeds (6 feeds, CIDR matching)
 │   ├── ueba.py                  user/entity behavior analytics (5 anomaly types)
+│   ├── kill_chain.py            attack kill chain tracker (7 stages, score, SQLite)
 │   │
 │   ├── blocker.py               iptables / ipset blocking backend
 │   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
@@ -961,7 +966,48 @@ Code style: type hints on all public functions, docstrings on all public methods
 
 ## Changelog
 
-### v2.1.1 — Security patches & packaging fixes
+### v2.2.0 -- Attack Kill Chain Tracker
+
+**New module: `cnsl/kill_chain.py`**
+- Tracks per-IP attack progression across 7 unified kill chain stages: Reconnaissance, Weaponization, Delivery, Exploitation, Installation, C2, and Actions on Objectives
+- Every detection event is mapped to a stage using a static kind-to-stage table; correlation rule names are mapped separately via `update_from_correlation()`
+- Each IP chain records first seen, last seen, event count, and observed event kinds per stage
+- Kill chain score (0.0-1.0) reflects how far the attacker has progressed; a chain is marked complete when Reconnaissance, Delivery, and Exploitation are all observed
+- SQLite persistence via new `kc_chains` table -- chains survive restarts and are loaded on startup
+- Configurable via `kill_chain` block in `config.json`: `enabled`, `max_chains`, `stage_ttl_sec`, `persist`
+- Evicts oldest chain when `max_chains` limit is reached
+
+**`cnsl/store.py`** -- Schema + generic helpers
+- `KC_SCHEMA` imported and applied on `init()` -- creates `kc_chains` table with indexes on score and last_seen
+- Added `db_execute(sql, params)` and `db_fetchall(sql, params)` generic async helpers used by kill chain persistence
+
+**`cnsl/detector.py`** -- Kill chain hooks
+- `Detector.__init__` accepts `kill_chain` parameter
+- Kill chain `update()` called in `_on_ssh_fail` (Delivery), `_on_ssh_success` (Exploitation), `_on_web_event` (Reconnaissance/Weaponization/Delivery), `_on_db_event` (Delivery), `_on_fw_event` (Reconnaissance), `_on_sys_event` (Installation)
+- Kill chain `update_from_correlation()` called after every correlation alert fires
+
+**`cnsl/engine.py`** -- Wiring
+- `KillChainTracker` instantiated after UEBA; persisted chains loaded from SQLite on startup
+- Passed to `Detector` and `start_dashboard`
+- Version string bumped to `2.2.0`
+
+**`cnsl/dashboard.py`** -- Kill Chain tab + API
+- New Kill Chain tab in nav with graph icon
+- `GET /api/kill-chain` -- all chains, supports `limit`, `min_score`, `complete_only` query params
+- `GET /api/kill-chain/stats` -- aggregate stage distribution and average score
+- `GET /api/kill-chain/{ip}` -- full chain detail for one IP
+- Kill Chain page: stats bar, sortable table with score progress bar, complete badge, location column
+- Detail view: stage pipeline visualization with color-coded boxes, event kinds per stage, first/last seen
+- `/api/debug` extended with `kill_chain_wired` and `kill_chain_enabled` fields
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.2.0`
+
+**`docs/kill-chain.md`** -- New documentation file
+
+---
+
+### v2.1.1 -- Security patches & packaging fixes
 
 **`cnsl/api.py`** — Security
 - `POST /block` and `POST /unblock` now require `X-CNSL-Secret` header matching `api.secret_value` in config — unauthenticated requests return `403`
