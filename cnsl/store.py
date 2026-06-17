@@ -17,9 +17,10 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .models import Detection, iso_time
-from .cases      import _CASE_SCHEMA
-from .ueba        import UEBA_SCHEMA
-from .kill_chain  import KC_SCHEMA
+from .cases         import _CASE_SCHEMA
+from .ueba          import UEBA_SCHEMA
+from .kill_chain    import KC_SCHEMA
+from .pattern_learner import PL_SCHEMA
 
 
 
@@ -89,6 +90,7 @@ class Store:
             await self._db.executescript(_CASE_SCHEMA)
             await self._db.executescript(UEBA_SCHEMA)
             await self._db.executescript(KC_SCHEMA)
+            await self._db.executescript(PL_SCHEMA)
             await self._db.commit()
             # Migration: add 'kind' column to existing DBs that don't have it
             try:

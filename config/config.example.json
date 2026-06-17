@@ -1,5 +1,5 @@
 {
-  "_comment": "CNSL \u2014 production config. Place at /etc/cnsl/config.json",
+  "_comment": "CNSL -- production config. Place at /etc/cnsl/config.json",
   "authlog_path": "/var/log/auth.log",
   "iface": "any",
   "tcpdump_enabled": true,
@@ -334,6 +334,54 @@
       "username": "",
       "password": "",
       "timeout_sec": 5
+    }
+  },
+  "kill_chain": {
+    "enabled": true,
+    "max_chains": 5000,
+    "stage_ttl_sec": 86400,
+    "persist": true
+  },
+  "pattern_learning": {
+    "enabled": true,
+    "lookback_sec": 300,
+    "min_occurrences": 5,
+    "max_suggestions": 50,
+    "persist": true
+  },
+  "siem": {
+    "splunk": {
+      "enabled": false,
+      "hec_url": "https://splunk.example.com:8088",
+      "token": "your-hec-token",
+      "index": "cnsl",
+      "sourcetype": "cnsl:incident",
+      "host": "",
+      "verify_ssl": true,
+      "timeout_sec": 5,
+      "max_retries": 3,
+      "min_severity": "MEDIUM"
+    },
+    "sentinel": {
+      "enabled": false,
+      "workspace_id": "your-workspace-id",
+      "shared_key": "your-shared-key",
+      "log_type": "CNSLIncident",
+      "api_version": "2016-04-01",
+      "timeout_sec": 5,
+      "max_retries": 3,
+      "min_severity": "MEDIUM"
+    },
+    "webhook": {
+      "enabled": false,
+      "url": "https://your-soar.example.com/api/ingest",
+      "method": "POST",
+      "headers": {},
+      "bearer_token": "",
+      "verify_ssl": true,
+      "timeout_sec": 5,
+      "max_retries": 3,
+      "min_severity": "MEDIUM"
     }
   }
 }

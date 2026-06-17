@@ -981,7 +981,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 <!-- RULES -->
 <div class="page" id="page-rules">
-  <div class="tbl-wrap">
+  <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head"><span class="tbl-head-title">Alert Rules</span><span style="font-size:11px;color:var(--muted)">Click a rule to edit threshold and severity</span></div>
     <table>
       <thead><tr><th>Rule ID</th><th>Name</th><th>Status</th><th>Severity</th><th>Threshold</th><th>Window</th><th>Actions</th></tr></thead>
@@ -1014,6 +1014,19 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <button class="btn" onclick="resetRule()" style="background:var(--surf);border:1px solid var(--bord)">Reset to Default</button>
       <button class="btn" onclick="$('rule-edit-panel').style.display='none'" style="background:var(--surf);border:1px solid var(--bord)">Cancel</button>
     </div>
+  </div>
+  <!-- Suggested Rules panel -->
+  <div class="tbl-wrap" style="margin-top:14px" id="suggested-rules-wrap">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Suggested Rules</span>
+      <span style="font-size:11px;color:var(--muted)">Patterns discovered automatically from recurring attack sequences</span>
+      <button onclick="loadSuggestedRules()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+    </div>
+    <div id="suggested-rules-stats" style="padding:8px 16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)"></div>
+    <table>
+      <thead><tr><th>Pattern</th><th>Confidence</th><th>Occurrences</th><th>Severity</th><th>Threshold</th><th>Window</th><th>Example IPs</th><th>Last Seen</th><th>Actions</th></tr></thead>
+      <tbody id="suggested-rules-tbody"><tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
   </div>
 </div>
 
@@ -1084,6 +1097,17 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
 <div class="page" id="page-settings">
   <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">SIEM / SOAR Connectors</span>
+      <span style="font-size:11px;color:var(--muted)">Real-time push to external platforms</span>
+      <button onclick="loadSIEMStatus()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+    </div>
+    <div id="siem-status-wrap" style="padding:16px">
+      <div id="siem-status-cards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px"></div>
+      <div id="siem-queue-line" style="font-size:11px;color:var(--muted)"></div>
+    </div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head"><span class="tbl-head-title">Module Status</span><span style="font-size:11px;color:var(--muted)">Live status of optional modules</span></div>
     <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px" id="settings-modules"></div>
   </div>
@@ -1133,9 +1157,9 @@ function showTab(name){
   $('page-'+name).classList.add('active');
   if(name==='cases')     loadCases();
   if(name==='ueba')      loadUEBA();
-  if(name==='rules')     loadRules();
+  if(name==='rules')     { loadRules(); loadSuggestedRules(); }
   if(name==='ratelimit') loadRateLimit();
-  if(name==='settings')  loadSettings();
+  if(name==='settings')  { loadSettings(); loadSIEMStatus(); }
   if(name==='killchain') loadKillChain();
 }
 
@@ -1272,6 +1296,70 @@ async function resetRule(){
   $('rule-edit-panel').style.display = 'none';
   loadRules();
 }
+async function loadSuggestedRules(){
+  const [d, stats] = await Promise.all([
+    apiFetch('/api/pattern-suggestions'),
+    apiFetch('/api/pattern-suggestions/stats'),
+  ]);
+  if(stats){
+    $('suggested-rules-stats').innerHTML =
+      `Tracking <b>${stats.patterns_tracked}</b> patterns &nbsp;|&nbsp; ` +
+      `<b>${stats.active_suggestions}</b> active suggestions &nbsp;|&nbsp; ` +
+      `<b>${stats.promoted}</b> promoted &nbsp;|&nbsp; ` +
+      `<b>${stats.dismissed}</b> dismissed &nbsp;|&nbsp; ` +
+      `Min occurrences: <b>${stats.min_occurrences}</b>`;
+  }
+  if(!d || !d.length){
+    $('suggested-rules-tbody').innerHTML =
+      '<tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">No suggestions yet -- patterns appear after recurring attack sequences are observed</td></tr>';
+    return;
+  }
+  const SEV_COLOR = {HIGH:'#e74c3c',MEDIUM:'#fd7e14',LOW:'#6c757d'};
+  $('suggested-rules-tbody').innerHTML = d.map(s => {
+    const confPct  = Math.round(s.confidence * 100);
+    const sevColor = SEV_COLOR[s.severity] || '#6c757d';
+    const kinds    = (s.event_kinds || []).join(', ');
+    const ips      = (s.example_ips || []).slice(0,3).join(', ');
+    return `<tr>
+      <td style="font-size:11px;font-family:monospace;max-width:180px;word-break:break-all" title="${escHtml(s.pattern_key)}">${escHtml(kinds)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:50px;height:6px;background:var(--surface-2,#2a2a2a);border-radius:3px">
+            <div style="width:${confPct}%;height:6px;background:#3498db;border-radius:3px"></div>
+          </div>
+          <span style="font-size:11px">${confPct}%</span>
+        </div>
+      </td>
+      <td>${s.occurrences}</td>
+      <td><span style="color:${sevColor};font-weight:600;font-size:11px">${s.severity}</span></td>
+      <td>${s.threshold}</td>
+      <td>${s.window_sec}s</td>
+      <td style="font-size:11px;color:var(--muted)">${escHtml(ips)}</td>
+      <td style="font-size:11px">${escHtml(s.last_seen||'')}</td>
+      <td style="white-space:nowrap">
+        <button onclick="promoteSuggestion('${escHtml(s.id)}','${escHtml(s.suggested_rule_id)}',${s.threshold},'${s.severity}',${s.window_sec})"
+          style="font-size:10px;padding:2px 7px;background:#27ae60;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-right:4px">Promote</button>
+        <button onclick="dismissSuggestion('${escHtml(s.id)}')"
+          style="font-size:10px;padding:2px 7px;background:var(--surface);color:var(--muted);border:1px solid var(--border);border-radius:3px;cursor:pointer">Dismiss</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function promoteSuggestion(id, ruleId, threshold, severity, window_sec){
+  const err1 = await apiFetch(`/api/pattern-suggestions/${id}/promote`,{method:'POST'});
+  if(!err1) return;
+  // Also apply the suggested override to the rule engine if rule exists
+  await apiFetch(`/api/rules/${encodeURIComponent(ruleId)}`,{
+    method:'PATCH',
+    body:JSON.stringify({threshold, severity, window_sec, enabled:true}),
+  });
+  loadRules();
+  loadSuggestedRules();
+}
+async function dismissSuggestion(id){
+  await apiFetch(`/api/pattern-suggestions/${id}/dismiss`,{method:'POST'});
+  loadSuggestedRules();
+}
 
 //  Rate Limit 
 async function loadRateLimit(){
@@ -1405,6 +1493,49 @@ async function showKcDetail(ip){
     `First seen: ${escHtml(chain.first_seen)} &nbsp;|&nbsp; Last seen: ${escHtml(chain.last_seen)}` +
     (geo ? ` &nbsp;|&nbsp; Location: ${escHtml(geo)}` : '') +
     ` &nbsp;|&nbsp; Score: ${Math.round(chain.score * 100)}%`;
+}
+
+async function loadSIEMStatus(){
+  const d = await apiFetch('/api/siem/status');
+  if(!d){
+    $('siem-status-cards').innerHTML = '<span style="font-size:12px;color:var(--muted)">SIEM router not available</span>';
+    return;
+  }
+  const connectors = d.connectors || {};
+  const names      = ['splunk','sentinel','webhook'];
+  const labels     = {splunk:'Splunk HEC', sentinel:'Microsoft Sentinel', webhook:'Webhook'};
+  $('siem-status-cards').innerHTML = names.map(name => {
+    const c       = connectors[name] || {};
+    const enabled = c.enabled !== false;
+    const healthy = c.healthy !== false;
+    const status  = !enabled ? 'Disabled' : healthy ? 'Healthy' : 'Error';
+    const color   = !enabled ? '#64748b'  : healthy  ? '#22c55e' : '#ef4444';
+    const err     = c.last_error ? `<div style="font-size:10px;color:#ef4444;margin-top:4px;word-break:break-all">${escHtml(c.last_error)}</div>` : '';
+    const pushed  = c.push_count  != null ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Pushed: ${c.push_count} | Errors: ${c.error_count||0}</div>` : '';
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+      <div style="font-weight:600;font-size:12px;margin-bottom:6px">${labels[name]}</div>
+      <div style="color:${color};font-size:11px;font-weight:600">${status}</div>
+      ${pushed}${err}
+      ${enabled ? `<div style="display:flex;gap:6px;margin-top:8px">
+        <button onclick="siemTest('${name}')" style="font-size:10px;padding:2px 8px;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer">Send Test</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+  const qd = d.queue_depth || 0;
+  $('siem-queue-line').innerHTML = qd > 0
+    ? `Retry queue: <b style="color:#f59e0b">${qd}</b> events pending &nbsp;
+       <button onclick="siemFlush()" style="font-size:10px;padding:2px 8px;background:#f59e0b;color:#fff;border:none;border-radius:3px;cursor:pointer">Flush Now</button>`
+    : 'Retry queue: empty';
+}
+async function siemTest(name){
+  const d = await apiFetch(`/api/siem/test/${name}`,{method:'POST'});
+  if(d) alert(d.ok ? `Test event sent to ${name}` : `Test failed: ${d.error || 'unknown error'}`);
+  loadSIEMStatus();
+}
+async function siemFlush(){
+  const d = await apiFetch('/api/siem/flush',{method:'POST'});
+  if(d) alert(`Flushed: ${JSON.stringify(d.flushed)}`);
+  loadSIEMStatus();
 }
 
 async function loadSettings(){
@@ -2050,6 +2181,8 @@ async def start_dashboard(
     huddle:         Any = None,
     notifier:       Any = None,
     kill_chain:     Any = None,
+    pattern_learner: Any = None,
+    siem_router:     Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -2878,7 +3011,130 @@ async def start_dashboard(
         result = await es_pusher.push(norms)
         return web.json_response(result)
 
-    # ------------------------------------------------------------------ Kill Chain API
+    #  SIEM Connector API
+
+    @router.get("/api/siem/status")
+    async def api_siem_status(req: web.Request) -> web.Response:
+        """Return health and queue stats for all SIEM connectors."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if siem_router is None:
+            return web.json_response({"error": "SIEM router not enabled"}, status=400)
+        status = await siem_router.status()
+        return web.json_response(status)
+
+    @router.post("/api/siem/test/{name}")
+    async def api_siem_test(req: web.Request) -> web.Response:
+        """Send a synthetic test event to one connector (splunk|sentinel|webhook)."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if siem_router is None:
+            return web.json_response({"error": "SIEM router not enabled"}, status=400)
+        name = req.match_info.get("name", "").lower()
+        connector_map = {
+            "splunk":   siem_router.splunk,
+            "sentinel": siem_router.sentinel,
+            "webhook":  siem_router.webhook,
+        }
+        connector = connector_map.get(name)
+        if not connector:
+            return web.json_response(
+                {"error": f"Unknown connector: {name}. Valid: splunk, sentinel, webhook"},
+                status=400,
+            )
+        if not connector.enabled:
+            return web.json_response({"error": f"Connector {name} is not enabled"}, status=400)
+        test_event = {
+            "ip":       "127.0.0.1",
+            "severity": "LOW",
+            "ts":       now(),
+            "reasons":  ["CNSL test event"],
+            "rule":     "test",
+            "_test":    True,
+        }
+        ok = await connector.push(test_event)
+        await logger.log("siem_test", {"connector": name, "ok": ok})
+        return web.json_response({"ok": ok, "connector": name})
+
+    @router.post("/api/siem/flush")
+    async def api_siem_flush(req: web.Request) -> web.Response:
+        """Force flush the SIEM retry queue."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if siem_router is None:
+            return web.json_response({"error": "SIEM router not enabled"}, status=400)
+        counts = await siem_router.flush_queue()
+        await logger.log("siem_flush", {"counts": counts})
+        return web.json_response({"flushed": counts})
+
+    #  Pattern Learner API
+
+    @router.get("/api/pattern-suggestions")
+    async def api_pattern_suggestions_list(req: web.Request) -> web.Response:
+        """Return all active (non-dismissed, non-promoted) suggestions."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if pattern_learner is None:
+            return web.json_response({"error": "Pattern learner not enabled"}, status=400)
+        include_dismissed = req.rel_url.query.get("dismissed", "").lower() == "true"
+        include_promoted  = req.rel_url.query.get("promoted",  "").lower() == "true"
+        suggestions = pattern_learner.get_suggestions(
+            include_dismissed=include_dismissed,
+            include_promoted=include_promoted,
+        )
+        return web.json_response([s.to_dict() for s in suggestions])
+
+    @router.get("/api/pattern-suggestions/stats")
+    async def api_pattern_suggestions_stats(req: web.Request) -> web.Response:
+        """Return aggregate pattern learner statistics."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if pattern_learner is None:
+            return web.json_response({"error": "Pattern learner not enabled"}, status=400)
+        return web.json_response(pattern_learner.stats())
+
+    @router.post("/api/pattern-suggestions/{sid}/promote")
+    async def api_pattern_suggestions_promote(req: web.Request) -> web.Response:
+        """Promote a suggestion -- marks it as promoted and returns the rule dict."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if pattern_learner is None:
+            return web.json_response({"error": "Pattern learner not enabled"}, status=400)
+        sid  = req.match_info.get("sid", "")
+        sugg = pattern_learner.get_suggestion(sid)
+        if not sugg:
+            return web.json_response({"error": f"Suggestion {sid} not found"}, status=404)
+        pattern_learner.mark_promoted(sid)
+        if store.available:
+            await pattern_learner.save_suggestion(store, sugg)
+        await logger.log("pattern_promoted", {"id": sid, "pattern": sugg.pattern_key})
+        return web.json_response(sugg.to_dict())
+
+    @router.post("/api/pattern-suggestions/{sid}/dismiss")
+    async def api_pattern_suggestions_dismiss(req: web.Request) -> web.Response:
+        """Dismiss a suggestion -- suppresses it permanently."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if pattern_learner is None:
+            return web.json_response({"error": "Pattern learner not enabled"}, status=400)
+        sid = req.match_info.get("sid", "")
+        ok  = pattern_learner.dismiss(sid)
+        if not ok:
+            return web.json_response({"error": f"Suggestion {sid} not found"}, status=404)
+        sugg = pattern_learner.get_suggestion(sid)
+        if sugg and store.available:
+            await pattern_learner.save_suggestion(store, sugg)
+        await logger.log("pattern_dismissed", {"id": sid})
+        return web.json_response({"ok": True})
+
+    #  Kill Chain API
 
     @router.get("/api/kill-chain")
     async def api_kill_chain_list(req: web.Request) -> web.Response:
@@ -2926,19 +3182,24 @@ async def start_dashboard(
     async def api_debug(req: web.Request) -> web.Response:
         """Diagnostic endpoint — shows what modules are wired."""
         return web.json_response({
-            "ml_detector_wired":    ml_detector is not None,
-            "ml_detector_enabled":  getattr(ml_detector, "enabled", None),
-            "fim_wired":            fim is not None,
-            "fim_enabled":          getattr(fim, "enabled", None),
-            "honeypot_wired":       honeypot is not None,
-            "honeypot_enabled":     getattr(honeypot, "enabled", None),
-            "assets_wired":         assets is not None,
-            "search_engine_wired":  search_engine is not None,
-            "search_engine_ready":  getattr(search_engine, "available", False),
-            "es_pusher_wired":      es_pusher is not None,
-            "es_pusher_enabled":    getattr(es_pusher, "enabled", False),
-            "kill_chain_wired":     kill_chain is not None,
-            "kill_chain_enabled":   getattr(kill_chain, "enabled", False),
+            "ml_detector_wired":       ml_detector is not None,
+            "ml_detector_enabled":     getattr(ml_detector, "enabled", None),
+            "fim_wired":               fim is not None,
+            "fim_enabled":             getattr(fim, "enabled", None),
+            "honeypot_wired":          honeypot is not None,
+            "honeypot_enabled":        getattr(honeypot, "enabled", None),
+            "assets_wired":            assets is not None,
+            "search_engine_wired":     search_engine is not None,
+            "search_engine_ready":     getattr(search_engine, "available", False),
+            "es_pusher_wired":         es_pusher is not None,
+            "es_pusher_enabled":       getattr(es_pusher, "enabled", False),
+            "kill_chain_wired":        kill_chain is not None,
+            "kill_chain_enabled":      getattr(kill_chain, "enabled", False),
+            "pattern_learner_wired":   pattern_learner is not None,
+            "pattern_learner_enabled": getattr(pattern_learner, "enabled", False),
+            "siem_splunk_enabled":     getattr(getattr(siem_router, "splunk",   None), "enabled", False),
+            "siem_sentinel_enabled":   getattr(getattr(siem_router, "sentinel", None), "enabled", False),
+            "siem_webhook_enabled":    getattr(getattr(siem_router, "webhook",  None), "enabled", False),
         })
 
     @router.get("/api/ml-status")

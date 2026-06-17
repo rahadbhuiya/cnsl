@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-simulate.py — CNSL local test simulator.
+simulate.py -- CNSL local test simulator.
 
 Tests all detection scenarios without a real server or real attacks.
 
@@ -18,6 +18,9 @@ Usage:
     python simulate.py allowlist      # allowlist test
     python simulate.py metrics        # metrics & DB stats
     python simulate.py notify         # notification channel dry-run test
+    python simulate.py kill_chain     # kill chain tracker progression
+    python simulate.py pattern        # automated pattern learning
+    python simulate.py siem           # SIEM/SOAR connector push (dry-run)
     python simulate.py live           # interactive mode
 """
 
@@ -36,6 +39,9 @@ from cnsl.correlator import Correlator
 from cnsl.metrics  import Metrics
 from cnsl.notify   import Notifier
 from cnsl.store    import Store
+from cnsl.kill_chain      import KillChainTracker
+from cnsl.pattern_learner import PatternLearner
+from cnsl.siem_connectors import SIEMRouter
 
 
 #  Terminal colours 
@@ -53,10 +59,10 @@ BOLD= "\033[1m"
 
 def banner():
     print(f"""
-{C}{BOLD}╔══════════════════════════════════════════════════════╗
-║        CNSL — Local Test Simulator  v2.1.1           ║
-║   No real server required — all tests run locally    ║
-╚══════════════════════════════════════════════════════╝{RST}
+{C}{BOLD}+========================================================+
+|        CNSL -- Local Test Simulator  v2.4.0           |
+|   No real server required -- all tests run locally    |
++========================================================+{RST}
 """)
 
 
@@ -69,9 +75,9 @@ def log(msg, color=W):
 
 
 def section(title):
-    print(f"\n{B}{BOLD}{'─'*54}{RST}")
+    print(f"\n{B}{BOLD}{'-'*54}{RST}")
     print(f"{B}{BOLD}  {title}{RST}")
-    print(f"{B}{BOLD}{'─'*54}{RST}")
+    print(f"{B}{BOLD}{'-'*54}{RST}")
 
 
 #  Event factories 
@@ -140,38 +146,45 @@ async def setup():
         dry_run=True, backend="iptables", chain="INPUT",
         ipset_name="cnsl_test", block_duration_sec=10,
         allowlist={"127.0.0.1"}, logger=logger,
-        metrics=metrics,   # Bug 3 fix — dec_block() wired
+        metrics=metrics,   # Bug 3 fix -- dec_block() wired
     )
-    blocker.store = store  # Bug 13 fix — remove_block() wired
+    blocker.store = store  # Bug 13 fix -- remove_block() wired
 
     correlator = Correlator()
+
+    kill_chain      = KillChainTracker(cfg)
+    pattern_learner = PatternLearner(cfg)
+    siem_router      = SIEMRouter(cfg)
 
     detector = Detector(cfg, logger, blocker,
                         geoip=None, store=store,
                         metrics=metrics, notifier=notifier,
-                        correlator=correlator)
+                        correlator=correlator,
+                        kill_chain=kill_chain,
+                        pattern_learner=pattern_learner,
+                        siem_router=siem_router)
 
-    return detector, blocker, metrics, store, logger, notifier
+    return detector, blocker, metrics, store, logger, notifier, kill_chain, pattern_learner, siem_router
 
 
 #  Scenario 1: SSH Brute-force 
 
 async def scenario_brute_force(detector, blocker):
-    section("Scenario 1 — SSH Brute-force")
+    section("Scenario 1 -- SSH Brute-force")
     ip = "45.33.32.156"
     print(f"  Attacker : {Y}{ip}{RST}   threshold = 5 fails\n")
 
     for i in range(1, 7):
         await detector.handle(make_fail(ip, "root"))
         st      = detector._state[ip]
-        bar     = G + "█" * i + RST + "░" * (6 - i)
-        blocked = f"  {R}→ BLOCKED{RST}" if blocker.is_blocked(ip) else ""
+        bar     = G + "#" * i + RST + "." * (6 - i)
+        blocked = f"  {R}-> BLOCKED{RST}" if blocker.is_blocked(ip) else ""
         print(f"  Fail #{i}  [{bar}]  window_fails={len(st.fails)}{blocked}")
         await asyncio.sleep(0.25)
 
     print()
     if blocker.is_blocked(ip):
-        log(f"IP {ip} blocked (dry-run — no real iptables change)", R)
+        log(f"IP {ip} blocked (dry-run -- no real iptables change)", R)
     else:
         log(f"MEDIUM alert raised for {ip}", Y)
 
@@ -179,7 +192,7 @@ async def scenario_brute_force(detector, blocker):
 #  Scenario 2: Credential Stuffing 
 
 async def scenario_credential_stuffing(detector, blocker):
-    section("Scenario 2 — Credential Stuffing")
+    section("Scenario 2 -- Credential Stuffing")
     ip    = "185.220.101.45"
     users = ["admin", "ubuntu", "pi", "deploy", "git", "postgres"]
     print(f"  Attacker : {Y}{ip}{RST}   tries {len(users)} different usernames\n")
@@ -198,7 +211,7 @@ async def scenario_credential_stuffing(detector, blocker):
 #  Scenario 3: Credential Breach (HIGH) 
 
 async def scenario_credential_breach(detector, blocker):
-    section("Scenario 3 — Credential Breach  (HIGH severity)")
+    section("Scenario 3 -- Credential Breach  (HIGH severity)")
     ip = "23.129.64.214"
     print(f"  Attacker : {Y}{ip}{RST}   fails 4 times then logs in successfully\n")
 
@@ -214,25 +227,25 @@ async def scenario_credential_breach(detector, blocker):
 
     print()
     if blocker.is_blocked(ip):
-        log(f"HIGH ALERT — {ip} BLOCKED  (credential breach)", R)
+        log(f"HIGH ALERT -- {ip} BLOCKED  (credential breach)", R)
     else:
-        log(f"HIGH ALERT — {ip} flagged  (dry-run, no real block)", R)
+        log(f"HIGH ALERT -- {ip} flagged  (dry-run, no real block)", R)
 
 
 #  Scenario 4: Web Scanner + Exploit 
 
 async def scenario_web(detector, blocker):
-    section("Scenario 4 — Web Scanner + Exploit Attempt")
+    section("Scenario 4 -- Web Scanner + Exploit Attempt")
     ip = "104.21.44.82"
     print(f"  Attacker : {Y}{ip}{RST}   nikto scan then exploit paths\n")
 
-    print(f"  {C}Phase 1 — Web scanner detected{RST}")
+    print(f"  {C}Phase 1 -- Web scanner detected{RST}")
     for path in ["/.env", "/wp-admin/", "/.git/config", "/phpmyadmin/"]:
         await detector.handle(make_web_scan(ip))
         print(f"  {Y}WEB_SCAN{RST}  GET {path}")
         await asyncio.sleep(0.2)
 
-    print(f"\n  {C}Phase 2 — Exploit attempt{RST}")
+    print(f"\n  {C}Phase 2 -- Exploit attempt{RST}")
     for path in ["/.env", "/etc/passwd", "/admin/config.php"]:
         await detector.handle(make_web_exploit(ip, path))
         print(f"  {R}WEB_EXPLOIT{RST}  GET {path}")
@@ -248,7 +261,7 @@ async def scenario_web(detector, blocker):
 #  Scenario 5: Database Brute-force 
 
 async def scenario_db(detector, blocker):
-    section("Scenario 5 — Database Brute-force")
+    section("Scenario 5 -- Database Brute-force")
     ip    = "91.108.56.11"
     users = ["root", "admin", "mysql", "wordpress", "app"]
     print(f"  Attacker : {Y}{ip}{RST}   MySQL auth failures\n")
@@ -265,10 +278,10 @@ async def scenario_db(detector, blocker):
 #  Scenario 6: Privilege Escalation 
 
 async def scenario_priv_escalation(detector, blocker):
-    section("Scenario 6 — Privilege Escalation")
+    section("Scenario 6 -- Privilege Escalation")
     ip = "77.88.21.3"
     print(f"  Attacker : {Y}{ip}{RST}")
-    print(f"  SSH login → then tries sudo (common post-exploit pattern)\n")
+    print(f"  SSH login -> then tries sudo (common post-exploit pattern)\n")
 
     print(f"  {G}SSH_SUCCESS{RST}  attacker logs in as 'deploy'")
     await detector.handle(make_success(ip, "deploy"))
@@ -277,7 +290,7 @@ async def scenario_priv_escalation(detector, blocker):
     print(f"\n  Attempting privilege escalation via sudo...")
     for i in range(1, 4):
         await detector.handle(make_sudo_fail(ip, "deploy"))
-        print(f"  {R}SUDO_FAIL #{i}{RST}  deploy → root  from {ip}")
+        print(f"  {R}SUDO_FAIL #{i}{RST}  deploy -> root  from {ip}")
         await asyncio.sleep(0.25)
 
     print()
@@ -287,7 +300,7 @@ async def scenario_priv_escalation(detector, blocker):
 #  Scenario 7: Honeypot Port Probe 
 
 async def scenario_honeypot(detector, blocker):
-    section("Scenario 7 — Honeypot Port Probe")
+    section("Scenario 7 -- Honeypot Port Probe")
     ip    = "198.51.100.42"
     ports = [23, 3389, 6379]
     print(f"  Attacker : {Y}{ip}{RST}")
@@ -298,7 +311,7 @@ async def scenario_honeypot(detector, blocker):
         print(f"  {R}HONEYPOT PROBE{RST}  port={Y}{port}{RST}  from {ip}")
         await asyncio.sleep(0.3)
         if blocker.is_blocked(ip):
-            print(f"  {R}→ INSTANT BLOCK{RST}  (honeypot = zero tolerance)")
+            print(f"  {R}-> INSTANT BLOCK{RST}  (honeypot = zero tolerance)")
             break
 
     print()
@@ -311,39 +324,39 @@ async def scenario_honeypot(detector, blocker):
 #  Scenario 8: Multi-Source Correlation (HIGH) 
 
 async def scenario_correlation(detector, blocker):
-    section("Scenario 8 — Multi-Source Correlation (HIGH)")
+    section("Scenario 8 -- Multi-Source Correlation (HIGH)")
     ip = "203.0.113.99"
     print(f"  Attacker : {Y}{ip}{RST}")
-    print(f"  Same IP attacks Web + SSH + DB → correlator fires HIGH alert\n")
+    print(f"  Same IP attacks Web + SSH + DB -> correlator fires HIGH alert\n")
 
-    print(f"  {C}Source 1 — Web scan{RST}")
+    print(f"  {C}Source 1 -- Web scan{RST}")
     await detector.handle(make_web_scan(ip))
     await detector.handle(make_web_exploit(ip, "/.env"))
     print(f"  WEB_SCAN + WEB_EXPLOIT from {ip}")
     await asyncio.sleep(0.4)
 
-    print(f"\n  {C}Source 2 — SSH brute-force{RST}")
+    print(f"\n  {C}Source 2 -- SSH brute-force{RST}")
     for i in range(1, 4):
         await detector.handle(make_fail(ip, ["root", "admin", "ubuntu"][i-1]))
         print(f"  SSH_FAIL #{i} from {ip}")
         await asyncio.sleep(0.2)
 
-    print(f"\n  {C}Source 3 — DB attack{RST}")
+    print(f"\n  {C}Source 3 -- DB attack{RST}")
     await detector.handle(make_db_fail(ip, "root"))
     print(f"  DB_AUTH_FAIL from {ip}")
     await asyncio.sleep(0.4)
 
     print()
     if blocker.is_blocked(ip):
-        log(f"HIGH — Multi-source attack from {ip} BLOCKED  (correlator)", R)
+        log(f"HIGH -- Multi-source attack from {ip} BLOCKED  (correlator)", R)
     else:
-        log(f"HIGH — Multi-source attack from {ip} detected (correlator)", R)
+        log(f"HIGH -- Multi-source attack from {ip} detected (correlator)", R)
 
 
 #  Scenario 9: Auto-Unblock + Metrics dec_block 
 
 async def scenario_unblock(detector, blocker, metrics):
-    section("Scenario 9 — Auto-Unblock + Metrics Counter")
+    section("Scenario 9 -- Auto-Unblock + Metrics Counter")
     ip = "10.0.0.99"
     print(f"  Test IP  : {Y}{ip}{RST}   block_duration = 10s (test mode)\n")
 
@@ -368,19 +381,19 @@ async def scenario_unblock(detector, blocker, metrics):
             after_unblock = metrics._blocks_active
             print(f"  {G}UNBLOCKED{RST}  cnsl_blocks_active = {Y}{after_unblock}{RST}")
             if after_unblock < after_block:
-                log("dec_block() working correctly — gauge decreased", G)
+                log("dec_block() working correctly -- gauge decreased", G)
             else:
-                log("WARNING — gauge did not decrease after unblock", R)
+                log("WARNING -- gauge did not decrease after unblock", R)
         else:
-            log("Still blocked — unblock_due() may not have fired", Y)
+            log("Still blocked -- unblock_due() may not have fired", Y)
     else:
-        log(f"IP not blocked — check threshold config", Y)
+        log(f"IP not blocked -- check threshold config", Y)
 
 
 #  Scenario 10: Allowlist 
 
 async def scenario_allowlist(detector, blocker):
-    section("Scenario 10 — Allowlisted IP (never blocked)")
+    section("Scenario 10 -- Allowlisted IP (never blocked)")
     ip = "127.0.0.1"
     print(f"  Testing : {G}{ip}{RST}  (always in allowlist)\n")
 
@@ -391,9 +404,9 @@ async def scenario_allowlist(detector, blocker):
 
     print()
     if blocker.is_blocked(ip):
-        log(f"ERROR — allowlisted IP was blocked!", R)
+        log(f"ERROR -- allowlisted IP was blocked!", R)
     else:
-        log(f"Correct — {ip} was NOT blocked (allowlist working)", G)
+        log(f"Correct -- {ip} was NOT blocked (allowlist working)", G)
 
 
 #  Scenario 12: Notification channel dry-run 
@@ -408,14 +421,14 @@ async def scenario_notify(notifier):
       - severity filter (min_severity) is respected
       - All channel dispatchers are exercised without raising
     """
-    section("Scenario 12 — Notification Channel Dry-run")
+    section("Scenario 12 -- Notification Channel Dry-run")
     from cnsl.models import Detection
 
     geo_tricky = {
         "country": "United_States",
         "city":    "New*York",       # asterisk would break Markdown v1 without escaping
         "isp":     "AS12345 Verizon_Business",  # underscore breaks Markdown v1
-        "flag":    "🇺🇸",
+        "flag":    "US",
         "proxy":   False,
         "hosting": True,
     }
@@ -432,7 +445,7 @@ async def scenario_notify(notifier):
                       uniq_users=users, window_sec=60)
         try:
             await notifier.send(d, geo)
-            print(f"  {G}OK{RST}  severity={Y}{sev}{RST}  — message built and dispatched (no real tokens)")
+            print(f"  {G}OK{RST}  severity={Y}{sev}{RST}  -- message built and dispatched (no real tokens)")
         except Exception as e:
             print(f"  {R}FAIL{RST} severity={sev}  error={e}")
 
@@ -444,7 +457,7 @@ async def scenario_notify(notifier):
 #  Scenario 11: Metrics & DB stats 
 
 async def scenario_metrics(metrics, store):
-    section("Scenario 11 — Metrics & Database Stats")
+    section("Scenario 11 -- Metrics & Database Stats")
 
     db_stats  = await store.stats()
     incidents = await store.recent_incidents(limit=10)
@@ -509,7 +522,7 @@ async def interactive_mode(detector, blocker):
             user = parts[2] if len(parts) > 2 else "root"
             await detector.handle(make_fail(ip, user))
             st   = detector._state[ip]
-            print(f"  SSH_FAIL — window_fails={len(st.fails)} "
+            print(f"  SSH_FAIL -- window_fails={len(st.fails)} "
                   f"unique_users={len({u for _,u in st.users if u})}"
                   + (f"  {R}[BLOCKED]{RST}" if blocker.is_blocked(ip) else ""))
 
@@ -597,7 +610,7 @@ async def interactive_mode(detector, blocker):
 #  Scenario 13: UEBA anomaly detection 
 
 async def scenario_ueba(detector, blocker):
-    section("Scenario 13 — UEBA Anomaly Detection")
+    section("Scenario 13 -- UEBA Anomaly Detection")
 
     from cnsl.ueba import UEBAEngine
     ueba = UEBAEngine({"ueba": {
@@ -610,7 +623,7 @@ async def scenario_ueba(detector, blocker):
     base_ts = 1_700_000_000.0
     for i in range(5):
         a = ueba.observe("alice", "10.0.0.1", ts=base_ts + i * 3600)
-        print(f"  Login #{i+1} from 10.0.0.1  → {DIM}no anomaly{RST}")
+        print(f"  Login #{i+1} from 10.0.0.1  -> {DIM}no anomaly{RST}")
 
     print(f"\n  {BOLD}Simulating new source IP anomaly...{RST}")
     anomaly = ueba.observe("alice", "203.0.113.99", ts=base_ts + 86400)
@@ -641,7 +654,7 @@ async def scenario_ueba(detector, blocker):
 #  Scenario 14: Country-based blocking 
 
 async def scenario_country(detector, blocker):
-    section("Scenario 14 — Country-Based Blocking")
+    section("Scenario 14 -- Country-Based Blocking")
 
     from cnsl.detector import Detector
     from cnsl.models   import Event
@@ -668,7 +681,7 @@ async def scenario_country(detector, blocker):
 #  Scenario 15: Threat feed hit 
 
 async def scenario_threat_feed(detector, blocker):
-    section("Scenario 15 — Threat Feed Hit")
+    section("Scenario 15 -- Threat Feed Hit")
 
     from cnsl.threat_feed import ThreatFeed
     import ipaddress
@@ -682,7 +695,7 @@ async def scenario_threat_feed(detector, blocker):
     test_ips = [
         ("45.33.32.156",   "Emerging Threats blocklist"),
         ("192.0.2.5",      "Spamhaus DROP (CIDR match: 192.0.2.0/24)"),
-        ("8.8.8.8",        "Clean IP — not in any feed"),
+        ("8.8.8.8",        "Clean IP -- not in any feed"),
     ]
 
     print(f"  {BOLD}Checking IPs against loaded threat feed ({len(tf._ips)} IPs, {len(tf._cidrs)} CIDRs)...{RST}\n")
@@ -702,7 +715,7 @@ async def scenario_threat_feed(detector, blocker):
 #  Scenario 16: Rate limiter + DDoS 
 
 async def scenario_rate_limit(detector, blocker):
-    section("Scenario 16 — Rate Limiter & DDoS Protection")
+    section("Scenario 16 -- Rate Limiter & DDoS Protection")
 
     from cnsl.rate_limiter import RateLimiter
 
@@ -719,14 +732,14 @@ async def scenario_rate_limit(detector, blocker):
     for i in range(1, 7):
         allowed, retry = rl.check(attacker)
         status = f"{G}OK{RST}" if allowed else f"{R}429 Rate Limited (retry in {retry:.0f}s){RST}"
-        print(f"  Request #{i}  →  {status}")
+        print(f"  Request #{i}  ->  {status}")
 
     print(f"\n  {BOLD}Login endpoint (limit: 2/min):{RST}")
     login_ip = "198.51.100.9"
     for i in range(1, 4):
         allowed, retry = rl.check(login_ip, "/api/login")
         status = f"{G}OK{RST}" if allowed else f"{R}429 Too Many Login Attempts{RST}"
-        print(f"  Login attempt #{i}  →  {status}")
+        print(f"  Login attempt #{i}  ->  {status}")
 
     print(f"\n  {BOLD}DDoS simulation from {attacker}:{RST}")
     triggered = False
@@ -743,10 +756,114 @@ async def scenario_rate_limit(detector, blocker):
     print(f"  Rate limited : {Y}{s['rate_limited']}{RST}")
     print(f"  DDoS hits    : {R}{s['ddos_detections']}{RST}")
 
-    print(f"\n  {BOLD}Whitelist check (127.0.0.1 — never rate limited):{RST}")
+    print(f"\n  {BOLD}Whitelist check (127.0.0.1 -- never rate limited):{RST}")
     for _ in range(20):
         allowed, _ = rl.check("127.0.0.1")
-    print(f"  20 requests  →  {G}All allowed (whitelisted){RST}")
+    print(f"  20 requests  ->  {G}All allowed (whitelisted){RST}")
+
+
+#  Scenario 17: Kill Chain Tracker 
+
+async def scenario_kill_chain(detector, blocker, kill_chain):
+    section("Scenario 17 -- Kill Chain Tracker")
+    ip = "45.77.12.200"
+    print(f"  Attacker : {Y}{ip}{RST}   progresses through 4 kill chain stages\n")
+
+    print(f"  {C}Stage 0 -- Reconnaissance{RST}")
+    await detector.handle(make_web_scan(ip))
+    await detector.handle(make_fw_honeypot(ip, 23))
+    print(f"  WEB_SCAN + FW_HONEYPOT_PORT from {ip}")
+    await asyncio.sleep(0.3)
+
+    print(f"\n  {C}Stage 2 -- Delivery{RST}")
+    for i in range(1, 4):
+        await detector.handle(make_fail(ip, "admin"))
+        print(f"  SSH_FAIL #{i} from {ip}")
+        await asyncio.sleep(0.2)
+
+    print(f"\n  {C}Stage 3 -- Exploitation{RST}")
+    await detector.handle(make_success(ip, "admin"))
+    print(f"  SSH_SUCCESS  attacker breaches credentials")
+    await asyncio.sleep(0.3)
+
+    print(f"\n  {C}Stage 4 -- Installation{RST}")
+    await detector.handle(make_sudo_fail(ip, "admin"))
+    print(f"  SUDO_FAIL  attacker attempts privilege escalation")
+    await asyncio.sleep(0.3)
+
+    chain = kill_chain.get_chain(ip)
+    print()
+    if chain:
+        print(f"  {BOLD}Kill chain result for {ip}:{RST}")
+        print(f"  Max stage    : {R}{chain.to_dict()['max_stage_name']}{RST}")
+        print(f"  Score        : {Y}{int(chain.score*100)}%{RST}")
+        print(f"  Complete     : {R if chain.complete else G}{chain.complete}{RST}")
+        print(f"  Event count  : {chain.event_count}")
+        log(f"Kill chain tracked {len(chain.stages)} stages for {ip}", G)
+    else:
+        log("No kill chain recorded -- check kill_chain.enabled in config", R)
+
+
+#  Scenario 18: Pattern Learner 
+
+async def scenario_pattern_learner(detector, blocker, pattern_learner):
+    section("Scenario 18 -- Automated Pattern Learning")
+    print(f"  {BOLD}Repeating the same attack pattern across 6 different IPs{RST}")
+    print(f"  Pattern: WEB_SCAN + SSH_FAIL  (ssh.brute_force threshold = 8 fails)")
+    print(f"  Learner min_occurrences = 5 (lowered to 3 for this demo)\n")
+
+    pattern_learner.min_occurrences = 3  # lower for a fast, deterministic demo
+
+    base_ips = [f"198.51.100.{n}" for n in range(20, 26)]
+    for i, ip in enumerate(base_ips, 1):
+        await detector.handle(make_web_scan(ip))
+        for _ in range(9):  # cross the real ssh.brute_force threshold (8)
+            await detector.handle(make_fail(ip, "root"))
+        fired = detector._state[ip].total_incidents > 0
+        status = f"{G}alert fired{RST}" if fired else f"{R}no alert{RST}"
+        print(f"  Round #{i}  WEB_SCAN + 9x SSH_FAIL  from {ip}  -> {status}")
+        await asyncio.sleep(0.15)
+
+    suggestions = pattern_learner.get_suggestions()
+    print()
+    if suggestions:
+        s = suggestions[0]
+        print(f"  {BOLD}Suggested rule generated:{RST}")
+        print(f"  Pattern      : {C}{s.pattern_key}{RST}")
+        print(f"  Occurrences  : {Y}{s.occurrences}{RST}")
+        print(f"  Confidence   : {Y}{int(s.confidence*100)}%{RST}")
+        print(f"  Severity     : {R}{s.severity}{RST}")
+        print(f"  Threshold    : {s.threshold}")
+        print(f"  Example IPs  : {', '.join(s.example_ips)}")
+        log(f"Pattern learner generated {len(suggestions)} suggestion(s)", G)
+    else:
+        log("No suggestion yet -- check min_occurrences or rule thresholds", Y)
+
+
+#  Scenario 19: SIEM Connector Push (dry-run) 
+
+async def scenario_siem_push(detector, blocker, siem_router):
+    section("Scenario 19 -- SIEM/SOAR Connector Push (dry-run)")
+    from cnsl.models import Detection
+
+    print(f"  {BOLD}Connector status (all disabled by default in test config):{RST}\n")
+    status = await siem_router.status()
+    for name, info in status["connectors"].items():
+        state = f"{G}enabled{RST}" if info.get("enabled") else f"{DIM}disabled{RST}"
+        print(f"  {name:<10} {state}")
+
+    print(f"\n  {BOLD}Simulating a HIGH severity detection push...{RST}")
+    d = Detection(src_ip="91.108.56.99", severity="HIGH",
+                  reasons=["ssh_brute_force: 12 failures"],
+                  fail_count=12, uniq_users=1, window_sec=60)
+
+    await siem_router.push(d)
+    print(f"  push() called for connectors: splunk, sentinel, webhook")
+    print(f"  {DIM}(no real network calls -- all connectors disabled in test config){RST}")
+
+    print(f"\n  {BOLD}To enable a connector for real testing:{RST}")
+    print(f"  {DIM}set siem.splunk.enabled=true and hec_url/token in config.json{RST}")
+    log("SIEM router dry-run push completed without errors", G)
 
 
 SCENARIO_MAP = {
@@ -766,6 +883,9 @@ SCENARIO_MAP = {
     "country":     "country-based blocking",
     "threat_feed": "threat feed hit",
     "rate_limit":  "rate limiter + DDoS",
+    "kill_chain":  "kill chain tracker",
+    "pattern":     "automated pattern learning",
+    "siem":        "SIEM/SOAR connector push",
     "live":        "interactive",
 }
 
@@ -779,9 +899,9 @@ async def main():
         print(f"Valid modes: all  live  {' '.join(SCENARIO_MAP.keys())}")
         sys.exit(1)
 
-    detector, blocker, metrics, store, logger, notifier = await setup()
+    detector, blocker, metrics, store, logger, notifier, kill_chain, pattern_learner, siem_router = await setup()
 
-    log("CNSL simulator starting  (dry-run — no real iptables changes)", G)
+    log("CNSL simulator starting  (dry-run -- no real iptables changes)", G)
     log("All modules wired: metrics, store, correlator\n", DIM)
 
     try:
@@ -846,6 +966,18 @@ async def main():
 
         if mode in ("all", "rate_limit"):
             await scenario_rate_limit(detector, blocker)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "kill_chain"):
+            await scenario_kill_chain(detector, blocker, kill_chain)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "pattern"):
+            await scenario_pattern_learner(detector, blocker, pattern_learner)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "siem"):
+            await scenario_siem_push(detector, blocker, siem_router)
 
         if mode == "live":
             await interactive_mode(detector, blocker)
@@ -855,6 +987,7 @@ async def main():
 
     finally:
         await store.close()
+        await siem_router.close()
         logger.close()
         section("Simulation complete")
         log("Log saved to : cnsl_test.jsonl", G)

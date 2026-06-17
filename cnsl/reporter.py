@@ -47,13 +47,15 @@ if TYPE_CHECKING:
 
 
 async def _collect_report_data(
-    store:         "Store",
-    fim:           Optional["FIMEngine"],
-    period_days:   int,
-    ueba:          Any = None,
-    case_manager:  Any = None,
-    rule_engine:   Any = None,
-    rate_limiter:  Any = None,
+    store:          "Store",
+    fim:            Optional["FIMEngine"],
+    period_days:    int,
+    ueba:           Any = None,
+    case_manager:   Any = None,
+    rule_engine:    Any = None,
+    rate_limiter:   Any = None,
+    kill_chain:     Any = None,
+    pattern_learner: Any = None,
 ) -> Dict[str, Any]:
     """Pull all data needed for the report from SQLite."""
 
@@ -167,8 +169,115 @@ async def _collect_report_data(
         data["rate_limit_stats"] = {}
         data["rate_limit_top"]   = []
 
+    # Kill chain stats
+    if kill_chain and kill_chain.enabled:
+        try:
+            kc_stats  = kill_chain.stats()
+            kc_chains = kill_chain.get_all(limit=10, min_score=0.3)
+            data["kill_chain_stats"]  = kc_stats
+            data["kill_chain_top"]    = [c.to_dict() for c in kc_chains]
+            data["kill_chain_complete"] = kc_stats.get("complete_chains", 0)
+        except Exception:
+            data["kill_chain_stats"]    = {}
+            data["kill_chain_top"]      = []
+            data["kill_chain_complete"] = 0
+    else:
+        data["kill_chain_stats"]    = {}
+        data["kill_chain_top"]      = []
+        data["kill_chain_complete"] = 0
+
+    # Pattern learner stats
+    if pattern_learner and pattern_learner.enabled:
+        try:
+            pl_stats = pattern_learner.stats()
+            pl_suggs = pattern_learner.get_suggestions()
+            data["pattern_learner_stats"]       = pl_stats
+            data["pattern_suggestions"]         = [s.to_dict() for s in pl_suggs[:10]]
+            data["pattern_suggestions_active"]  = pl_stats.get("active_suggestions", 0)
+            data["pattern_suggestions_promoted"]= pl_stats.get("promoted", 0)
+        except Exception:
+            data["pattern_learner_stats"]        = {}
+            data["pattern_suggestions"]          = []
+            data["pattern_suggestions_active"]   = 0
+            data["pattern_suggestions_promoted"] = 0
+    else:
+        data["pattern_learner_stats"]        = {}
+        data["pattern_suggestions"]          = []
+        data["pattern_suggestions_active"]   = 0
+        data["pattern_suggestions_promoted"] = 0
+
     return data
 
+
+
+def _kc_section(data: Dict) -> str:
+    """Generate kill chain HTML section for the report."""
+    chains = data.get("kill_chain_top", [])
+    if not chains:
+        return ""
+    STAGE_COLORS = ["#6c757d","#dc3545","#fd7e14","#e74c3c","#9b59b6","#3498db","#1abc9c"]
+    rows = ""
+    for c in chains[:10]:
+        stage = c.get("max_stage", 0)
+        color = STAGE_COLORS[stage] if stage < len(STAGE_COLORS) else "#6c757d"
+        score_pct = int(c.get("score", 0) * 100)
+        complete = "YES" if c.get("complete") else "No"
+        comp_color = "#ef4444" if c.get("complete") else "#64748b"
+        geo = ", ".join(filter(None, [c.get("geo_city"), c.get("geo_country")])) or "-"
+        rows += f"""<tr>
+          <td><code>{c.get('ip','')}</code></td>
+          <td style="color:{color};font-weight:600">{c.get('max_stage_name','')}</td>
+          <td>{score_pct}%</td>
+          <td style="color:{comp_color};font-weight:600">{complete}</td>
+          <td>{c.get('event_count',0)}</td>
+          <td style="font-size:12px;color:#64748b">{geo}</td>
+        </tr>"""
+    kc_stats = data.get("kill_chain_stats", {})
+    return f"""<div class="section">
+  <h2>Kill Chain Tracker</h2>
+  <p style="font-size:13px;color:#64748b;margin:0 0 12px">
+    {kc_stats.get('total_chains',0)} chains tracked &nbsp;·&nbsp;
+    {kc_stats.get('complete_chains',0)} complete &nbsp;·&nbsp;
+    Average score: {kc_stats.get('avg_score',0.0):.0%}
+  </p>
+  <table>
+    <thead><tr><th>IP</th><th>Max Stage</th><th>Score</th><th>Complete</th><th>Events</th><th>Location</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>"""
+
+
+def _pl_section(data: Dict) -> str:
+    """Generate pattern learning HTML section for the report."""
+    suggestions = data.get("pattern_suggestions", [])
+    if not suggestions:
+        return ""
+    rows = ""
+    for s in suggestions[:10]:
+        conf_pct = int(s.get("confidence", 0) * 100)
+        sev = s.get("severity", "")
+        sev_color = "#ef4444" if sev == "HIGH" else "#f59e0b" if sev == "MEDIUM" else "#64748b"
+        kinds = ", ".join(s.get("event_kinds", []))
+        rows += f"""<tr>
+          <td style="font-size:11px;font-family:monospace">{kinds}</td>
+          <td>{conf_pct}%</td>
+          <td>{s.get('occurrences',0)}</td>
+          <td style="color:{sev_color};font-weight:600">{sev}</td>
+          <td>{'Promoted' if s.get('promoted') else 'Pending'}</td>
+        </tr>"""
+    pl_stats = data.get("pattern_learner_stats", {})
+    return f"""<div class="section">
+  <h2>Pattern Learning</h2>
+  <p style="font-size:13px;color:#64748b;margin:0 0 12px">
+    {pl_stats.get('patterns_tracked',0)} patterns tracked &nbsp;·&nbsp;
+    {pl_stats.get('active_suggestions',0)} active suggestions &nbsp;·&nbsp;
+    {pl_stats.get('promoted',0)} promoted to live rules
+  </p>
+  <table>
+    <thead><tr><th>Pattern</th><th>Confidence</th><th>Occurrences</th><th>Severity</th><th>Status</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>"""
 
 
 # HTML report
@@ -299,6 +408,16 @@ def _generate_html(data: Dict) -> str:
     <div class="value amber">{data.get('block_count',0)}</div>
     <div class="sub">currently blocked</div>
   </div>
+  <div class="card">
+    <div class="label">Kill chains</div>
+    <div class="value {'red' if data.get('kill_chain_complete',0) > 0 else 'blue'}">{data.get('kill_chain_stats',{}).get('total_chains',0)}</div>
+    <div class="sub">{data.get('kill_chain_complete',0)} complete</div>
+  </div>
+  <div class="card">
+    <div class="label">Pattern suggestions</div>
+    <div class="value blue">{data.get('pattern_suggestions_active',0)}</div>
+    <div class="sub">{data.get('pattern_suggestions_promoted',0)} promoted</div>
+  </div>
 </div>
 
 <div class="section">
@@ -318,6 +437,10 @@ def _generate_html(data: Dict) -> str:
 </div>
 
 {'<div class="section"><h2>File integrity alerts</h2><table><thead><tr><th>Time</th><th>Path</th><th>Change</th><th>Severity</th></tr></thead><tbody>' + fim_rows + '</tbody></table></div>' if fim_rows else ''}
+
+{_kc_section(data)}
+
+{_pl_section(data)}
 
 <div class="section">
   <h2>Compliance mapping</h2>
@@ -521,28 +644,34 @@ class Reporter:
                             ueba=ueba_engine,
                             case_manager=case_manager,
                             rule_engine=detector.rules,
-                            rate_limiter=rate_limiter)
+                            rate_limiter=rate_limiter,
+                            kill_chain=kill_chain_tracker,
+                            pattern_learner=pattern_learner)
         path = await reporter.generate(format="pdf", period_days=30)
     """
 
     def __init__(
         self,
-        store:        Optional["Store"],
-        fim:          Optional["FIMEngine"] = None,
-        cfg:          Dict[str, Any] = None,
-        ueba:         Any = None,
-        case_manager: Any = None,
-        rule_engine:  Any = None,
-        rate_limiter: Any = None,
+        store:           Optional["Store"],
+        fim:             Optional["FIMEngine"] = None,
+        cfg:             Dict[str, Any] = None,
+        ueba:            Any = None,
+        case_manager:    Any = None,
+        rule_engine:     Any = None,
+        rate_limiter:    Any = None,
+        kill_chain:      Any = None,
+        pattern_learner: Any = None,
     ):
-        self.store        = store
-        self.fim          = fim
-        self.ueba         = ueba
-        self.case_manager = case_manager
-        self.rule_engine  = rule_engine
-        self.rate_limiter = rate_limiter
-        cfg               = cfg or {}
-        self._output_dir  = cfg.get("reporting", {}).get("output_dir", "./reports")
+        self.store           = store
+        self.fim             = fim
+        self.ueba            = ueba
+        self.case_manager    = case_manager
+        self.rule_engine     = rule_engine
+        self.rate_limiter    = rate_limiter
+        self.kill_chain      = kill_chain
+        self.pattern_learner = pattern_learner
+        cfg                  = cfg or {}
+        self._output_dir     = cfg.get("reporting", {}).get("output_dir", "./reports")
 
     async def generate(
         self,
@@ -567,6 +696,8 @@ class Reporter:
             case_manager=self.case_manager,
             rule_engine=self.rule_engine,
             rate_limiter=self.rate_limiter,
+            kill_chain=self.kill_chain,
+            pattern_learner=self.pattern_learner,
         )
 
         loop = asyncio.get_running_loop()

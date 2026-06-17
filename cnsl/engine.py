@@ -41,6 +41,8 @@ from .huddle_integration import HuddleManager
 from .search_engine   import SearchEngine, ElasticsearchPusher
 from .syslog_receiver import SyslogReceiver
 from .kill_chain      import KillChainTracker
+from .pattern_learner import PatternLearner
+from .siem_connectors import SIEMRouter
 
 
 
@@ -48,11 +50,12 @@ from .kill_chain      import KillChainTracker
 
 
 async def engine_loop(
-    queue:       asyncio.Queue,
-    detector:    Detector,
-    blocker:     Blocker,
-    logger:      JsonLogger,
-    ml_detector: "MLDetector | None" = None,
+    queue:          asyncio.Queue,
+    detector:       Detector,
+    blocker:        Blocker,
+    logger:         JsonLogger,
+    ml_detector:    "MLDetector | None"    = None,
+    pattern_learner: "PatternLearner | None" = None,
 ) -> None:
     from .normalizer import normalize as _normalize
 
@@ -76,7 +79,14 @@ async def engine_loop(
             await detector.handle(ev)
             if ml_detector and ml_detector.enabled:
                 try:
-                    await ml_detector.ingest(ev)
+                    ml_alert = await ml_detector.ingest(ev)
+                    if ml_alert and pattern_learner:
+                        try:
+                            pattern_learner.on_ml_anomaly(
+                                ml_alert.ip, ml_alert.top_reasons
+                            )
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except asyncio.TimeoutError:
@@ -119,7 +129,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.2.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.4.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -231,6 +241,14 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if store.available:
         await kill_chain_tracker.load_all(store)
 
+    # Pattern learner
+    pattern_learner = PatternLearner(cfg)
+    if store.available:
+        await pattern_learner.load_all(store)
+
+    # SIEM/SOAR connectors
+    siem_router = SIEMRouter(cfg)
+
     # Tenant manager
     tenant_manager = TenantManager(cfg)
 
@@ -260,13 +278,17 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         case_manager=case_manager,
                         threat_feed=threat_feed,
                         ueba=ueba,
-                        kill_chain=kill_chain_tracker)
+                        kill_chain=kill_chain_tracker,
+                        pattern_learner=pattern_learner,
+                        siem_router=siem_router)
 
     # Reporter (after detector so rule_engine is available)
     reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
                         ueba=ueba, case_manager=case_manager,
                         rule_engine=getattr(detector, "rules", None),
-                        rate_limiter=rate_limiter)
+                        rate_limiter=rate_limiter,
+                        kill_chain=kill_chain_tracker,
+                        pattern_learner=pattern_learner)
 
     # Kafka consumer (after detector)
     kafka = KafkaConsumer(cfg, detector, logger)
@@ -293,7 +315,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     tasks: List[asyncio.Task] = []
 
     tasks.append(asyncio.create_task(
-        engine_loop(queue, detector, blocker, logger, ml_detector=ml_detector), name="engine"
+        engine_loop(queue, detector, blocker, logger,
+                    ml_detector=ml_detector,
+                    pattern_learner=pattern_learner), name="engine"
     ))
 
     authlog_path = cfg.get("authlog_path", "/var/log/auth.log")
@@ -378,7 +402,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             kafka=kafka,
                             huddle=huddle,
                             notifier=notifier,
-                            kill_chain=kill_chain_tracker),
+                            kill_chain=kill_chain_tracker,
+                            pattern_learner=pattern_learner,
+                            siem_router=siem_router),
             name="dashboard",
         ))
 
@@ -418,6 +444,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await logger.log("shutdown", {"msg": "Stopping CNSL"})
     fim_engine.close()
     await redis_sync.close()
+    await siem_router.close()
     await store.close()
     logger.close()
 

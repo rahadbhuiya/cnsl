@@ -2486,3 +2486,480 @@ class TestHuddleManager:
         }})
         assert hm._heat_thresh == 0.8
         assert hm._cool_thresh == 0.3
+
+
+# v2.2.0 -- kill chain tracker
+
+
+class TestKillChainStages:
+    """Event kind to kill chain stage mapping."""
+
+    def _make_tracker(self, cfg=None):
+        from cnsl.kill_chain import KillChainTracker
+        return KillChainTracker(cfg or {"kill_chain": {"enabled": True}})
+
+    def test_ssh_fail_maps_to_delivery(self):
+        from cnsl.kill_chain import KCStage
+        kc = self._make_tracker()
+        chain = kc.update("1.2.3.4", "SSH_FAIL")
+        assert chain is not None
+        assert chain.max_stage == KCStage.DELIVERY
+
+    def test_ssh_success_maps_to_exploitation(self):
+        from cnsl.kill_chain import KCStage
+        kc = self._make_tracker()
+        kc.update("1.2.3.4", "SSH_FAIL")
+        chain = kc.update("1.2.3.4", "SSH_SUCCESS")
+        assert chain.max_stage == KCStage.EXPLOITATION
+
+    def test_web_scan_maps_to_reconnaissance(self):
+        from cnsl.kill_chain import KCStage
+        kc = self._make_tracker()
+        chain = kc.update("1.2.3.4", "WEB_SCAN")
+        assert chain.max_stage == KCStage.RECONNAISSANCE
+
+    def test_sudo_fail_maps_to_installation(self):
+        from cnsl.kill_chain import KCStage
+        kc = self._make_tracker()
+        chain = kc.update("1.2.3.4", "SUDO_FAIL")
+        assert chain.max_stage == KCStage.INSTALLATION
+
+    def test_unmapped_kind_returns_none(self):
+        kc = self._make_tracker()
+        chain = kc.update("1.2.3.4", "SOME_UNKNOWN_KIND")
+        assert chain is None
+
+    def test_disabled_tracker_returns_none(self):
+        kc = self._make_tracker({"kill_chain": {"enabled": False}})
+        chain = kc.update("1.2.3.4", "SSH_FAIL")
+        assert chain is None
+
+
+class TestKillChainScore:
+    """Score calculation and complete-chain detection."""
+
+    def _make_tracker(self):
+        from cnsl.kill_chain import KillChainTracker
+        return KillChainTracker({"kill_chain": {"enabled": True}})
+
+    def test_score_increases_with_stage(self):
+        kc = self._make_tracker()
+        kc.update("1.1.1.1", "WEB_SCAN")          # stage 0
+        chain_low = kc.get_chain("1.1.1.1")
+
+        kc.update("2.2.2.2", "WEB_SCAN")          # stage 0
+        kc.update("2.2.2.2", "SSH_FAIL")          # stage 2
+        kc.update("2.2.2.2", "SSH_SUCCESS")       # stage 3
+        chain_high = kc.get_chain("2.2.2.2")
+
+        assert chain_high.score > chain_low.score
+
+    def test_complete_requires_recon_delivery_exploitation(self):
+        kc = self._make_tracker()
+        kc.update("1.2.3.4", "WEB_SCAN")     # recon
+        kc.update("1.2.3.4", "SSH_FAIL")     # delivery
+        chain = kc.get_chain("1.2.3.4")
+        assert chain.complete is False
+
+        kc.update("1.2.3.4", "SSH_SUCCESS")  # exploitation
+        chain = kc.get_chain("1.2.3.4")
+        assert chain.complete is True
+
+    def test_partial_chain_not_complete(self):
+        kc = self._make_tracker()
+        kc.update("1.2.3.4", "WEB_SCAN")
+        chain = kc.get_chain("1.2.3.4")
+        assert chain.complete is False
+
+    def test_correlation_rule_maps_to_c2_stage(self):
+        from cnsl.kill_chain import KCStage
+        kc = self._make_tracker()
+        chain = kc.update_from_correlation("1.2.3.4", "persistent_recon")
+        assert chain is not None
+        assert chain.max_stage == KCStage.C2
+
+
+class TestKillChainQueries:
+    """get_all, stats, and eviction behavior."""
+
+    def _make_tracker(self, max_chains=None):
+        from cnsl.kill_chain import KillChainTracker
+        cfg = {"kill_chain": {"enabled": True}}
+        if max_chains is not None:
+            cfg["kill_chain"]["max_chains"] = max_chains
+        return KillChainTracker(cfg)
+
+    def test_get_all_sorted_by_score_descending(self):
+        kc = self._make_tracker()
+        kc.update("1.1.1.1", "WEB_SCAN")
+        kc.update("2.2.2.2", "WEB_SCAN")
+        kc.update("2.2.2.2", "SSH_FAIL")
+        kc.update("2.2.2.2", "SSH_SUCCESS")
+        chains = kc.get_all(limit=10)
+        assert chains[0].ip == "2.2.2.2"
+
+    def test_complete_only_filter(self):
+        kc = self._make_tracker()
+        kc.update("1.1.1.1", "WEB_SCAN")
+        kc.update("2.2.2.2", "WEB_SCAN")
+        kc.update("2.2.2.2", "SSH_FAIL")
+        kc.update("2.2.2.2", "SSH_SUCCESS")
+        chains = kc.get_all(complete_only=True)
+        assert all(c.complete for c in chains)
+        assert len(chains) == 1
+
+    def test_stats_returns_totals(self):
+        kc = self._make_tracker()
+        kc.update("1.1.1.1", "WEB_SCAN")
+        stats = kc.stats()
+        assert stats["total_chains"] == 1
+
+    def test_max_chains_evicts_oldest(self):
+        kc = self._make_tracker(max_chains=2)
+        kc.update("1.1.1.1", "WEB_SCAN")
+        kc.update("2.2.2.2", "WEB_SCAN")
+        kc.update("3.3.3.3", "WEB_SCAN")
+        assert len(kc._chains) == 2
+        assert "1.1.1.1" not in kc._chains
+
+
+# v2.3.0 -- automated pattern learning
+
+
+class TestPatternFingerprint:
+    """Pattern fingerprinting and ID generation."""
+
+    def test_fingerprint_sorted_and_deduped(self):
+        from cnsl.pattern_learner import _fingerprint
+        key, kinds = _fingerprint([("SSH_FAIL", "auth"), ("WEB_SCAN", "nginx"),
+                                    ("SSH_FAIL", "auth")])
+        assert kinds == ["SSH_FAIL", "WEB_SCAN"]
+        assert key == "SSH_FAIL+WEB_SCAN"
+
+    def test_empty_pairs_returns_empty(self):
+        from cnsl.pattern_learner import _fingerprint
+        key, kinds = _fingerprint([])
+        assert key == ""
+        assert kinds == []
+
+    def test_same_kinds_different_order_same_fingerprint(self):
+        from cnsl.pattern_learner import _fingerprint
+        key1, _ = _fingerprint([("A", "x"), ("B", "y")])
+        key2, _ = _fingerprint([("B", "y"), ("A", "x")])
+        assert key1 == key2
+
+    def test_make_id_deterministic(self):
+        from cnsl.pattern_learner import _make_id
+        assert _make_id("SSH_FAIL+WEB_SCAN") == _make_id("SSH_FAIL+WEB_SCAN")
+
+    def test_make_id_differs_for_different_patterns(self):
+        from cnsl.pattern_learner import _make_id
+        assert _make_id("A+B") != _make_id("C+D")
+
+
+class TestPatternLearnerObservation:
+    """Event observation and buffer management."""
+
+    def _make_learner(self, cfg=None):
+        from cnsl.pattern_learner import PatternLearner
+        return PatternLearner(cfg or {"pattern_learning": {
+            "enabled": True, "lookback_sec": 300, "min_occurrences": 3,
+        }})
+
+    def _make_event(self, ip, kind, source="auth"):
+        from cnsl.models import Event, now
+        return Event(ts=now(), source=source, kind=kind, src_ip=ip, user=None,
+                     raw=f"test event {kind} from {ip}")
+
+    def test_observe_event_populates_buffer(self):
+        pl = self._make_learner()
+        pl.observe_event(self._make_event("1.2.3.4", "SSH_FAIL"))
+        buf = pl._buffers.get("1.2.3.4")
+        assert buf is not None
+        assert len(buf.snapshot()) == 1
+
+    def test_disabled_learner_ignores_events(self):
+        pl = self._make_learner({"pattern_learning": {"enabled": False}})
+        pl.observe_event(self._make_event("1.2.3.4", "SSH_FAIL"))
+        assert "1.2.3.4" not in pl._buffers
+
+    def test_event_without_ip_ignored(self):
+        from cnsl.models import Event, now
+        pl = self._make_learner()
+        ev = Event(ts=now(), source="auth", kind="SSH_FAIL", src_ip=None,
+                   user=None, raw="no ip")
+        pl.observe_event(ev)
+        assert len(pl._buffers) == 0
+
+
+class TestPatternLearnerSuggestions:
+    """Suggestion generation, promote, and dismiss."""
+
+    def _make_learner(self, min_occurrences=3):
+        from cnsl.pattern_learner import PatternLearner
+        return PatternLearner({"pattern_learning": {
+            "enabled": True, "lookback_sec": 300,
+            "min_occurrences": min_occurrences,
+        }})
+
+    def _observe_and_alert(self, pl, ip, kinds):
+        from cnsl.models import Event, now
+        for kind in kinds:
+            pl.observe_event(Event(ts=now(), source="test", kind=kind,
+                                    src_ip=ip, user=None, raw=f"{kind} from {ip}"))
+        return pl.on_alert(ip, "test_rule")
+
+    def test_no_suggestion_below_min_occurrences(self):
+        pl = self._make_learner(min_occurrences=5)
+        for i in range(3):
+            self._observe_and_alert(pl, f"1.2.3.{i}", ["SSH_FAIL", "WEB_SCAN"])
+        assert len(pl.get_suggestions()) == 0
+
+    def test_suggestion_created_at_min_occurrences(self):
+        pl = self._make_learner(min_occurrences=3)
+        result = None
+        for i in range(3):
+            result = self._observe_and_alert(pl, f"1.2.3.{i}", ["SSH_FAIL", "WEB_SCAN"])
+        assert len(pl.get_suggestions()) == 1
+        assert result is not None
+        assert "SSH_FAIL" in result.event_kinds
+
+    def test_suggestion_tracks_example_ips(self):
+        pl = self._make_learner(min_occurrences=2)
+        self._observe_and_alert(pl, "1.1.1.1", ["SSH_FAIL", "WEB_SCAN"])
+        self._observe_and_alert(pl, "2.2.2.2", ["SSH_FAIL", "WEB_SCAN"])
+        # Suggestion is born on the 2nd occurrence, so only the IP that
+        # triggered creation is recorded at this point.
+        suggestions = pl.get_suggestions()
+        assert len(suggestions) == 1
+        assert "2.2.2.2" in suggestions[0].example_ips
+        # A subsequent occurrence of the same pattern adds its IP too.
+        self._observe_and_alert(pl, "3.3.3.3", ["SSH_FAIL", "WEB_SCAN"])
+        updated = pl.get_suggestion(suggestions[0].id)
+        assert "3.3.3.3" in updated.example_ips
+
+    def test_dismiss_suppresses_future_suggestions(self):
+        pl = self._make_learner(min_occurrences=2)
+        self._observe_and_alert(pl, "1.1.1.1", ["SSH_FAIL", "WEB_SCAN"])
+        self._observe_and_alert(pl, "2.2.2.2", ["SSH_FAIL", "WEB_SCAN"])
+        sugg = pl.get_suggestions()[0]
+        assert pl.dismiss(sugg.id) is True
+        assert sugg.pattern_key in pl._dismissed
+        # New occurrences of the same pattern should not resurrect it
+        self._observe_and_alert(pl, "3.3.3.3", ["SSH_FAIL", "WEB_SCAN"])
+        active = pl.get_suggestions()
+        assert len(active) == 0
+
+    def test_mark_promoted_sets_flag(self):
+        pl = self._make_learner(min_occurrences=2)
+        self._observe_and_alert(pl, "1.1.1.1", ["SSH_FAIL", "WEB_SCAN"])
+        self._observe_and_alert(pl, "2.2.2.2", ["SSH_FAIL", "WEB_SCAN"])
+        sugg = pl.get_suggestions()[0]
+        assert pl.mark_promoted(sugg.id) is True
+        assert sugg.promoted is True
+        # Promoted suggestions excluded from default get_suggestions()
+        assert len(pl.get_suggestions()) == 0
+
+    def test_dismiss_unknown_id_returns_false(self):
+        pl = self._make_learner()
+        assert pl.dismiss("nonexistent") is False
+
+    def test_stats_reports_counts(self):
+        pl = self._make_learner(min_occurrences=2)
+        self._observe_and_alert(pl, "1.1.1.1", ["SSH_FAIL", "WEB_SCAN"])
+        self._observe_and_alert(pl, "2.2.2.2", ["SSH_FAIL", "WEB_SCAN"])
+        stats = pl.stats()
+        assert stats["active_suggestions"] == 1
+        assert stats["patterns_tracked"] >= 1
+
+
+# v2.4.0 -- SIEM/SOAR connectors
+
+
+class TestSIEMSeverityFiltering:
+    """min_severity filtering logic shared by all connectors."""
+
+    def test_sev_passes_equal_severity(self):
+        from cnsl.siem_connectors import _sev_passes
+        assert _sev_passes("MEDIUM", "MEDIUM") is True
+
+    def test_sev_passes_higher_severity(self):
+        from cnsl.siem_connectors import _sev_passes
+        assert _sev_passes("HIGH", "MEDIUM") is True
+
+    def test_sev_fails_lower_severity(self):
+        from cnsl.siem_connectors import _sev_passes
+        assert _sev_passes("LOW", "MEDIUM") is False
+
+    def test_sev_unknown_defaults_to_low_rank(self):
+        from cnsl.siem_connectors import _sev_passes
+        assert _sev_passes("UNKNOWN", "LOW") is True
+        assert _sev_passes("UNKNOWN", "MEDIUM") is False
+
+
+class TestSIEMConnectorConfig:
+    """Connector construction reads config correctly."""
+
+    def test_splunk_disabled_by_default(self):
+        from cnsl.siem_connectors import SplunkHECConnector
+        c = SplunkHECConnector({})
+        assert c.enabled is False
+
+    def test_splunk_reads_config(self):
+        from cnsl.siem_connectors import SplunkHECConnector
+        c = SplunkHECConnector({"siem": {"splunk": {
+            "enabled": True, "hec_url": "https://splunk.example.com:8088",
+            "token": "abc123", "index": "myindex",
+        }}})
+        assert c.enabled is True
+        assert c.hec_url == "https://splunk.example.com:8088"
+        assert c.index == "myindex"
+
+    def test_sentinel_disabled_by_default(self):
+        from cnsl.siem_connectors import SentinelConnector
+        c = SentinelConnector({})
+        assert c.enabled is False
+
+    def test_webhook_disabled_by_default(self):
+        from cnsl.siem_connectors import WebhookConnector
+        c = WebhookConnector({})
+        assert c.enabled is False
+
+    def test_webhook_reads_bearer_token(self):
+        from cnsl.siem_connectors import WebhookConnector
+        c = WebhookConnector({"siem": {"webhook": {
+            "enabled": True, "url": "https://example.com/ingest",
+            "bearer_token": "secret-token",
+        }}})
+        assert c.bearer_token == "secret-token"
+
+
+class TestSIEMRouter:
+    """SIEMRouter orchestration, push, and disabled-connector behavior."""
+
+    def test_router_disabled_when_no_connector_enabled(self):
+        from cnsl.siem_connectors import SIEMRouter
+        router = SIEMRouter({})
+        assert router.enabled is False
+
+    def test_router_enabled_when_any_connector_enabled(self):
+        from cnsl.siem_connectors import SIEMRouter
+        router = SIEMRouter({"siem": {"splunk": {"enabled": True,
+                             "hec_url": "https://x.com", "token": "t"}}})
+        assert router.enabled is True
+
+    def test_push_noop_when_disabled(self):
+        from cnsl.siem_connectors import SIEMRouter
+        from cnsl.models import Detection
+
+        async def _go():
+            router = SIEMRouter({})
+            d = Detection(src_ip="1.2.3.4", severity="HIGH", reasons=["test"],
+                          fail_count=1, uniq_users=1, window_sec=60)
+            # Should not raise even though no connector is enabled
+            await router.push(d)
+
+        _run(_go())
+
+    def test_status_returns_all_connector_names(self):
+        from cnsl.siem_connectors import SIEMRouter
+
+        async def _go():
+            router = SIEMRouter({})
+            return await router.status()
+
+        status = _run(_go())
+        assert set(status["connectors"].keys()) == {"splunk", "sentinel", "webhook"}
+
+    def test_flush_queue_empty_returns_empty_dict(self):
+        from cnsl.siem_connectors import SIEMRouter
+
+        async def _go():
+            router = SIEMRouter({})
+            return await router.flush_queue()
+
+        result = _run(_go())
+        assert result == {}
+
+    def test_close_does_not_raise_with_no_sessions(self):
+        from cnsl.siem_connectors import SIEMRouter
+
+        async def _go():
+            router = SIEMRouter({})
+            await router.close()  # connectors never opened a session
+
+        _run(_go())
+
+
+class TestDashboardSignatureV2:
+    """start_dashboard must accept kill_chain, pattern_learner, siem_router
+    -- if it doesn't, engine.py silently passes None and the new dashboard
+    tabs/sections always show as unavailable."""
+
+    def test_start_dashboard_accepts_new_v2_params(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        params = list(sig.parameters.keys())
+        assert "kill_chain" in params, \
+            "start_dashboard missing kill_chain param -- Kill Chain tab will always show disabled"
+        assert "pattern_learner" in params, \
+            "start_dashboard missing pattern_learner param -- Suggested Rules panel will always be empty"
+        assert "siem_router" in params, \
+            "start_dashboard missing siem_router param -- SIEM status will always show unavailable"
+
+    def test_start_dashboard_new_v2_params_default_none(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        for name in ("kill_chain", "pattern_learner", "siem_router"):
+            assert sig.parameters[name].default is None
+
+
+class TestDetectorAcceptsV2Modules:
+    """Detector.__init__ must accept kill_chain, pattern_learner, siem_router
+    as optional kwargs without raising, and store them on self."""
+
+    def _make_cfg(self):
+        return {
+            "thresholds": {}, "actions": {"dry_run": True},
+            "logging": {"console_verbose": False},
+        }
+
+    def test_detector_accepts_new_v2_kwargs(self):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+        from cnsl.kill_chain import KillChainTracker
+        from cnsl.pattern_learner import PatternLearner
+        from cnsl.siem_connectors import SIEMRouter
+
+        cfg     = self._make_cfg()
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+
+        kc = KillChainTracker(cfg)
+        pl = PatternLearner(cfg)
+        sr = SIEMRouter(cfg)
+
+        det = Detector(cfg, logger, blocker, kill_chain=kc,
+                       pattern_learner=pl, siem_router=sr)
+        assert det.kill_chain is kc
+        assert det.pattern_learner is pl
+        assert det.siem_router is sr
+
+    def test_detector_v2_modules_default_none(self):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+
+        cfg     = self._make_cfg()
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+
+        det = Detector(cfg, logger, blocker)
+        assert det.kill_chain is None
+        assert det.pattern_learner is None
+        assert det.siem_router is None

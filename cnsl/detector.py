@@ -154,6 +154,8 @@ class Detector:
         threat_feed:  Optional["ThreatFeed"]         = None,
         ueba:         Optional["UEBAEngine"]         = None,
         kill_chain:   Optional[Any]                  = None,
+        pattern_learner: Optional[Any]                 = None,
+        siem_router:     Optional[Any]                 = None,
     ):
         # Rule engine — all thresholds are read from here at evaluation time
         self.rules = RuleEngine(cfg)
@@ -203,10 +205,12 @@ class Detector:
         self.abuseipdb    = abuseipdb
         self.baseline     = baseline
         self.redis_sync   = redis_sync
-        self.case_manager = case_manager
-        self.threat_feed  = threat_feed
-        self.ueba         = ueba
-        self.kill_chain   = kill_chain
+        self.case_manager    = case_manager
+        self.threat_feed     = threat_feed
+        self.ueba            = ueba
+        self.kill_chain      = kill_chain
+        self.pattern_learner = pattern_learner
+        self.siem_router     = siem_router
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
@@ -235,7 +239,14 @@ class Detector:
         # Log all auth/multi-log events
         await self.logger.log("event_auth", ev.to_dict())
 
-        # Threat feed check — known-bad IPs blocked before any threshold
+        # Pattern learner -- record every event for sequence tracking
+        if self.pattern_learner:
+            try:
+                self.pattern_learner.observe_event(ev)
+            except Exception:
+                pass
+
+        # Threat feed check -- known-bad IPs blocked before any threshold
         if self.threat_feed and self.threat_feed.enabled and ip not in self.country_block_allowlist:
             await self._check_threat_feed(ip, ev)
 
@@ -785,6 +796,20 @@ class Detector:
         # Block HIGH severity
         if sev == Severity.HIGH:
             await self._block_ip(ip, "; ".join(reasons), st, detection)
+
+        # Pattern learner -- record this alert for pattern discovery
+        if self.pattern_learner:
+            try:
+                self.pattern_learner.on_alert(ip, trigger)
+            except Exception:
+                pass
+
+        # SIEM/SOAR push -- send detection to all enabled connectors
+        if self.siem_router and detection:
+            try:
+                asyncio.ensure_future(self.siem_router.push(detection))
+            except Exception:
+                pass
 
     #  Blocking 
 

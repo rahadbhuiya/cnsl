@@ -826,7 +826,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.2.0)
+│   ├── __init__.py              package version (2.4.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 |   |
 |   |── py.typed
@@ -854,6 +854,8 @@ cnsl/
 │   ├── threat_feed.py           community threat feeds (6 feeds, CIDR matching)
 │   ├── ueba.py                  user/entity behavior analytics (5 anomaly types)
 │   ├── kill_chain.py            attack kill chain tracker (7 stages, score, SQLite)
+│   ├── pattern_learner.py         automated pattern discovery + suggested rules
+│   ├── siem_connectors.py         Splunk HEC + Sentinel + Webhook push connectors
 │   │
 │   ├── blocker.py               iptables / ipset blocking backend
 │   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
@@ -965,6 +967,89 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.4.0 -- SIEM/SOAR Native Push Connectors
+
+**New module: `cnsl/siem_connectors.py`**
+- `SplunkHECConnector` -- pushes to Splunk HTTP Event Collector (`POST /services/collector/event`). Auth via `Authorization: Splunk {token}`. Configurable index, sourcetype, host, verify_ssl, min_severity.
+- `SentinelConnector` -- pushes to Microsoft Sentinel via the Log Analytics Data Collector REST API. HMAC-SHA256 signed requests. Configurable workspace_id, shared_key, log_type, api_version.
+- `WebhookConnector` -- generic HTTPS webhook for Palo Alto XSOAR, IBM QRadar, custom SOC tooling. Supports Bearer token auth, custom headers, configurable HTTP method.
+- `SIEMRouter` -- orchestrates all enabled connectors. Retries failed pushes (up to max_retries per connector) with exponential backoff. In-memory retry queue (max 1000 entries). Graceful shutdown closes all aiohttp sessions.
+- All connectors support `min_severity` filtering -- events below the threshold are silently skipped, not retried.
+
+**`cnsl/detector.py`** -- SIEM push hook
+- `Detector.__init__` accepts `siem_router` parameter
+- `asyncio.ensure_future(siem_router.push(detection))` called in `_maybe_fire()` after every alert fires -- non-blocking, does not delay detection
+
+**`cnsl/engine.py`** -- Wiring
+- `SIEMRouter` instantiated after `PatternLearner`
+- Passed to `Detector` and `start_dashboard`
+- `siem_router.close()` called on graceful shutdown
+- Version string bumped to `2.4.0`
+
+**`cnsl/dashboard.py`** -- SIEM status UI + API
+- SIEM / SOAR Connectors section added to Settings tab -- shows Splunk, Sentinel, Webhook status cards with push/error counts and last error
+- Retry queue depth shown with Flush Now button
+- Send Test button per connector -- pushes synthetic LOW severity event
+- `GET /api/siem/status` -- connector health + queue depth
+- `POST /api/siem/test/{name}` -- send test event to splunk|sentinel|webhook
+- `POST /api/siem/flush` -- force flush retry queue
+- `/api/debug` extended with `siem_splunk_enabled`, `siem_sentinel_enabled`, `siem_webhook_enabled`
+
+**`config/config.example.json`**
+- `siem.splunk`, `siem.sentinel`, `siem.webhook` blocks added (all disabled by default)
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.4.0`
+
+**`docs/siem-connectors.md`** -- New documentation file
+
+---
+
+### v2.3.0 -- Automated Pattern Learning
+
+**New module: `cnsl/pattern_learner.py`**
+- Observes every detection event via a per-IP sliding window buffer (default 5 min lookback)
+- When an alert fires, extracts the event sequence that preceded it and computes a stable pattern fingerprint (sorted unique event kinds joined by `+`)
+- Fingerprints are counted across all alerts; when a pattern reaches `min_occurrences` (default 5) it becomes a `SuggestedRule`
+- Each `SuggestedRule` includes: event kinds, occurrence count, confidence score (0.0-1.0), suggested severity, suggested threshold (median observed event count), suggested window, and up to 5 example IPs
+- ML anomalies from `ml_detector.ingest()` are also fed into the learner via `on_ml_anomaly()`
+- Operators can promote a suggestion (converts it to a live rule override) or dismiss it (suppresses permanently)
+- SQLite persistence via new `pl_suggestions` table -- suggestions survive restarts
+- Configurable via `pattern_learning` block in `config.json`: `enabled`, `lookback_sec`, `min_occurrences`, `max_suggestions`, `persist`
+
+**`cnsl/store.py`** -- Schema
+- `PL_SCHEMA` imported and applied on `init()` -- creates `pl_suggestions` table with confidence and last_seen indexes
+
+**`cnsl/engine.py`** -- Wiring
+- `PatternLearner` instantiated after `KillChainTracker`; persisted suggestions loaded from SQLite on startup
+- `engine_loop` accepts `pattern_learner` parameter; ML anomaly return value checked and fed to `on_ml_anomaly()`
+- Passed to `Detector` and `start_dashboard`
+- Version string bumped to `2.3.0`
+
+**`cnsl/detector.py`** -- Observation hooks
+- `Detector.__init__` accepts `pattern_learner` parameter
+- `observe_event()` called in `handle()` for every inbound event
+- `on_alert()` called in `_maybe_fire()` every time a detection fires
+
+**`cnsl/dashboard.py`** -- Suggested Rules UI + API
+- Suggested Rules panel added below Alert Rules table in the Rules tab
+- Stats bar: patterns tracked, active suggestions, promoted, dismissed, min_occurrences
+- Table: pattern event kinds, confidence bar, occurrences, severity, threshold, window, example IPs, last seen, Promote/Dismiss buttons
+- Promote button marks suggestion as promoted and applies the suggested threshold/severity/window as a rule override
+- Dismiss button suppresses the suggestion permanently
+- `GET /api/pattern-suggestions` -- active suggestions (supports `dismissed` and `promoted` query params)
+- `GET /api/pattern-suggestions/stats` -- aggregate learner statistics
+- `POST /api/pattern-suggestions/{id}/promote` -- promote suggestion
+- `POST /api/pattern-suggestions/{id}/dismiss` -- dismiss suggestion
+- `/api/debug` extended with `pattern_learner_wired` and `pattern_learner_enabled`
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.3.0`
+
+**`docs/pattern-learning.md`** -- New documentation file
+
+---
 
 ### v2.2.0 -- Attack Kill Chain Tracker
 
