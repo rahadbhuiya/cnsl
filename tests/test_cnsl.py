@@ -2963,3 +2963,377 @@ class TestDetectorAcceptsV2Modules:
         assert det.kill_chain is None
         assert det.pattern_learner is None
         assert det.siem_router is None
+
+
+# v2.5.0 -- multi-node federation
+
+
+class TestFederatedSignal:
+    """FederatedSignal serialization round-trip and malformed-input handling."""
+
+    def test_to_dict_round_trip(self):
+        from cnsl.federation import FederatedSignal
+        sig = FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL",
+                              severity="MEDIUM")
+        d = sig.to_dict()
+        restored = FederatedSignal.from_dict(d)
+        assert restored.node_id == "node-a"
+        assert restored.ip == "1.2.3.4"
+        assert restored.kind == "SSH_FAIL"
+        assert restored.severity == "MEDIUM"
+
+    def test_from_dict_missing_required_field_returns_none(self):
+        from cnsl.federation import FederatedSignal
+        assert FederatedSignal.from_dict({"node_id": "a", "ip": "1.2.3.4"}) is None
+
+    def test_from_dict_severity_defaults_to_low(self):
+        from cnsl.federation import FederatedSignal
+        sig = FederatedSignal.from_dict({"node_id": "a", "ip": "1.2.3.4", "kind": "X"})
+        assert sig.severity == "LOW"
+
+
+class TestFederatedIPRecord:
+    """Cross-node detection: is_cross_node only True with 2+ distinct nodes."""
+
+    def test_single_node_not_cross_node(self):
+        from cnsl.federation import FederatedIPRecord, FederatedSignal
+        record = FederatedIPRecord(ip="1.2.3.4")
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        assert record.is_cross_node is False
+        assert record.node_count == 1
+
+    def test_two_nodes_is_cross_node(self):
+        from cnsl.federation import FederatedIPRecord, FederatedSignal
+        record = FederatedIPRecord(ip="1.2.3.4")
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        record.add(FederatedSignal(node_id="node-b", ip="1.2.3.4", kind="WEB_SCAN"))
+        assert record.is_cross_node is True
+        assert record.node_count == 2
+
+    def test_same_node_multiple_signals_not_cross_node(self):
+        from cnsl.federation import FederatedIPRecord, FederatedSignal
+        record = FederatedIPRecord(ip="1.2.3.4")
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        assert record.is_cross_node is False
+
+    def test_to_dict_includes_kinds_per_node(self):
+        from cnsl.federation import FederatedIPRecord, FederatedSignal
+        record = FederatedIPRecord(ip="1.2.3.4")
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="WEB_SCAN"))
+        d = record.to_dict()
+        assert set(d["nodes"]["node-a"]["kinds"]) == {"SSH_FAIL", "WEB_SCAN"}
+
+    def test_signal_history_bounded_per_node(self):
+        from cnsl.federation import FederatedIPRecord, FederatedSignal
+        record = FederatedIPRecord(ip="1.2.3.4")
+        for _ in range(60):
+            record.add(FederatedSignal(node_id="node-a", ip="1.2.3.4", kind="SSH_FAIL"))
+        assert len(record.node_signals["node-a"]) <= 50
+
+
+class TestFederationBusConfig:
+    """FederationBus construction and config defaults."""
+
+    def _make_redis_sync_stub(self, connected=False, node_id="test-node"):
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id   = node_id
+        stub.prefix    = "cnsl"
+        stub.connected = connected
+        stub._redis    = None
+        return stub
+
+    def test_enabled_by_default(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(), logger=None)
+        assert bus.enabled is True
+
+    def test_disabled_via_config(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({"federation": {"enabled": False}},
+                            self._make_redis_sync_stub(), logger=None)
+        assert bus.enabled is False
+
+    def test_channel_uses_redis_sync_prefix(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(), logger=None)
+        assert bus._channel == "cnsl:federation"
+
+    def test_node_id_taken_from_redis_sync(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(node_id="web-01-abc"), logger=None)
+        assert bus.node_id == "web-01-abc"
+
+    def test_not_connected_when_redis_sync_not_connected(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(connected=False), logger=None)
+        assert bus.is_connected is False
+
+    def test_connected_when_redis_sync_connected_and_enabled(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(connected=True), logger=None)
+        assert bus.is_connected is True
+
+    def test_dedupe_window_reads_config(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({"federation": {"dedupe_window_sec": 30}},
+                            self._make_redis_sync_stub(), logger=None)
+        assert bus.dedupe_window_sec == 30
+
+
+class TestFederationBusPublish:
+    """publish() behavior: disabled is a no-op success, disconnected fails cleanly."""
+
+    def _make_redis_sync_stub(self, connected=False):
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id   = "test-node"
+        stub.prefix    = "cnsl"
+        stub.connected = connected
+        stub._redis    = None
+        return stub
+
+    def test_publish_disabled_returns_true(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({"federation": {"enabled": False}},
+                            self._make_redis_sync_stub(), logger=None)
+        result = _run(bus.publish("1.2.3.4", "SSH_FAIL"))
+        assert result is True  # disabled federation must never look like a failure
+
+    def test_publish_without_ip_returns_true(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(connected=True), logger=None)
+        result = _run(bus.publish("", "SSH_FAIL"))
+        assert result is True
+
+    def test_publish_when_not_connected_returns_false(self):
+        from cnsl.federation import FederationBus
+        bus = FederationBus({}, self._make_redis_sync_stub(connected=False), logger=None)
+        result = _run(bus.publish("1.2.3.4", "SSH_FAIL"))
+        assert result is False
+
+    def test_publish_dedupes_within_window(self):
+        from cnsl.federation import FederationBus
+
+        class _StubWithRedis:
+            def __init__(self):
+                self.node_id   = "test-node"
+                self.prefix    = "cnsl"
+                self.connected = True
+                self.calls     = []
+
+                async def _publish(channel, data):
+                    self.calls.append((channel, data))
+                self._redis = type("R", (), {"publish": staticmethod(_publish)})()
+
+        stub = _StubWithRedis()
+        bus  = FederationBus({"federation": {"dedupe_window_sec": 60}}, stub, logger=None)
+
+        async def _go():
+            await bus.publish("1.2.3.4", "SSH_FAIL")
+            await bus.publish("1.2.3.4", "SSH_FAIL")  # should be deduped
+            await bus.publish("1.2.3.4", "WEB_SCAN")  # different kind, not deduped
+
+        _run(_go())
+        assert len(stub.calls) == 2  # SSH_FAIL once, WEB_SCAN once
+
+
+class TestFederationBusReceive:
+    """Remote signal handling: IP record updates and callback invocation."""
+
+    def _make_bus(self):
+        from cnsl.federation import FederationBus
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id   = "local-node"
+        stub.prefix    = "cnsl"
+        stub.connected = False
+        stub._redis    = None
+        return FederationBus({}, stub, logger=None)
+
+    def test_handle_remote_signal_creates_ip_record(self):
+        from cnsl.federation import FederatedSignal
+        bus = self._make_bus()
+        sig = FederatedSignal(node_id="remote-node", ip="1.2.3.4", kind="SSH_FAIL")
+        _run(bus._handle_remote_signal(sig))
+        record = bus.get_ip_record("1.2.3.4")
+        assert record is not None
+        assert "remote-node" in record.node_signals
+
+    def test_handle_remote_signal_invokes_callback(self):
+        from cnsl.federation import FederatedSignal
+        bus = self._make_bus()
+        received = []
+
+        async def _cb(signal):
+            received.append(signal)
+
+        bus.on_remote_signal = _cb
+        sig = FederatedSignal(node_id="remote-node", ip="1.2.3.4", kind="SSH_FAIL")
+        _run(bus._handle_remote_signal(sig))
+        assert len(received) == 1
+        assert received[0].ip == "1.2.3.4"
+
+    def test_callback_exception_does_not_propagate(self):
+        from cnsl.federation import FederatedSignal
+        bus = self._make_bus()
+
+        async def _bad_cb(signal):
+            raise RuntimeError("boom")
+
+        bus.on_remote_signal = _bad_cb
+        sig = FederatedSignal(node_id="remote-node", ip="1.2.3.4", kind="SSH_FAIL")
+        _run(bus._handle_remote_signal(sig))  # must not raise
+
+    def test_node_last_seen_tracked(self):
+        from cnsl.federation import FederatedSignal
+        bus = self._make_bus()
+        sig = FederatedSignal(node_id="remote-node", ip="1.2.3.4", kind="SSH_FAIL")
+        _run(bus._handle_remote_signal(sig))
+        assert "remote-node" in bus._node_last_seen
+
+    def test_signals_received_counter_increments(self):
+        from cnsl.federation import FederatedSignal
+        bus = self._make_bus()
+        sig = FederatedSignal(node_id="remote-node", ip="1.2.3.4", kind="SSH_FAIL")
+        _run(bus._handle_remote_signal(sig))
+        _run(bus._handle_remote_signal(sig))
+        assert bus._signals_received == 2
+
+    def test_max_remote_ips_evicts_oldest(self):
+        from cnsl.federation import FederatedSignal, FederationBus
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id, stub.prefix, stub.connected, stub._redis = "local", "cnsl", False, None
+        bus = FederationBus({"federation": {"max_remote_ips": 2}}, stub, logger=None)
+
+        async def _go():
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="r", ip="1.1.1.1", kind="SSH_FAIL"))
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="r", ip="2.2.2.2", kind="SSH_FAIL"))
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="r", ip="3.3.3.3", kind="SSH_FAIL"))
+
+        _run(_go())
+        assert len(bus._ip_records) == 2
+        assert "1.1.1.1" not in bus._ip_records
+
+
+class TestFederationBusQueries:
+    """get_cross_node_ips, known_nodes, and status reporting."""
+
+    def _make_bus_with_signals(self):
+        from cnsl.federation import FederationBus, FederatedSignal
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id, stub.prefix, stub.connected, stub._redis = "local", "cnsl", False, None
+        bus = FederationBus({}, stub, logger=None)
+
+        async def _go():
+            # 1.1.1.1 seen by two nodes -- cross-node
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="node-a", ip="1.1.1.1", kind="WEB_SCAN"))
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="node-b", ip="1.1.1.1", kind="SSH_FAIL"))
+            # 2.2.2.2 seen by only one node -- not cross-node
+            await bus._handle_remote_signal(
+                FederatedSignal(node_id="node-a", ip="2.2.2.2", kind="WEB_SCAN"))
+
+        _run(_go())
+        return bus
+
+    def test_get_cross_node_ips_filters_correctly(self):
+        bus     = self._make_bus_with_signals()
+        crossed = bus.get_cross_node_ips()
+        ips     = [r.ip for r in crossed]
+        assert "1.1.1.1" in ips
+        assert "2.2.2.2" not in ips
+
+    def test_known_nodes_lists_all_seen_nodes(self):
+        bus   = self._make_bus_with_signals()
+        nodes = bus.known_nodes()
+        node_ids = [n["node_id"] for n in nodes]
+        assert "node-a" in node_ids
+        assert "node-b" in node_ids
+
+    def test_status_reports_cross_node_count(self):
+        bus    = self._make_bus_with_signals()
+        status = bus.status()
+        assert status["cross_node_ips"] == 1
+        assert status["ips_tracked"] == 2
+        assert status["known_peer_count"] == 2
+
+
+class TestDetectorKillChainHelper:
+    """Detector._kc_update wraps kill_chain.update and federation.publish
+    consistently -- this is the single hook point all 7 call sites use."""
+
+    def _make_detector(self, kill_chain=None, federation=None):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+        cfg     = {"thresholds": {}, "actions": {"dry_run": True},
+                  "logging": {"console_verbose": False}}
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+        return Detector(cfg, logger, blocker, kill_chain=kill_chain,
+                        federation=federation)
+
+    def test_kc_update_calls_kill_chain_when_present(self):
+        from cnsl.kill_chain import KillChainTracker
+        kc  = KillChainTracker({"kill_chain": {"enabled": True}})
+        det = self._make_detector(kill_chain=kc)
+        det._kc_update("1.2.3.4", "SSH_FAIL")
+        assert kc.get_chain("1.2.3.4") is not None
+
+    def test_kc_update_noop_when_kill_chain_none(self):
+        det = self._make_detector(kill_chain=None)
+        det._kc_update("1.2.3.4", "SSH_FAIL")  # must not raise
+
+    def test_kc_update_publishes_to_federation_when_present(self):
+        from cnsl.federation import FederationBus
+
+        class _Stub:
+            pass
+        stub = _Stub()
+        stub.node_id, stub.prefix, stub.connected, stub._redis = "local", "cnsl", False, None
+        fed  = FederationBus({}, stub, logger=None)
+        det  = self._make_detector(federation=fed)
+
+        det._kc_update("1.2.3.4", "SSH_FAIL")
+        # publish() is scheduled via asyncio.ensure_future inside a sync
+        # method -- give the event loop one tick to run it.
+        _run(asyncio.sleep(0.01))
+        # Not connected, so publish() returns False quickly without raising
+        # -- the important contract here is that calling _kc_update with a
+        # federation object present never raises synchronously.
+
+    def test_kc_update_federation_exception_does_not_raise(self):
+        class _BadFederation:
+            async def publish(self, ip, kind, severity):
+                raise RuntimeError("boom")
+        det = self._make_detector(federation=_BadFederation())
+        det._kc_update("1.2.3.4", "SSH_FAIL")  # must not raise synchronously
+
+
+class TestDashboardSignatureV3:
+    """start_dashboard must accept federation -- if it doesn't, engine.py
+    silently passes None and the Federation panel always shows unavailable."""
+
+    def test_start_dashboard_accepts_federation_param(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        assert "federation" in sig.parameters.keys(), \
+            "start_dashboard missing federation param -- Federation panel will always show unavailable"
+        assert sig.parameters["federation"].default is None

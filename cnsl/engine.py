@@ -43,6 +43,7 @@ from .syslog_receiver import SyslogReceiver
 from .kill_chain      import KillChainTracker
 from .pattern_learner import PatternLearner
 from .siem_connectors import SIEMRouter
+from .federation      import FederationBus
 
 
 
@@ -129,7 +130,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.4.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.5.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -201,6 +202,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if cfg.get("redis", {}).get("enabled"):
         await redis_sync.connect()
 
+    # Federation bus -- shares detection signals over the redis_sync connection
+    federation = FederationBus(cfg, redis_sync, logger)
+
     # Handle --agent-mode shortcut (before anything else)
     if getattr(args, "agent_mode", False):
         from .agent import run_agent, load_agent_config
@@ -249,6 +253,16 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # SIEM/SOAR connectors
     siem_router = SIEMRouter(cfg)
 
+    # Wire federation: remote signals from other nodes update this node's
+    # kill chain too, so each node sees the attacker's full cross-node path
+    async def _on_remote_signal(signal):
+        try:
+            kill_chain_tracker.update(signal.ip, signal.kind)
+        except Exception:
+            pass
+
+    federation.on_remote_signal = _on_remote_signal
+
     # Tenant manager
     tenant_manager = TenantManager(cfg)
 
@@ -280,7 +294,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         ueba=ueba,
                         kill_chain=kill_chain_tracker,
                         pattern_learner=pattern_learner,
-                        siem_router=siem_router)
+                        siem_router=siem_router,
+                        federation=federation)
 
     # Reporter (after detector so rule_engine is available)
     reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
@@ -366,6 +381,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if redis_sync.connected:
         tasks.append(asyncio.create_task(redis_sync.subscribe_loop(), name="redis_sub"))
         tasks.append(asyncio.create_task(redis_sync.heartbeat_loop(), name="redis_hb"))
+        await federation.start()
         # When a remote block comes in, apply it locally too
         async def _on_remote_block(ip, reason, ttl):
             await blocker.block_ip(ip, reason=f"remote:{reason}")
@@ -404,7 +420,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             notifier=notifier,
                             kill_chain=kill_chain_tracker,
                             pattern_learner=pattern_learner,
-                            siem_router=siem_router),
+                            siem_router=siem_router,
+                            federation=federation),
             name="dashboard",
         ))
 
@@ -444,6 +461,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await logger.log("shutdown", {"msg": "Stopping CNSL"})
     fim_engine.close()
     await redis_sync.close()
+    await federation.stop()
     await siem_router.close()
     await store.close()
     logger.close()

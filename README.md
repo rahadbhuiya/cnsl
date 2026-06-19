@@ -95,6 +95,9 @@ Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service block
 | Kill Chain | Per-IP attack progression graph across 7 stages (Recon to Actions) |
 | Kill Chain | Confidence score (0-100%), complete-chain detection, SQLite persistence |
 | Kill Chain | Dashboard tab with stage timeline, IP detail view, and aggregate stats |
+| Federation | Cross-node detection sharing over Redis pub/sub -- no new infrastructure |
+| Federation | Combined kill chain visibility: stage seen on Node A reflects on Node B too |
+| Federation | Cross-node attack detection: IPs seen by 2+ nodes flagged in Settings tab |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
 | Response | Country-based blocking — block entire countries before thresholds fire |
 | Response | Honeypot redirect — attacker lands on a fake Ubuntu shell (40+ commands) |
@@ -826,7 +829,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.4.0)
+│   ├── __init__.py              package version (2.5.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 |   |
 |   |── py.typed
@@ -856,6 +859,7 @@ cnsl/
 │   ├── kill_chain.py            attack kill chain tracker (7 stages, score, SQLite)
 │   ├── pattern_learner.py         automated pattern discovery + suggested rules
 │   ├── siem_connectors.py         Splunk HEC + Sentinel + Webhook push connectors
+│   ├── federation.py              multi-node federation (cross-node correlation)
 │   │
 │   ├── blocker.py               iptables / ipset blocking backend
 │   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
@@ -967,6 +971,46 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.5.0 -- Multi-Node Federation
+
+**New module: `cnsl/federation.py`**
+- `FederationBus` -- shares detection signals between independently-running CNSL nodes by reusing the existing `redis_sync` connection (no new infrastructure dependency). Subscribes to a new `{prefix}:federation` channel, separate from the existing `{prefix}:events` blocklist channel.
+- `FederatedSignal` -- compact (node_id, ip, kind, severity, ts) broadcast unit, intentionally minimal compared to a full `Event`/`Detection` object
+- `FederatedIPRecord` -- tracks which nodes have reported signals for a given IP; `is_cross_node` is True once 2+ distinct nodes have reported on the same IP
+- Per-node dedup window (default 5s) prevents redundant publishes for the same (ip, kind) pair
+- Graceful degradation: if Redis is unavailable, federation silently falls back to single-node mode -- never blocks local detection
+- Configurable via `federation` block: `enabled`, `min_severity`, `dedupe_window_sec`, `max_remote_ips`. Connection details (host, port, password, db, key_prefix) are reused from the existing `redis` config block.
+
+**`cnsl/detector.py`** -- Single hook point for kill chain + federation
+- New `_kc_update()` helper wraps every `kill_chain.update()` call site and also calls `federation.publish()` -- this replaces 7 scattered call sites in `_on_ssh_fail`, `_on_ssh_success`, `_on_web_event`, `_on_db_event`, `_on_fw_event` (x2), and `_on_sys_event`, so kill chain and federation can never drift out of sync
+- `Detector.__init__` accepts `federation` parameter
+
+**`cnsl/engine.py`** -- Wiring
+- `FederationBus` instantiated right after `redis_sync.connect()`, reusing the same connection object
+- `federation.on_remote_signal` callback wired to feed remote signals into this node's own `kill_chain_tracker` -- so an attacker's full cross-node path becomes visible on every node, not just the one that saw a particular stage
+- `federation.start()` called alongside the existing `redis_sync.subscribe_loop()` / `heartbeat_loop()` tasks, only when Redis is connected
+- `federation.stop()` called on graceful shutdown
+- Passed to `Detector` and `start_dashboard`
+- Version string bumped to `2.5.0`
+
+**`cnsl/dashboard.py`** -- Federation panel + API
+- Federation panel added to Settings tab, above Module Status -- shows connection status, signals sent/received, cross-node IP count, known peer node table, and a cross-node attack table (IPs seen by 2+ nodes, which nodes, which event kinds, last seen)
+- `GET /api/federation/status` -- this node's federation health and stats
+- `GET /api/federation/nodes` -- all known peer nodes with last seen
+- `GET /api/federation/cross-node` -- IPs reported by 2+ distinct nodes
+- `GET /api/federation/ip/{ip}` -- combined per-node view for one IP
+- `/api/debug` extended with `federation_wired`, `federation_enabled`, `federation_connected`
+
+**`config/config.example.json`**
+- `federation` block added: `enabled`, `min_severity`, `dedupe_window_sec`, `max_remote_ips`
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.5.0`
+
+**`docs/federation.md`** -- New documentation file
+
+---
 
 ### v2.4.0 -- SIEM/SOAR Native Push Connectors
 

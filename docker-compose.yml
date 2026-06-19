@@ -1,6 +1,6 @@
 version: "3.9"
 
-# CNSL v2.4.0 -- Full stack
+# CNSL v2.5.0 -- Full stack
 #
 # Services:
 #   cnsl        — Main detection engine + dashboard (port 8765)
@@ -27,7 +27,7 @@ services:
 
   cnsl:
     build: .
-    image: cnsl:2.4.0
+    image: cnsl:2.5.0
     container_name: cnsl
     profiles: ["core"]
     restart: unless-stopped
@@ -66,7 +66,7 @@ services:
 
   cnsl-agent:
     build: .
-    image: cnsl:2.4.0
+    image: cnsl:2.5.0
     container_name: cnsl-agent
     profiles: ["agent"]
     restart: unless-stopped

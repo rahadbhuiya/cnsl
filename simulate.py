@@ -21,6 +21,7 @@ Usage:
     python simulate.py kill_chain     # kill chain tracker progression
     python simulate.py pattern        # automated pattern learning
     python simulate.py siem           # SIEM/SOAR connector push (dry-run)
+    python simulate.py federation     # multi-node federation (simulated cluster)
     python simulate.py live           # interactive mode
 """
 
@@ -42,6 +43,8 @@ from cnsl.store    import Store
 from cnsl.kill_chain      import KillChainTracker
 from cnsl.pattern_learner import PatternLearner
 from cnsl.siem_connectors import SIEMRouter
+from cnsl.redis_sync      import RedisSync
+from cnsl.federation      import FederationBus
 
 
 #  Terminal colours 
@@ -60,7 +63,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}+========================================================+
-|        CNSL -- Local Test Simulator  v2.4.0           |
+|        CNSL -- Local Test Simulator  v2.5.0           |
 |   No real server required -- all tests run locally    |
 +========================================================+{RST}
 """)
@@ -154,7 +157,21 @@ async def setup():
 
     kill_chain      = KillChainTracker(cfg)
     pattern_learner = PatternLearner(cfg)
-    siem_router      = SIEMRouter(cfg)
+    siem_router     = SIEMRouter(cfg)
+
+    # Federation reuses a RedisSync connection. In this offline simulator
+    # Redis is not started, so redis_sync.connected stays False and
+    # federation gracefully degrades to local-only logic -- exactly what
+    # happens in production when Redis is unreachable.
+    redis_sync = RedisSync(cfg, logger)
+    federation = FederationBus(cfg, redis_sync, logger)
+
+    # Mirror engine.py's real wiring: remote signals from other nodes
+    # update this node's own kill chain too.
+    async def _on_remote_signal(signal):
+        kill_chain.update(signal.ip, signal.kind)
+
+    federation.on_remote_signal = _on_remote_signal
 
     detector = Detector(cfg, logger, blocker,
                         geoip=None, store=store,
@@ -162,9 +179,11 @@ async def setup():
                         correlator=correlator,
                         kill_chain=kill_chain,
                         pattern_learner=pattern_learner,
-                        siem_router=siem_router)
+                        siem_router=siem_router,
+                        federation=federation)
 
-    return detector, blocker, metrics, store, logger, notifier, kill_chain, pattern_learner, siem_router
+    return (detector, blocker, metrics, store, logger, notifier,
+            kill_chain, pattern_learner, siem_router, federation)
 
 
 #  Scenario 1: SSH Brute-force 
@@ -866,6 +885,57 @@ async def scenario_siem_push(detector, blocker, siem_router):
     log("SIEM router dry-run push completed without errors", G)
 
 
+#  Scenario 20: Multi-Node Federation (simulated peer node) 
+
+async def scenario_federation(detector, blocker, federation, kill_chain):
+    section("Scenario 20 -- Multi-Node Federation (simulated 2-node cluster)")
+    from cnsl.federation import FederatedSignal
+
+    print(f"  {BOLD}Redis status: {RST}", end="")
+    print(f"{G}connected{RST}" if federation.is_connected else f"{DIM}not connected (offline simulator -- no real Redis server){RST}")
+    print(f"  {DIM}Federation gracefully degrades to local-only logic when Redis is unavailable,{RST}")
+    print(f"  {DIM}so the signal/record logic below runs identically with or without a real cluster.{RST}\n")
+
+    ip = "203.0.113.77"
+    print(f"  {BOLD}Simulating: {RST}{Y}web-01{RST} scans {ip}, then {Y}db-01{RST} gets brute-forced from the same IP\n")
+
+    print(f"  {C}[web-01]{RST} observes WEB_SCAN from {ip}  (this node's own signal)")
+    await detector.handle(make_web_scan(ip))
+    await asyncio.sleep(0.2)
+
+    print(f"  {C}[db-01 -> web-01]{RST}  federated signal arrives: DB_AUTH_FAIL from {ip}")
+    remote_signal = FederatedSignal(node_id="db-01-simulated", ip=ip,
+                                    kind="DB_AUTH_FAIL", severity="MEDIUM")
+    await federation._handle_remote_signal(remote_signal)
+    await asyncio.sleep(0.2)
+
+    print(f"  {C}[mail-01 -> web-01]{RST}  federated signal arrives: SSH_FAIL from {ip}")
+    remote_signal2 = FederatedSignal(node_id="mail-01-simulated", ip=ip,
+                                     kind="SSH_FAIL", severity="MEDIUM")
+    await federation._handle_remote_signal(remote_signal2)
+
+    record = federation.get_ip_record(ip)
+    print()
+    if record and record.is_cross_node:
+        print(f"  {BOLD}Cross-node record for {ip}:{RST}")
+        print(f"  Nodes reporting : {R}{record.node_count}{RST}  ({', '.join(record.node_signals.keys())})")
+        print(f"  Is cross-node   : {R}{record.is_cross_node}{RST}")
+        log(f"Federation correctly identified {ip} as a cross-node attack", G)
+    else:
+        log("Federation record missing or not flagged cross-node", R)
+
+    chain = kill_chain.get_chain(ip)
+    if chain:
+        print(f"\n  {BOLD}web-01's local kill chain for {ip} (after federated signals fed in):{RST}")
+        print(f"  Stages observed : {Y}{len(chain.stages)}{RST}  (would be 1 without federation)")
+        print(f"  Max stage       : {chain.to_dict()['max_stage_name']}")
+        log(f"web-01 now sees {len(chain.stages)} stages it never logged locally", G)
+
+    status = federation.status()
+    print(f"\n  {BOLD}Federation bus stats:{RST}  sent={status['signals_sent']}  "
+          f"received={status['signals_received']}  cross_node_ips={status['cross_node_ips']}")
+
+
 SCENARIO_MAP = {
     "brute":       "brute-force",
     "stuffing":    "credential stuffing",
@@ -886,6 +956,7 @@ SCENARIO_MAP = {
     "kill_chain":  "kill chain tracker",
     "pattern":     "automated pattern learning",
     "siem":        "SIEM/SOAR connector push",
+    "federation":  "multi-node federation",
     "live":        "interactive",
 }
 
@@ -899,7 +970,8 @@ async def main():
         print(f"Valid modes: all  live  {' '.join(SCENARIO_MAP.keys())}")
         sys.exit(1)
 
-    detector, blocker, metrics, store, logger, notifier, kill_chain, pattern_learner, siem_router = await setup()
+    (detector, blocker, metrics, store, logger, notifier,
+     kill_chain, pattern_learner, siem_router, federation) = await setup()
 
     log("CNSL simulator starting  (dry-run -- no real iptables changes)", G)
     log("All modules wired: metrics, store, correlator\n", DIM)
@@ -978,6 +1050,10 @@ async def main():
 
         if mode in ("all", "siem"):
             await scenario_siem_push(detector, blocker, siem_router)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "federation"):
+            await scenario_federation(detector, blocker, federation, kill_chain)
 
         if mode == "live":
             await interactive_mode(detector, blocker)
@@ -988,6 +1064,7 @@ async def main():
     finally:
         await store.close()
         await siem_router.close()
+        await federation.stop()
         logger.close()
         section("Simulation complete")
         log("Log saved to : cnsl_test.jsonl", G)

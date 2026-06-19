@@ -1108,6 +1108,26 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
   </div>
   <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Federation -- Multi-Node Correlation</span>
+      <span style="font-size:11px;color:var(--muted)">Cross-node detection sharing via Redis</span>
+      <button onclick="loadFederationStatus()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+    </div>
+    <div id="federation-status-wrap" style="padding:16px">
+      <div id="federation-summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px"></div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text)">Known Peer Nodes</div>
+      <table>
+        <thead><tr><th>Node ID</th><th>Last Seen</th></tr></thead>
+        <tbody id="federation-nodes-tbody"><tr><td colspan="2" style="color:var(--muted);text-align:center;padding:12px">No peer nodes yet</td></tr></tbody>
+      </table>
+      <div style="font-size:12px;font-weight:600;margin:14px 0 8px;color:var(--text)">Cross-Node Attacks (IPs seen by 2+ nodes)</div>
+      <table>
+        <thead><tr><th>IP</th><th>Nodes</th><th>Kinds Observed</th><th>Last Seen</th></tr></thead>
+        <tbody id="federation-crossnode-tbody"><tr><td colspan="4" style="color:var(--muted);text-align:center;padding:12px">No cross-node activity yet</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head"><span class="tbl-head-title">Module Status</span><span style="font-size:11px;color:var(--muted)">Live status of optional modules</span></div>
     <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px" id="settings-modules"></div>
   </div>
@@ -1159,7 +1179,7 @@ function showTab(name){
   if(name==='ueba')      loadUEBA();
   if(name==='rules')     { loadRules(); loadSuggestedRules(); }
   if(name==='ratelimit') loadRateLimit();
-  if(name==='settings')  { loadSettings(); loadSIEMStatus(); }
+  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); }
   if(name==='killchain') loadKillChain();
 }
 
@@ -1493,6 +1513,52 @@ async function showKcDetail(ip){
     `First seen: ${escHtml(chain.first_seen)} &nbsp;|&nbsp; Last seen: ${escHtml(chain.last_seen)}` +
     (geo ? ` &nbsp;|&nbsp; Location: ${escHtml(geo)}` : '') +
     ` &nbsp;|&nbsp; Score: ${Math.round(chain.score * 100)}%`;
+}
+
+async function loadFederationStatus(){
+  const [status, nodesRes, crossNode] = await Promise.all([
+    apiFetch('/api/federation/status'),
+    apiFetch('/api/federation/nodes'),
+    apiFetch('/api/federation/cross-node?limit=20'),
+  ]);
+
+  if(!status){
+    $('federation-summary').innerHTML = '<span style="font-size:12px;color:var(--muted)">Federation not available</span>';
+    return;
+  }
+
+  const connColor = status.connected ? '#22c55e' : '#64748b';
+  const connText  = status.connected ? 'Connected' : (status.enabled ? 'Disconnected' : 'Disabled');
+  $('federation-summary').innerHTML = [
+    {label:'Status',           value: connText, color: connColor},
+    {label:'Signals Sent',     value: status.signals_sent ?? 0},
+    {label:'Signals Received', value: status.signals_received ?? 0},
+    {label:'Cross-Node IPs',   value: status.cross_node_ips ?? 0, color: status.cross_node_ips > 0 ? '#ef4444' : null},
+  ].map(c => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px">
+    <div style="font-size:10px;color:var(--muted);margin-bottom:4px">${c.label}</div>
+    <div style="font-size:15px;font-weight:700;${c.color ? `color:${c.color}` : ''}">${c.value}</div>
+  </div>`).join('');
+
+  const nodes = (nodesRes && nodesRes.nodes) || [];
+  $('federation-nodes-tbody').innerHTML = nodes.length
+    ? nodes.map(n => `<tr>
+        <td><code>${escHtml(n.node_id)}</code></td>
+        <td style="font-size:11px;color:var(--muted)">${escHtml(n.last_seen)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="2" style="color:var(--muted);text-align:center;padding:12px">No peer nodes yet -- check redis.enabled and federation.enabled in config</td></tr>';
+
+  $('federation-crossnode-tbody').innerHTML = (crossNode && crossNode.length)
+    ? crossNode.map(r => {
+        const nodeNames = Object.keys(r.nodes || {});
+        const allKinds  = [...new Set(Object.values(r.nodes || {}).flatMap(n => n.kinds))];
+        return `<tr>
+          <td><code>${escHtml(r.ip)}</code></td>
+          <td style="font-size:11px">${nodeNames.map(escHtml).join(', ')}</td>
+          <td style="font-size:11px;color:var(--muted)">${allKinds.map(escHtml).join(', ')}</td>
+          <td style="font-size:11px">${escHtml(r.last_seen)}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:12px">No cross-node activity yet</td></tr>';
 }
 
 async function loadSIEMStatus(){
@@ -2183,6 +2249,7 @@ async def start_dashboard(
     kill_chain:     Any = None,
     pattern_learner: Any = None,
     siem_router:     Any = None,
+    federation:      Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -3011,6 +3078,54 @@ async def start_dashboard(
         result = await es_pusher.push(norms)
         return web.json_response(result)
 
+    #  Federation API
+
+    @router.get("/api/federation/status")
+    async def api_federation_status(req: web.Request) -> web.Response:
+        """Return this node's federation health and stats."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if federation is None:
+            return web.json_response({"error": "Federation not enabled"}, status=400)
+        return web.json_response(federation.status())
+
+    @router.get("/api/federation/nodes")
+    async def api_federation_nodes(req: web.Request) -> web.Response:
+        """Return all peer nodes this node has heard from."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if federation is None:
+            return web.json_response({"error": "Federation not enabled"}, status=400)
+        return web.json_response({"nodes": federation.known_nodes()})
+
+    @router.get("/api/federation/cross-node")
+    async def api_federation_cross_node(req: web.Request) -> web.Response:
+        """Return IPs that have been reported by 2+ distinct nodes."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if federation is None:
+            return web.json_response({"error": "Federation not enabled"}, status=400)
+        limit   = int(req.rel_url.query.get("limit", 50))
+        records = federation.get_cross_node_ips(limit=limit)
+        return web.json_response([r.to_dict() for r in records])
+
+    @router.get("/api/federation/ip/{ip}")
+    async def api_federation_ip(req: web.Request) -> web.Response:
+        """Return the combined cross-node view for one IP."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if federation is None:
+            return web.json_response({"error": "Federation not enabled"}, status=400)
+        ip     = req.match_info.get("ip", "")
+        record = federation.get_ip_record(ip)
+        if record is None:
+            return web.json_response({"error": f"No federation record for {ip}"}, status=404)
+        return web.json_response(record.to_dict())
+
     #  SIEM Connector API
 
     @router.get("/api/siem/status")
@@ -3200,6 +3315,9 @@ async def start_dashboard(
             "siem_splunk_enabled":     getattr(getattr(siem_router, "splunk",   None), "enabled", False),
             "siem_sentinel_enabled":   getattr(getattr(siem_router, "sentinel", None), "enabled", False),
             "siem_webhook_enabled":    getattr(getattr(siem_router, "webhook",  None), "enabled", False),
+            "federation_wired":        federation is not None,
+            "federation_enabled":      getattr(federation, "enabled", False),
+            "federation_connected":    getattr(federation, "is_connected", False),
         })
 
     @router.get("/api/ml-status")

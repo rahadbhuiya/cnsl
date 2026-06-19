@@ -383,5 +383,11 @@
       "max_retries": 3,
       "min_severity": "MEDIUM"
     }
+  },
+  "federation": {
+    "enabled": true,
+    "min_severity": "LOW",
+    "dedupe_window_sec": 5,
+    "max_remote_ips": 10000
   }
 }
