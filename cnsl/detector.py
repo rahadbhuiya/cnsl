@@ -77,7 +77,18 @@ _DB_KINDS: Set[str]    = {"DB_AUTH_FAIL"}
 _FW_KINDS: Set[str]    = {"FW_BLOCK", "FW_HONEYPOT_PORT"}
 _SYS_KINDS: Set[str]   = {"SUDO_FAIL", "SU_FAIL"}
 
-_ALL_HANDLED: Set[str] = _SSH_KINDS | _WEB_KINDS | _DB_KINDS | _FW_KINDS | _SYS_KINDS
+# Cloud identity kinds
+_CLOUD_KINDS: Set[str] = {
+    "CLOUD_SIGNIN_FAIL",
+    "CLOUD_SIGNIN_SUCCESS",
+    "CLOUD_MFA_FAIL",
+    "CLOUD_RISKY_SIGNIN",
+    "CLOUD_IMPOSSIBLE_TRAVEL",
+}
+
+_ALL_HANDLED: Set[str] = (
+    _SSH_KINDS | _WEB_KINDS | _DB_KINDS | _FW_KINDS | _SYS_KINDS | _CLOUD_KINDS
+)
 
 
 
@@ -298,6 +309,9 @@ class Detector:
 
         elif ev.kind in _SYS_KINDS:
             await self._on_sys_event(ip, ev, st, t)
+
+        elif ev.kind in _CLOUD_KINDS:
+            await self._on_cloud_event(ip, ev, st, t)
 
         #  Correlator (cross-source, Phase 2) 
         if self.correlator:
@@ -635,6 +649,89 @@ class Detector:
             "user": ev.user,
             "meta": ev.meta,
         })
+
+    async def _on_cloud_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
+        """
+        Handle cloud identity events (AWS CloudTrail, Azure AD).
+        Routes CLOUD_SIGNIN_FAIL -> detection pipeline (analogous to SSH_FAIL),
+        CLOUD_MFA_FAIL and CLOUD_RISKY_SIGNIN -> HIGH severity immediate alert.
+        CLOUD_SIGNIN_SUCCESS tracked for breach detection (login after repeated fails).
+        """
+        sev     = None
+        reasons = []
+        meta    = ev.meta or {}
+
+        provider = meta.get("provider", "cloud")
+        user     = ev.user or "unknown"
+
+        if ev.kind == "CLOUD_SIGNIN_FAIL":
+            st.fails.append((t, 1))
+            st.total_fails += 1
+            if ev.user:
+                st.users.append((t, ev.user))
+
+            r_cf = self.rules.get("cloud.signin_brute_force")
+            fail_count = sum(1 for ts, _ in st.fails
+                             if t - ts <= self.window_sec)
+            if r_cf and r_cf.enabled and fail_count >= r_cf.effective_threshold:
+                sev = r_cf.effective_severity
+                reasons.append(
+                    f"cloud_signin_brute_force ({provider}): "
+                    f"{fail_count} failures (user={user})"
+                )
+            # Kill chain: cloud sign-in fail = Delivery stage
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "CLOUD_SIGNIN_FAIL", geo=geo, severity="MEDIUM")
+
+        elif ev.kind == "CLOUD_MFA_FAIL":
+            r_mfa = self.rules.get("cloud.mfa_failure")
+            if r_mfa and r_mfa.enabled:
+                sev = r_mfa.effective_severity
+                reasons.append(
+                    f"cloud_mfa_failure ({provider}): MFA failed or bypassed (user={user})"
+                )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "CLOUD_MFA_FAIL", geo=geo, severity="HIGH")
+
+        elif ev.kind == "CLOUD_RISKY_SIGNIN":
+            risk_state = meta.get("risk_state", "unknown")
+            r_risk = self.rules.get("cloud.risky_signin")
+            if r_risk and r_risk.enabled:
+                sev = r_risk.effective_severity
+                reasons.append(
+                    f"cloud_risky_signin ({provider}): "
+                    f"risk_state={risk_state} (user={user})"
+                )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "CLOUD_RISKY_SIGNIN", geo=geo, severity="HIGH")
+
+        elif ev.kind == "CLOUD_SIGNIN_SUCCESS":
+            # Track success after repeated failures (possible breach)
+            if st.total_fails > 0:
+                r_breach = self.rules.get("cloud.signin_breach")
+                if r_breach and r_breach.enabled and st.total_fails >= r_breach.effective_threshold:
+                    sev = r_breach.effective_severity
+                    reasons.append(
+                        f"cloud_signin_breach ({provider}): "
+                        f"success after {st.total_fails} failures (user={user})"
+                    )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "CLOUD_SIGNIN_SUCCESS", geo=geo, severity="HIGH")
+
+        elif ev.kind == "CLOUD_IMPOSSIBLE_TRAVEL":
+            r_it = self.rules.get("cloud.impossible_travel")
+            if r_it and r_it.enabled:
+                sev = r_it.effective_severity
+                reasons.append(
+                    f"cloud_impossible_travel ({provider}): "
+                    f"two sign-ins too far apart (user={user})"
+                )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "CLOUD_IMPOSSIBLE_TRAVEL", geo=geo, severity="HIGH")
+
+        if sev is not None:
+            await self._maybe_fire(ip, st, t, sev, reasons, trigger="cloud",
+                                   fail_count=len(st.fails), uniq_users=0)
 
     #  Correlation alert handler (Phase 2) 
 

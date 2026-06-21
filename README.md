@@ -98,6 +98,8 @@ Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service block
 | Federation | Cross-node detection sharing over Redis pub/sub -- no new infrastructure |
 | Federation | Combined kill chain visibility: stage seen on Node A reflects on Node B too |
 | Federation | Cross-node attack detection: IPs seen by 2+ nodes flagged in Settings tab |
+| Cloud | AWS CloudTrail polling for ConsoleLogin failures, MFA bypass, credential breach |
+| Cloud | Azure AD sign-in polling for risky sign-ins, MFA failures, impossible travel |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
 | Response | Country-based blocking — block entire countries before thresholds fire |
 | Response | Honeypot redirect — attacker lands on a fake Ubuntu shell (40+ commands) |
@@ -829,7 +831,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.5.0)
+│   ├── __init__.py              package version (2.6.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 |   |
 |   |── py.typed
@@ -860,6 +862,7 @@ cnsl/
 │   ├── pattern_learner.py         automated pattern discovery + suggested rules
 │   ├── siem_connectors.py         Splunk HEC + Sentinel + Webhook push connectors
 │   ├── federation.py              multi-node federation (cross-node correlation)
+│   ├── cloud_identity.py          AWS CloudTrail + Azure AD sign-in polling
 │   │
 │   ├── blocker.py               iptables / ipset blocking backend
 │   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
@@ -971,6 +974,48 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.6.0 -- Cloud Identity Log Connectors
+
+**New module: `cnsl/cloud_identity.py`**
+- `AWSCloudTrailConnector` -- polls CloudTrail `LookupEvents` API for `ConsoleLogin` events. AWS Signature Version 4 implemented directly with `hmac`/`hashlib` (no boto3 dependency). Watches for: login failure -> `CLOUD_SIGNIN_FAIL`; MFA bypassed -> `CLOUD_MFA_FAIL`; success after failures -> `CLOUD_SIGNIN_SUCCESS`. Per-event dedup via `EventId` cursor.
+- `AzureADConnector` -- polls Microsoft Graph `signIns` endpoint using OAuth2 client credentials flow (token cached and refreshed automatically). Watches for: sign-in failure -> `CLOUD_SIGNIN_FAIL`; MFA error codes 50074/50079/50076 -> `CLOUD_MFA_FAIL`; risk_state not "none" -> `CLOUD_RISKY_SIGNIN`. Cursor tracks `createdDateTime` to avoid re-ingestion.
+- `CloudIdentityPoller` -- orchestrates both connectors on a shared poll interval, feeds normalized `Event` objects directly into the engine's shared `asyncio.Queue` -- the same queue local log tailers use. Gracefully degrades if a connector is unreachable.
+- Five new event kinds: `CLOUD_SIGNIN_FAIL`, `CLOUD_SIGNIN_SUCCESS`, `CLOUD_MFA_FAIL`, `CLOUD_RISKY_SIGNIN`, `CLOUD_IMPOSSIBLE_TRAVEL`
+
+**`cnsl/rules.py`** -- Five new cloud detection rules
+- `cloud.signin_brute_force` (MEDIUM, threshold=5, window=300s)
+- `cloud.mfa_failure` (HIGH, threshold=1)
+- `cloud.risky_signin` (HIGH, threshold=1)
+- `cloud.signin_breach` (HIGH, threshold=3) -- login success after repeated failures
+- `cloud.impossible_travel` (HIGH, threshold=1)
+
+**`cnsl/detector.py`** -- Cloud routing and handler
+- `_CLOUD_KINDS` set added alongside `_WEB_KINDS`, `_DB_KINDS`, `_FW_KINDS`, `_SYS_KINDS`
+- `_ALL_HANDLED` updated to include cloud kinds
+- `_on_cloud_event()` handler routes all five cloud event kinds, applies relevant rules, calls `_kc_update()` for kill chain integration, calls `_maybe_fire()` for alert generation
+
+**`cnsl/engine.py`** -- Wiring
+- `CloudIdentityPoller` instantiated after `FederationBus`
+- Poll loop started as a background task when `any_enabled` is True
+- `cloud_identity.stop()` called on graceful shutdown
+- Passed to `start_dashboard`
+- Version string bumped to `2.6.0`
+
+**`cnsl/dashboard.py`** -- Cloud Identity panel + API
+- Cloud Identity Connectors panel added to Settings tab above SIEM panel -- shows AWS CloudTrail and Azure AD status cards with poll count, error count, token validity, last error
+- `GET /api/cloud-identity/status` -- connector health, poll counts, events fed
+- `/api/debug` extended with `cloud_identity_wired`, `cloud_aws_enabled`, `cloud_azure_enabled`
+
+**`config/config.example.json`**
+- `cloud_identity` block added: `enabled`, `poll_interval_sec`, `aws.*`, `azure_ad.*`
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.6.0`
+
+**`docs/cloud-identity.md`** -- New documentation file
+
+---
 
 ### v2.5.0 -- Multi-Node Federation
 

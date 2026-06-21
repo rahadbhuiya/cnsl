@@ -44,6 +44,7 @@ from .kill_chain      import KillChainTracker
 from .pattern_learner import PatternLearner
 from .siem_connectors import SIEMRouter
 from .federation      import FederationBus
+from .cloud_identity  import CloudIdentityPoller
 
 
 
@@ -130,7 +131,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.5.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.6.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -204,6 +205,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     # Federation bus -- shares detection signals over the redis_sync connection
     federation = FederationBus(cfg, redis_sync, logger)
+
+    # Cloud identity poller -- AWS CloudTrail + Azure AD
+    cloud_identity = CloudIdentityPoller(cfg)
 
     # Handle --agent-mode shortcut (before anything else)
     if getattr(args, "agent_mode", False):
@@ -382,6 +386,12 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         tasks.append(asyncio.create_task(redis_sync.subscribe_loop(), name="redis_sub"))
         tasks.append(asyncio.create_task(redis_sync.heartbeat_loop(), name="redis_hb"))
         await federation.start()
+
+    # Cloud identity polling (if any connector is enabled)
+    if cloud_identity.any_enabled:
+        tasks.append(asyncio.create_task(
+            cloud_identity.run(queue, logger), name="cloud_identity",
+        ))
         # When a remote block comes in, apply it locally too
         async def _on_remote_block(ip, reason, ttl):
             await blocker.block_ip(ip, reason=f"remote:{reason}")
@@ -421,7 +431,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             kill_chain=kill_chain_tracker,
                             pattern_learner=pattern_learner,
                             siem_router=siem_router,
-                            federation=federation),
+                            federation=federation,
+                            cloud_identity=cloud_identity),
             name="dashboard",
         ))
 
@@ -462,6 +473,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     fim_engine.close()
     await redis_sync.close()
     await federation.stop()
+    await cloud_identity.stop()
     await siem_router.close()
     await store.close()
     logger.close()

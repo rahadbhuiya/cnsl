@@ -22,6 +22,7 @@ Usage:
     python simulate.py pattern        # automated pattern learning
     python simulate.py siem           # SIEM/SOAR connector push (dry-run)
     python simulate.py federation     # multi-node federation (simulated cluster)
+    python simulate.py cloud          # cloud identity logs (AWS/Azure simulated)
     python simulate.py live           # interactive mode
 """
 
@@ -63,7 +64,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}+========================================================+
-|        CNSL -- Local Test Simulator  v2.5.0           |
+|        CNSL -- Local Test Simulator  v2.6.0           |
 |   No real server required -- all tests run locally    |
 +========================================================+{RST}
 """)
@@ -936,6 +937,64 @@ async def scenario_federation(detector, blocker, federation, kill_chain):
           f"received={status['signals_received']}  cross_node_ips={status['cross_node_ips']}")
 
 
+#  Scenario 21: Cloud Identity Logs 
+
+async def scenario_cloud_identity(detector):
+    section("Scenario 21 -- Cloud Identity Log Events")
+    from cnsl.models import Event, now as _now
+    from cnsl.cloud_identity import CloudEventKind
+
+    print(f"  {BOLD}Simulating a cloud account takeover sequence:{RST}")
+    print(f"  AWS CloudTrail: 6x CLOUD_SIGNIN_FAIL then CLOUD_SIGNIN_SUCCESS")
+    print(f"  Azure AD: CLOUD_RISKY_SIGNIN + CLOUD_MFA_FAIL\n")
+
+    ip = "185.220.101.45"
+
+    print(f"  {C}Phase 1 -- Brute force (CLOUD_SIGNIN_FAIL x6){RST}")
+    for i in range(1, 7):
+        ev = Event(ts=_now(), source="aws_cloudtrail",
+                   kind=CloudEventKind.SIGNIN_FAIL,
+                   src_ip=ip, user="root@example.com", raw=f"fail #{i}",
+                   meta={"provider": "aws", "event_name": "ConsoleLogin"})
+        await detector.handle(ev)
+        print(f"  [{i}/6] CLOUD_SIGNIN_FAIL from {ip}")
+        await asyncio.sleep(0.15)
+
+    print(f"\n  {C}Phase 2 -- Credential breach (CLOUD_SIGNIN_SUCCESS){RST}")
+    ev = Event(ts=_now(), source="aws_cloudtrail",
+               kind=CloudEventKind.SIGNIN_SUCCESS,
+               src_ip=ip, user="root@example.com", raw="success",
+               meta={"provider": "aws", "mfa_used": "No"})
+    await detector.handle(ev)
+    print(f"  CLOUD_SIGNIN_SUCCESS after 6 failures -- breach rule should fire")
+    await asyncio.sleep(0.3)
+
+    ip2 = "91.108.4.88"
+    print(f"\n  {C}Phase 3 -- Azure AD risky sign-in (different IP: {ip2}){RST}")
+    for kind, label in [
+        (CloudEventKind.RISKY_SIGNIN, "CLOUD_RISKY_SIGNIN"),
+        (CloudEventKind.MFA_FAIL,     "CLOUD_MFA_FAIL"),
+    ]:
+        ev = Event(ts=_now(), source="azure_ad",
+                   kind=kind, src_ip=ip2,
+                   user="admin@contoso.com", raw="azure event",
+                   meta={"provider": "azure_ad", "risk_state": "atRisk"})
+        await detector.handle(ev)
+        print(f"  {label} from {ip2}")
+        await asyncio.sleep(0.2)
+
+    kc = detector.kill_chain
+    if kc:
+        for target_ip, label in [(ip, "AWS IP"), (ip2, "Azure IP")]:
+            chain = kc.get_chain(target_ip)
+            if chain:
+                print(f"\n  {BOLD}Kill chain [{label}]:{RST}  "
+                      f"max_stage={chain.to_dict()['max_stage_name']}  "
+                      f"score={int(chain.score*100)}%")
+
+    log("Cloud identity scenario complete -- check Rules tab for cloud.* alerts", G)
+
+
 SCENARIO_MAP = {
     "brute":       "brute-force",
     "stuffing":    "credential stuffing",
@@ -957,6 +1016,7 @@ SCENARIO_MAP = {
     "pattern":     "automated pattern learning",
     "siem":        "SIEM/SOAR connector push",
     "federation":  "multi-node federation",
+    "cloud":       "cloud identity logs",
     "live":        "interactive",
 }
 
@@ -1054,6 +1114,10 @@ async def main():
 
         if mode in ("all", "federation"):
             await scenario_federation(detector, blocker, federation, kill_chain)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "cloud"):
+            await scenario_cloud_identity(detector)
 
         if mode == "live":
             await interactive_mode(detector, blocker)

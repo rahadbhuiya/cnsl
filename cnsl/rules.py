@@ -179,6 +179,52 @@ _BUILTIN_RULES: List[Rule] = [
         window_sec  = 3600,
         tags        = ["escalation"],
     ),
+    # Cloud identity rules
+    Rule(
+        id          = "cloud.signin_brute_force",
+        name        = "Cloud Sign-in Brute Force",
+        description = "Fires when an IP exceeds the cloud console sign-in failure threshold.",
+        severity    = "MEDIUM",
+        threshold   = 5,
+        window_sec  = 300,
+        tags        = ["cloud", "brute-force", "aws", "azure"],
+    ),
+    Rule(
+        id          = "cloud.mfa_failure",
+        name        = "Cloud MFA Failure / Bypass",
+        description = "Fires when cloud console MFA fails or is bypassed.",
+        severity    = "HIGH",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["cloud", "mfa", "aws", "azure"],
+    ),
+    Rule(
+        id          = "cloud.risky_signin",
+        name        = "Cloud Risky Sign-in",
+        description = "Fires when the identity provider's own risk engine flags a sign-in.",
+        severity    = "HIGH",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["cloud", "risky", "azure"],
+    ),
+    Rule(
+        id          = "cloud.signin_breach",
+        name        = "Cloud Sign-in Breach",
+        description = "Fires when a cloud console sign-in succeeds after repeated failures.",
+        severity    = "HIGH",
+        threshold   = 3,
+        window_sec  = 300,
+        tags        = ["cloud", "credential-breach", "aws", "azure"],
+    ),
+    Rule(
+        id          = "cloud.impossible_travel",
+        name        = "Cloud Impossible Travel",
+        description = "Fires when sign-ins from the same account occur from geographically impossible locations.",
+        severity    = "HIGH",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["cloud", "impossible-travel", "azure"],
+    ),
 ]
 
 # Quick lookup by id

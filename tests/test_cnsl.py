@@ -3337,3 +3337,352 @@ class TestDashboardSignatureV3:
         assert "federation" in sig.parameters.keys(), \
             "start_dashboard missing federation param -- Federation panel will always show unavailable"
         assert sig.parameters["federation"].default is None
+
+
+# v2.6.0 -- cloud identity connectors
+
+
+class TestCloudEventKinds:
+    """Cloud event kind constants are correct strings."""
+
+    def test_signin_fail_kind(self):
+        from cnsl.cloud_identity import CloudEventKind
+        assert CloudEventKind.SIGNIN_FAIL == "CLOUD_SIGNIN_FAIL"
+
+    def test_signin_success_kind(self):
+        from cnsl.cloud_identity import CloudEventKind
+        assert CloudEventKind.SIGNIN_SUCCESS == "CLOUD_SIGNIN_SUCCESS"
+
+    def test_mfa_fail_kind(self):
+        from cnsl.cloud_identity import CloudEventKind
+        assert CloudEventKind.MFA_FAIL == "CLOUD_MFA_FAIL"
+
+    def test_risky_signin_kind(self):
+        from cnsl.cloud_identity import CloudEventKind
+        assert CloudEventKind.RISKY_SIGNIN == "CLOUD_RISKY_SIGNIN"
+
+    def test_impossible_travel_kind(self):
+        from cnsl.cloud_identity import CloudEventKind
+        assert CloudEventKind.IMPOSSIBLE_TRAVEL == "CLOUD_IMPOSSIBLE_TRAVEL"
+
+
+class TestCloudConnectorConfig:
+    """Connector construction reads config and defaults correctly."""
+
+    def test_aws_disabled_by_default(self):
+        from cnsl.cloud_identity import AWSCloudTrailConnector
+        c = AWSCloudTrailConnector({})
+        assert c.enabled is False
+
+    def test_aws_reads_config(self):
+        from cnsl.cloud_identity import AWSCloudTrailConnector
+        c = AWSCloudTrailConnector({"cloud_identity": {"aws": {
+            "enabled": True, "access_key_id": "AK123",
+            "secret_access_key": "secret", "region": "eu-west-1",
+        }}})
+        assert c.enabled is True
+        assert c.region == "eu-west-1"
+        assert c.access_key == "AK123"
+
+    def test_azure_disabled_by_default(self):
+        from cnsl.cloud_identity import AzureADConnector
+        c = AzureADConnector({})
+        assert c.enabled is False
+
+    def test_azure_reads_config(self):
+        from cnsl.cloud_identity import AzureADConnector
+        c = AzureADConnector({"cloud_identity": {"azure_ad": {
+            "enabled": True, "tenant_id": "tenant-xyz",
+            "client_id": "client-abc", "client_secret": "s3cr3t",
+        }}})
+        assert c.enabled is True
+        assert c.tenant_id == "tenant-xyz"
+
+    def test_poller_disabled_when_no_connector_enabled(self):
+        from cnsl.cloud_identity import CloudIdentityPoller
+        poller = CloudIdentityPoller({})
+        assert poller.any_enabled is False
+
+    def test_poller_enabled_when_aws_enabled(self):
+        from cnsl.cloud_identity import CloudIdentityPoller
+        poller = CloudIdentityPoller({"cloud_identity": {
+            "aws": {"enabled": True, "access_key_id": "AK", "secret_access_key": "SK"}
+        }})
+        assert poller.any_enabled is True
+
+    def test_poller_status_reports_events_fed(self):
+        from cnsl.cloud_identity import CloudIdentityPoller
+        poller = CloudIdentityPoller({})
+        status = poller.status()
+        assert "events_fed" in status
+        assert "connectors" in status
+        assert "aws_cloudtrail" in status["connectors"]
+        assert "azure_ad" in status["connectors"]
+
+
+class TestAWSCloudTrailParser:
+    """_parse_events correctly maps CloudTrail events to Event objects."""
+
+    def _make_connector(self):
+        from cnsl.cloud_identity import AWSCloudTrailConnector
+        return AWSCloudTrailConnector({})
+
+    def _make_raw_event(self, login_status="Failure", mfa_used="No",
+                        event_id="EVT001", src_ip="1.2.3.4", user="alice"):
+        import json
+        ct = json.dumps({
+            "sourceIPAddress":   src_ip,
+            "userIdentity":      {"userName": user},
+            "responseElements":  {"ConsoleLogin": login_status},
+            "additionalEventData": {"MFAUsed": mfa_used},
+        })
+        return {"EventId": event_id, "EventName": "ConsoleLogin",
+                "CloudTrailEvent": ct}
+
+    def test_failure_maps_to_signin_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw_event(login_status="Failure")])
+        assert len(evs) == 1
+        assert evs[0].kind == CloudEventKind.SIGNIN_FAIL
+
+    def test_success_without_mfa_maps_to_mfa_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw_event(login_status="Success", mfa_used="No")])
+        assert len(evs) == 1
+        assert evs[0].kind == CloudEventKind.MFA_FAIL
+
+    def test_success_with_mfa_maps_to_signin_success(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw_event(login_status="Success", mfa_used="Yes")])
+        assert len(evs) == 1
+        assert evs[0].kind == CloudEventKind.SIGNIN_SUCCESS
+
+    def test_event_has_correct_source_and_ip(self):
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw_event(src_ip="5.6.7.8", user="bob")])
+        assert evs[0].source == "aws_cloudtrail"
+        assert evs[0].src_ip == "5.6.7.8"
+        assert evs[0].user == "bob"
+
+    def test_cursor_deduplication(self):
+        c = self._make_connector()
+        raw = self._make_raw_event(event_id="EVT001")
+        evs1 = c._parse_events([raw])
+        assert len(evs1) == 1
+        # Same event_id now matches _last_event_id
+        evs2 = c._parse_events([raw])
+        assert len(evs2) == 0
+
+    def test_unknown_login_status_skipped(self):
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw_event(login_status="Pending")])
+        assert len(evs) == 0
+
+    def test_malformed_ct_json_skipped(self):
+        c = self._make_connector()
+        raw = {"EventId": "X", "EventName": "ConsoleLogin",
+               "CloudTrailEvent": "not-json"}
+        evs = c._parse_events([raw])
+        assert len(evs) == 0
+
+
+class TestAzureADParser:
+    """_parse_events correctly maps Azure AD sign-in events to Event objects."""
+
+    def _make_connector(self):
+        from cnsl.cloud_identity import AzureADConnector
+        return AzureADConnector({})
+
+    def _make_raw(self, error_code=0, risk_state="none",
+                  ip="1.2.3.4", user="alice@contoso.com"):
+        return {
+            "id":                 "SIGN001",
+            "status":             {"errorCode": error_code},
+            "riskState":          risk_state,
+            "ipAddress":          ip,
+            "userPrincipalName":  user,
+            "authenticationRequirement": "singleFactorAuthentication",
+        }
+
+    def test_success_maps_to_signin_success(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(error_code=0, risk_state="none")])
+        assert evs[0].kind == CloudEventKind.SIGNIN_SUCCESS
+
+    def test_nonzero_error_maps_to_signin_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(error_code=50053)])
+        assert evs[0].kind == CloudEventKind.SIGNIN_FAIL
+
+    def test_mfa_error_codes_map_to_mfa_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        for code in (50074, 50079, 50076):
+            evs = c._parse_events([self._make_raw(error_code=code)])
+            assert evs[0].kind == CloudEventKind.MFA_FAIL, f"code {code} should map to MFA_FAIL"
+
+    def test_risky_state_maps_to_risky_signin(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(risk_state="atRisk")])
+        assert evs[0].kind == CloudEventKind.RISKY_SIGNIN
+
+    def test_dismissed_risk_treated_as_success(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(error_code=0, risk_state="dismissed")])
+        assert evs[0].kind == CloudEventKind.SIGNIN_SUCCESS
+
+    def test_event_has_correct_source_and_ip(self):
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(ip="9.8.7.6", user="bob@corp.com")])
+        assert evs[0].source == "azure_ad"
+        assert evs[0].src_ip == "9.8.7.6"
+        assert evs[0].user == "bob@corp.com"
+
+
+class TestSigV4Signing:
+    """AWS Signature Version 4 helper produces correct output shape."""
+
+    def test_build_sigv4_headers_returns_required_keys(self):
+        from cnsl.cloud_identity import build_sigv4_headers
+        hdrs = build_sigv4_headers(
+            method="POST", host="cloudtrail.us-east-1.amazonaws.com",
+            region="us-east-1", service="cloudtrail",
+            access_key="AKIAIOSFODNN7EXAMPLE",
+            secret_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            payload='{"test": 1}', target="CloudTrail.LookupEvents",
+        )
+        assert "Authorization" in hdrs
+        assert "X-Amz-Date" in hdrs
+        assert "X-Amz-Target" in hdrs
+        assert "Content-Type" in hdrs
+
+    def test_authorization_header_starts_with_aws4_hmac_sha256(self):
+        from cnsl.cloud_identity import build_sigv4_headers
+        hdrs = build_sigv4_headers(
+            method="POST", host="cloudtrail.us-east-1.amazonaws.com",
+            region="us-east-1", service="cloudtrail",
+            access_key="AKID", secret_key="secret",
+            payload="{}", target="CT.Lookup",
+        )
+        assert hdrs["Authorization"].startswith("AWS4-HMAC-SHA256 ")
+
+    def test_different_payloads_produce_different_signatures(self):
+        from cnsl.cloud_identity import build_sigv4_headers
+        hdrs1 = build_sigv4_headers(
+            method="POST", host="cloudtrail.us-east-1.amazonaws.com",
+            region="us-east-1", service="cloudtrail",
+            access_key="AKID", secret_key="secret",
+            payload='{"a": 1}', target="CT.Lookup",
+        )
+        hdrs2 = build_sigv4_headers(
+            method="POST", host="cloudtrail.us-east-1.amazonaws.com",
+            region="us-east-1", service="cloudtrail",
+            access_key="AKID", secret_key="secret",
+            payload='{"b": 2}', target="CT.Lookup",
+        )
+        assert hdrs1["Authorization"] != hdrs2["Authorization"]
+
+
+class TestCloudRulesRegistered:
+    """The five new cloud detection rules are in the RuleEngine."""
+
+    def test_cloud_rules_present(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        for rule_id in (
+            "cloud.signin_brute_force",
+            "cloud.mfa_failure",
+            "cloud.risky_signin",
+            "cloud.signin_breach",
+            "cloud.impossible_travel",
+        ):
+            assert re.get(rule_id) is not None, f"Rule {rule_id!r} not found"
+
+    def test_cloud_mfa_failure_default_threshold_is_one(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        assert re.get("cloud.mfa_failure").effective_threshold == 1
+
+    def test_cloud_signin_brute_force_default_threshold_is_five(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        assert re.get("cloud.signin_brute_force").effective_threshold == 5
+
+
+class TestCloudKindsRouting:
+    """_CLOUD_KINDS is defined and _ALL_HANDLED includes cloud kinds."""
+
+    def test_cloud_kinds_set_exists(self):
+        from cnsl.detector import _CLOUD_KINDS
+        assert "CLOUD_SIGNIN_FAIL" in _CLOUD_KINDS
+        assert "CLOUD_MFA_FAIL" in _CLOUD_KINDS
+        assert "CLOUD_RISKY_SIGNIN" in _CLOUD_KINDS
+
+    def test_all_handled_includes_cloud_kinds(self):
+        from cnsl.detector import _ALL_HANDLED
+        assert "CLOUD_SIGNIN_FAIL" in _ALL_HANDLED
+        assert "CLOUD_RISKY_SIGNIN" in _ALL_HANDLED
+
+
+class TestCloudEventDetection:
+    """End-to-end: cloud events routed through Detector trigger correct alerts."""
+
+    def _make_detector(self):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+        cfg = {"thresholds": {}, "actions": {"dry_run": True},
+               "logging": {"console_verbose": False}}
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+        return Detector(cfg, logger, blocker)
+
+    def _make_cloud_event(self, kind, ip="1.2.3.4",
+                          user="alice@corp.com", provider="aws"):
+        from cnsl.models import Event, now
+        return Event(ts=now(), source=provider, kind=kind,
+                     src_ip=ip, user=user, raw=f"cloud {kind}",
+                     meta={"provider": provider})
+
+    def test_cloud_signin_fail_increments_fails(self):
+        det = self._make_detector()
+        ip  = "5.5.5.5"
+        _run(det.handle(self._make_cloud_event("CLOUD_SIGNIN_FAIL", ip=ip)))
+        st = det._state[ip]
+        assert st.total_fails == 1
+
+    def test_cloud_risky_signin_fires_high_alert(self):
+        det      = self._make_detector()
+        ip       = "6.6.6.6"
+        incidents_before = det._state[ip].total_incidents
+        _run(det.handle(self._make_cloud_event("CLOUD_RISKY_SIGNIN", ip=ip)))
+        assert det._state[ip].total_incidents > incidents_before
+
+    def test_cloud_mfa_fail_fires_high_alert(self):
+        det = self._make_detector()
+        ip  = "7.7.7.7"
+        _run(det.handle(self._make_cloud_event("CLOUD_MFA_FAIL", ip=ip)))
+        assert det._state[ip].total_incidents > 0
+
+    def test_cloud_signin_fail_brute_force_fires_after_threshold(self):
+        det = self._make_detector()
+        ip  = "8.8.8.8"
+        # Default threshold is 5
+        for _ in range(5):
+            _run(det.handle(self._make_cloud_event("CLOUD_SIGNIN_FAIL", ip=ip)))
+        assert det._state[ip].total_incidents > 0
+
+    def test_cloud_signin_fail_below_threshold_no_alert(self):
+        det = self._make_detector()
+        ip  = "9.9.9.9"
+        for _ in range(4):
+            _run(det.handle(self._make_cloud_event("CLOUD_SIGNIN_FAIL", ip=ip)))
+        assert det._state[ip].total_incidents == 0

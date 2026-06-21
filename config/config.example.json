@@ -389,5 +389,23 @@
     "min_severity": "LOW",
     "dedupe_window_sec": 5,
     "max_remote_ips": 10000
+  },
+  "cloud_identity": {
+    "enabled": true,
+    "poll_interval_sec": 60,
+    "aws": {
+      "enabled": false,
+      "access_key_id": "",
+      "secret_access_key": "",
+      "region": "us-east-1",
+      "lookback_sec": 300
+    },
+    "azure_ad": {
+      "enabled": false,
+      "tenant_id": "",
+      "client_id": "",
+      "client_secret": "",
+      "lookback_sec": 300
+    }
   }
 }

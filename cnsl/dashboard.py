@@ -1098,6 +1098,16 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-settings">
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head">
+      <span class="tbl-head-title">Cloud Identity Connectors</span>
+      <span style="font-size:11px;color:var(--muted)">AWS CloudTrail + Azure AD sign-in polling</span>
+      <button onclick="loadCloudIdentityStatus()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+    </div>
+    <div id="cloud-identity-wrap" style="padding:16px">
+      <div id="cloud-identity-cards" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px"></div>
+    </div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
       <span class="tbl-head-title">SIEM / SOAR Connectors</span>
       <span style="font-size:11px;color:var(--muted)">Real-time push to external platforms</span>
       <button onclick="loadSIEMStatus()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
@@ -1179,7 +1189,7 @@ function showTab(name){
   if(name==='ueba')      loadUEBA();
   if(name==='rules')     { loadRules(); loadSuggestedRules(); }
   if(name==='ratelimit') loadRateLimit();
-  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); }
+  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); }
   if(name==='killchain') loadKillChain();
 }
 
@@ -1513,6 +1523,35 @@ async function showKcDetail(ip){
     `First seen: ${escHtml(chain.first_seen)} &nbsp;|&nbsp; Last seen: ${escHtml(chain.last_seen)}` +
     (geo ? ` &nbsp;|&nbsp; Location: ${escHtml(geo)}` : '') +
     ` &nbsp;|&nbsp; Score: ${Math.round(chain.score * 100)}%`;
+}
+
+async function loadCloudIdentityStatus(){
+  const d = await apiFetch('/api/cloud-identity/status');
+  const wrap = $('cloud-identity-cards');
+  if(!d){
+    wrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">Cloud identity not available</span>';
+    return;
+  }
+  const connectors = d.connectors || {};
+  const labels = {aws_cloudtrail:'AWS CloudTrail', azure_ad:'Azure AD'};
+  wrap.innerHTML = Object.entries(labels).map(([name, label]) => {
+    const c       = connectors[name] || {};
+    const enabled = c.enabled !== false;
+    const healthy = c.healthy !== false;
+    const status  = !enabled ? 'Disabled' : healthy ? 'Healthy' : 'Error';
+    const color   = !enabled ? '#64748b'  : healthy ? '#22c55e' : '#ef4444';
+    const err     = c.last_error ? `<div style="font-size:10px;color:#ef4444;margin-top:4px;word-break:break-all">${escHtml(c.last_error)}</div>` : '';
+    const polls   = c.poll_count != null ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Polls: ${c.poll_count} | Errors: ${c.error_count||0}</div>` : '';
+    const token   = c.token_valid != null ? `<div style="font-size:10px;color:var(--muted)">Token: ${c.token_valid ? 'valid' : 'expired'}</div>` : '';
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+      <div style="font-weight:600;font-size:12px;margin-bottom:6px">${label}</div>
+      <div style="color:${color};font-size:11px;font-weight:600">${status}</div>
+      ${polls}${token}${err}
+    </div>`;
+  }).join('');
+  if(d.events_fed != null){
+    wrap.innerHTML += `<div style="grid-column:1/-1;font-size:11px;color:var(--muted);padding-top:4px">Events fed into detection pipeline: <b>${d.events_fed}</b> &nbsp;|&nbsp; Poll interval: <b>${d.poll_interval_sec}s</b></div>`;
+  }
 }
 
 async function loadFederationStatus(){
@@ -2250,6 +2289,7 @@ async def start_dashboard(
     pattern_learner: Any = None,
     siem_router:     Any = None,
     federation:      Any = None,
+    cloud_identity:  Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -3078,7 +3118,19 @@ async def start_dashboard(
         result = await es_pusher.push(norms)
         return web.json_response(result)
 
-    #  Federation API
+    # ------------------------------------------------------------------ Cloud Identity API
+
+    @router.get("/api/cloud-identity/status")
+    async def api_cloud_identity_status(req: web.Request) -> web.Response:
+        """Return cloud identity connector health and event counts."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if cloud_identity is None:
+            return web.json_response({"error": "Cloud identity not enabled"}, status=400)
+        return web.json_response(cloud_identity.status())
+
+    # ------------------------------------------------------------------ Federation API
 
     @router.get("/api/federation/status")
     async def api_federation_status(req: web.Request) -> web.Response:
@@ -3126,7 +3178,7 @@ async def start_dashboard(
             return web.json_response({"error": f"No federation record for {ip}"}, status=404)
         return web.json_response(record.to_dict())
 
-    #  SIEM Connector API
+    # ------------------------------------------------------------------ SIEM Connector API
 
     @router.get("/api/siem/status")
     async def api_siem_status(req: web.Request) -> web.Response:
@@ -3185,7 +3237,7 @@ async def start_dashboard(
         await logger.log("siem_flush", {"counts": counts})
         return web.json_response({"flushed": counts})
 
-    #  Pattern Learner API
+    # ------------------------------------------------------------------ Pattern Learner API
 
     @router.get("/api/pattern-suggestions")
     async def api_pattern_suggestions_list(req: web.Request) -> web.Response:
@@ -3249,7 +3301,7 @@ async def start_dashboard(
         await logger.log("pattern_dismissed", {"id": sid})
         return web.json_response({"ok": True})
 
-    #  Kill Chain API
+    # ------------------------------------------------------------------ Kill Chain API
 
     @router.get("/api/kill-chain")
     async def api_kill_chain_list(req: web.Request) -> web.Response:
@@ -3318,6 +3370,10 @@ async def start_dashboard(
             "federation_wired":        federation is not None,
             "federation_enabled":      getattr(federation, "enabled", False),
             "federation_connected":    getattr(federation, "is_connected", False),
+            "cloud_identity_wired":    cloud_identity is not None,
+            "cloud_identity_enabled":  getattr(cloud_identity, "enabled", False),
+            "cloud_aws_enabled":       getattr(getattr(cloud_identity, "aws",      None), "enabled", False),
+            "cloud_azure_enabled":     getattr(getattr(cloud_identity, "azure_ad", None), "enabled", False),
         })
 
     @router.get("/api/ml-status")
