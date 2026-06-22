@@ -45,6 +45,7 @@ from .pattern_learner import PatternLearner
 from .siem_connectors import SIEMRouter
 from .federation      import FederationBus
 from .cloud_identity  import CloudIdentityPoller
+from .zero_trust      import ZeroTrustEngine
 
 
 
@@ -131,7 +132,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 2.6.0")
+    ap.add_argument("--version",     action="version", version="CNSL 2.8.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -208,6 +209,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     # Cloud identity poller -- AWS CloudTrail + Azure AD
     cloud_identity = CloudIdentityPoller(cfg)
+
+    # Zero-trust engine -- per-entity trust scoring
+    zero_trust = ZeroTrustEngine(cfg)
+    if store.available:
+        await zero_trust.load_all(store)
 
     # Handle --agent-mode shortcut (before anything else)
     if getattr(args, "agent_mode", False):
@@ -299,7 +305,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         kill_chain=kill_chain_tracker,
                         pattern_learner=pattern_learner,
                         siem_router=siem_router,
-                        federation=federation)
+                        federation=federation,
+                        cloud_identity=None,
+                        zero_trust=zero_trust)
 
     # Reporter (after detector so rule_engine is available)
     reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
@@ -432,7 +440,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             pattern_learner=pattern_learner,
                             siem_router=siem_router,
                             federation=federation,
-                            cloud_identity=cloud_identity),
+                            cloud_identity=cloud_identity,
+                            zero_trust=zero_trust),
             name="dashboard",
         ))
 

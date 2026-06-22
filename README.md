@@ -100,6 +100,9 @@ Fail2ban and SSHGuard are proven, widely-deployed tools. If single-service block
 | Federation | Cross-node attack detection: IPs seen by 2+ nodes flagged in Settings tab |
 | Cloud | AWS CloudTrail polling for ConsoleLogin failures, MFA bypass, credential breach |
 | Cloud | Azure AD sign-in polling for risky sign-ins, MFA failures, impossible travel |
+| Zero-Trust | Per-entity trust score (0-100%) per IP and username |
+| Zero-Trust | Low-trust entities trigger alerts at lower event counts (threshold scaling) |
+| Graph | Force-directed attack behavior graph -- nodes colored by trust, sized by kill chain |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
 | Response | Country-based blocking — block entire countries before thresholds fire |
 | Response | Honeypot redirect — attacker lands on a fake Ubuntu shell (40+ commands) |
@@ -831,7 +834,7 @@ pytest tests/ -v --timeout=60
 ```
 cnsl/
 ├── cnsl/
-│   ├── __init__.py              package version (2.6.0)
+│   ├── __init__.py              package version (2.8.0)
 │   ├── __main__.py              python -m cnsl entrypoint
 |   |
 |   |── py.typed
@@ -863,6 +866,9 @@ cnsl/
 │   ├── siem_connectors.py         Splunk HEC + Sentinel + Webhook push connectors
 │   ├── federation.py              multi-node federation (cross-node correlation)
 │   ├── cloud_identity.py          AWS CloudTrail + Azure AD sign-in polling
+│   ├── zero_trust.py              per-entity trust scoring (zero-trust architecture)
+│   │
+│   ├── (no new module -- graph is built into dashboard.py)
 │   │
 │   ├── blocker.py               iptables / ipset blocking backend
 │   ├── honeypot.py              fake SSH server (40+ commands, virtual filesystem)
@@ -974,6 +980,75 @@ Code style: type hints on all public functions, docstrings on all public methods
 ---
 
 ## Changelog
+
+### v2.8.0 -- Attack Behavior Graph Visualization
+
+**`cnsl/dashboard.py`** -- Graph tab
+- New Graph tab in nav with network graph icon
+- Force-directed behavior graph rendered on HTML5 canvas (no external library dependency beyond the Chart.js already included)
+- Nodes: one per attacker IP; sized by kill chain progress (0-100%); colored by zero-trust label (green=trusted, amber=moderate, red=suspicious/untrusted)
+- Edges: dashed lines between IPs that share at least one detection rule name in recent incidents
+- Kill chain progress ring: white arc around each node showing how far the attacker has progressed
+- HIGH-severity nodes get a colored glow
+- Hover tooltip: IP, trust label+score, kill chain stage+progress, incident count, location
+- Click node: expands a detail panel below the graph
+- Controls: min-incidents filter, label toggle, Refresh button
+- Force-directed layout uses spring-repulsion simulation (80 steps, runs client-side on load)
+- `GET /api/graph` endpoint returns pre-computed nodes+edges JSON for external consumers; nodes include kill chain and trust data
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.8.0`
+
+---
+
+### v2.7.0 -- Zero-Trust Trust Score Engine
+
+**New module: `cnsl/zero_trust.py`**
+- `ZeroTrustEngine` maintains a per-entity (IP or username) trust score (0.05-1.0) based on observed behavior
+- `TrustSignal` constants: positive signals (known IP login, normal hour) and negative signals (UEBA anomaly, unknown IP, MFA failure, cloud risk flag, brute-force fail, block applied, impossible travel, correlation alert) with calibrated score deltas
+- Trust label categories: trusted (>=0.8), moderate (>=0.5), suspicious (>=0.2), untrusted (<0.2)
+- Score decay: scores recover toward `initial_score` at `recovery_per_day` rate per day when entity goes quiet
+- Threshold scaling: `effective_threshold = ceil(normal_threshold * trust_score)` -- a trust=0.5 entity needs half as many events to trigger an alert as a trust=1.0 entity
+- SQLite persistence via new `zt_scores` table, loaded on startup
+- Max entity limit with oldest-first eviction
+
+**`cnsl/store.py`** -- Schema
+- `ZT_SCHEMA` imported and applied on `init()` -- creates `zt_scores` table
+
+**`cnsl/detector.py`** -- Trust signal integration
+- `_zt_threshold()` helper returns trust-adjusted threshold for an entity
+- SSH brute-force and credential stuffing thresholds scaled by IP trust score
+- Cloud signin brute-force threshold scaled by IP trust score
+- SSH fail applies `BRUTE_FORCE_FAIL` signal to IP trust score
+- UEBA anomaly applies `UEBA_ANOMALY` signal to user trust score
+- Normal login from known IP applies `KNOWN_IP_LOGIN` signal (trust improvement)
+- Normal login from unknown IP applies `UNKNOWN_IP_LOGIN` signal (mild degradation)
+- Cloud MFA failure applies `MFA_FAILURE` to both IP and user trust scores
+- Cloud risky signin applies `CLOUD_RISK_FLAG` to both IP and user trust scores
+
+**`cnsl/engine.py`** -- Wiring
+- `ZeroTrustEngine` instantiated after `CloudIdentityPoller`; scores loaded from SQLite on startup
+- Passed to `Detector` and `start_dashboard`
+- Version string bumped to `2.7.0`
+
+**`cnsl/dashboard.py`** -- Zero-Trust panel + API
+- Zero-Trust Trust Scores panel added to Settings tab -- shows entity table sorted by trust score ascending (untrusted first), with score bar, trust label, signal count, last signal, and Reset button
+- Stats bar: total entities, trusted/moderate/suspicious/untrusted counts, average score
+- `GET /api/zero-trust/stats` -- aggregate trust statistics
+- `GET /api/zero-trust/scores` -- all scored entities (supports `type`, `max_score`, `limit`)
+- `GET /api/zero-trust/scores/{entity}` -- score detail for one entity
+- `POST /api/zero-trust/scores/{entity}/reset` -- reset entity to initial_score
+- `/api/debug` extended with `zero_trust_wired`, `zero_trust_enabled`
+
+**`config/config.example.json`**
+- `zero_trust` block added
+
+**`cnsl/__init__.py`**
+- Version bumped to `2.7.0`
+
+**`docs/zero-trust.md`** -- New documentation file
+
+---
 
 ### v2.6.0 -- Cloud Identity Log Connectors
 

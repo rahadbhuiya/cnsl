@@ -3686,3 +3686,319 @@ class TestCloudEventDetection:
         for _ in range(4):
             _run(det.handle(self._make_cloud_event("CLOUD_SIGNIN_FAIL", ip=ip)))
         assert det._state[ip].total_incidents == 0
+
+# v2.7.0 -- zero-trust engine
+
+
+class TestTrustSignals:
+    """TrustSignal constants have correct (name, delta) shape."""
+
+    def test_positive_signal_has_positive_delta(self):
+        from cnsl.zero_trust import TrustSignal
+        name, delta = TrustSignal.KNOWN_IP_LOGIN
+        assert delta > 0
+        assert isinstance(name, str)
+
+    def test_negative_signal_has_negative_delta(self):
+        from cnsl.zero_trust import TrustSignal
+        name, delta = TrustSignal.UEBA_ANOMALY
+        assert delta < 0
+
+    def test_mfa_failure_signal_value(self):
+        from cnsl.zero_trust import TrustSignal
+        _, delta = TrustSignal.MFA_FAILURE
+        assert delta == -0.25
+
+
+class TestEntityTrust:
+    """EntityTrust dataclass methods."""
+
+    def test_initial_score_label_is_trusted(self):
+        from cnsl.zero_trust import EntityTrust
+        e = EntityTrust(entity_id="1.2.3.4", entity_type="ip")
+        assert e.trust_label() == "trusted"
+
+    def test_low_score_label_is_untrusted(self):
+        from cnsl.zero_trust import EntityTrust
+        e = EntityTrust(entity_id="1.2.3.4", entity_type="ip", score=0.1)
+        assert e.trust_label() == "untrusted"
+
+    def test_to_dict_includes_label_and_score(self):
+        from cnsl.zero_trust import EntityTrust
+        e = EntityTrust(entity_id="1.2.3.4", entity_type="ip", score=0.45)
+        d = e.to_dict()
+        assert d["label"] == "suspicious"
+        assert d["score"] == 0.45
+
+    def test_from_db_row_round_trip(self):
+        from cnsl.zero_trust import EntityTrust
+        row = {"entity_id": "a", "entity_type": "user",
+               "score": 0.6, "last_updated": 0.0, "signal_count": 3, "last_signal": "x"}
+        e = EntityTrust.from_db_row(row)
+        assert e.entity_id == "a"
+        assert e.score == 0.6
+
+
+class TestZeroTrustEngineBasic:
+    """ZeroTrustEngine apply_signal, get_score, and initial state."""
+
+    def _make_zt(self, **kwargs):
+        from cnsl.zero_trust import ZeroTrustEngine
+        cfg = {"zero_trust": {"enabled": True, "initial_score": 0.8,
+                              "min_score": 0.05, "recovery_per_day": 0.05,
+                              "apply_to_threshold": True}}
+        cfg["zero_trust"].update(kwargs)
+        return ZeroTrustEngine(cfg)
+
+    def test_unknown_entity_returns_initial_score(self):
+        zt = self._make_zt()
+        assert zt.get_score("brand-new", "ip") == 0.8
+
+    def test_apply_negative_signal_decreases_score(self):
+        from cnsl.zero_trust import TrustSignal
+        zt = self._make_zt()
+        _, delta = TrustSignal.UEBA_ANOMALY
+        new = zt.apply_signal("1.2.3.4", "ip", TrustSignal.UEBA_ANOMALY)
+        assert new == pytest.approx(0.8 + delta, abs=1e-9)
+
+    def test_apply_positive_signal_increases_score(self):
+        from cnsl.zero_trust import TrustSignal
+        zt = self._make_zt()
+        zt.apply_signal("1.2.3.4", "ip", TrustSignal.UEBA_ANOMALY)
+        before = zt.get_score("1.2.3.4", "ip")
+        zt.apply_signal("1.2.3.4", "ip", TrustSignal.KNOWN_IP_LOGIN)
+        after = zt.get_score("1.2.3.4", "ip")
+        assert after > before
+
+    def test_score_never_below_min_score(self):
+        from cnsl.zero_trust import TrustSignal
+        zt = self._make_zt(min_score=0.1)
+        for _ in range(50):
+            zt.apply_signal("1.2.3.4", "ip", TrustSignal.BLOCK_APPLIED)
+        assert zt.get_score("1.2.3.4", "ip") >= 0.1
+
+    def test_score_never_above_one(self):
+        from cnsl.zero_trust import TrustSignal
+        zt = self._make_zt()
+        for _ in range(50):
+            zt.apply_signal("1.2.3.4", "ip", TrustSignal.KNOWN_IP_LOGIN)
+        assert zt.get_score("1.2.3.4", "ip") <= 1.0
+
+    def test_disabled_engine_returns_initial_score(self):
+        from cnsl.zero_trust import TrustSignal, ZeroTrustEngine
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": False}})
+        zt.apply_signal("1.2.3.4", "ip", TrustSignal.BLOCK_APPLIED)
+        assert zt.get_score("1.2.3.4", "ip") == zt.initial_score
+
+    def test_ip_and_user_have_independent_scores(self):
+        from cnsl.zero_trust import TrustSignal
+        zt = self._make_zt()
+        zt.apply_signal("1.2.3.4", "ip", TrustSignal.BLOCK_APPLIED)
+        ip_score   = zt.get_score("1.2.3.4", "ip")
+        user_score = zt.get_score("1.2.3.4", "user")
+        assert ip_score < user_score  # user not penalized, ip is
+
+
+class TestZeroTrustThreshold:
+    """effective_threshold scales correctly with trust score."""
+
+    def _make_zt(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True,
+                              "apply_to_threshold": True}})
+        # Set ip to score ~0.5 by applying UEBA_ANOMALY x3
+        zt.apply_signal("bad-ip", "ip", TrustSignal.UEBA_ANOMALY)
+        zt.apply_signal("bad-ip", "ip", TrustSignal.UEBA_ANOMALY)
+        zt.apply_signal("bad-ip", "ip", TrustSignal.UEBA_ANOMALY)
+        return zt
+
+    def test_trusted_ip_returns_normal_threshold(self):
+        from cnsl.zero_trust import ZeroTrustEngine
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True,
+                              "apply_to_threshold": True, "initial_score": 1.0}})
+        assert zt.effective_threshold("new-ip", "ip", 8) == 8
+
+    def test_low_trust_ip_returns_lower_threshold(self):
+        zt = self._make_zt()
+        eff = zt.effective_threshold("bad-ip", "ip", 8)
+        assert eff < 8
+
+    def test_threshold_never_zero(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True,
+                              "min_score": 0.05, "apply_to_threshold": True}})
+        for _ in range(100):
+            zt.apply_signal("bad-ip", "ip", TrustSignal.BLOCK_APPLIED)
+        assert zt.effective_threshold("bad-ip", "ip", 1) >= 1
+
+    def test_apply_to_threshold_false_returns_normal(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True,
+                              "apply_to_threshold": False}})
+        zt.apply_signal("bad-ip", "ip", TrustSignal.BLOCK_APPLIED)
+        assert zt.effective_threshold("bad-ip", "ip", 8) == 8
+
+
+class TestZeroTrustReset:
+    """reset() restores entity to initial_score."""
+
+    def test_reset_restores_initial_score(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True}})
+        zt.apply_signal("1.2.3.4", "ip", TrustSignal.BLOCK_APPLIED)
+        assert zt.get_score("1.2.3.4", "ip") < 0.8
+        zt.reset("1.2.3.4", "ip")
+        assert zt.get_score("1.2.3.4", "ip") == zt.initial_score
+
+    def test_reset_unknown_entity_returns_false(self):
+        from cnsl.zero_trust import ZeroTrustEngine
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True}})
+        assert zt.reset("unknown", "ip") is False
+
+
+class TestZeroTrustStats:
+    """stats() reports correct counts per label."""
+
+    def test_stats_reports_trusted_count(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True}})
+        # Three IPs: two trusted, one degraded (brute_force_fail x3 = 0.8 - 0.15 = 0.65 = moderate)
+        zt.apply_signal("1.1.1.1", "ip", TrustSignal.KNOWN_IP_LOGIN)
+        zt.apply_signal("2.2.2.2", "ip", TrustSignal.KNOWN_IP_LOGIN)
+        for _ in range(3):
+            zt.apply_signal("3.3.3.3", "ip", TrustSignal.BRUTE_FORCE_FAIL)
+        stats = zt.stats()
+        assert stats["total_entities"] == 3
+        # 1.1.1.1 and 2.2.2.2 each had KNOWN_IP_LOGIN (+0.05) so score=0.85 -> trusted
+        assert stats["trusted"] >= 2
+        # 3.3.3.3 had 3x brute_force_fail (-0.05 each) -> 0.65 -> moderate
+        assert stats["moderate"] >= 1
+
+    def test_stats_empty_engine(self):
+        from cnsl.zero_trust import ZeroTrustEngine
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True}})
+        stats = zt.stats()
+        assert stats["total_entities"] == 0
+
+
+class TestZeroTrustMaxEntities:
+    """max_entities cap evicts oldest on overflow."""
+
+    def test_max_entities_evicts_oldest(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True, "max_entities": 2}})
+        zt.apply_signal("1.1.1.1", "ip", TrustSignal.BRUTE_FORCE_FAIL)
+        zt.apply_signal("2.2.2.2", "ip", TrustSignal.BRUTE_FORCE_FAIL)
+        zt.apply_signal("3.3.3.3", "ip", TrustSignal.BRUTE_FORCE_FAIL)
+        assert len(zt._scores) == 2
+        assert ("1.1.1.1", "ip") not in zt._scores
+
+
+class TestDetectorZeroTrustWiring:
+    """Detector stores zero_trust and calls _zt_threshold correctly."""
+
+    def _make_detector(self, zero_trust=None):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+        cfg     = {"thresholds": {}, "actions": {"dry_run": True},
+                  "logging": {"console_verbose": False}}
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+        return Detector(cfg, logger, blocker, zero_trust=zero_trust)
+
+    def test_detector_stores_zero_trust(self):
+        from cnsl.zero_trust import ZeroTrustEngine
+        zt  = ZeroTrustEngine({"zero_trust": {"enabled": True}})
+        det = self._make_detector(zero_trust=zt)
+        assert det.zero_trust is zt
+
+    def test_zt_threshold_without_zero_trust_returns_normal(self):
+        det = self._make_detector(zero_trust=None)
+        assert det._zt_threshold("1.2.3.4", "ip", 8) == 8
+
+    def test_zt_threshold_with_low_trust_returns_lower(self):
+        from cnsl.zero_trust import ZeroTrustEngine, TrustSignal
+        zt = ZeroTrustEngine({"zero_trust": {"enabled": True,
+                              "apply_to_threshold": True}})
+        for _ in range(5):
+            zt.apply_signal("1.2.3.4", "ip", TrustSignal.UEBA_ANOMALY)
+        det = self._make_detector(zero_trust=zt)
+        assert det._zt_threshold("1.2.3.4", "ip", 8) < 8
+
+    def test_zt_threshold_exception_returns_normal(self):
+        class _Bad:
+            def effective_threshold(self, *a, **k):
+                raise RuntimeError("boom")
+        det = self._make_detector(zero_trust=_Bad())
+        assert det._zt_threshold("1.2.3.4", "ip", 8) == 8
+
+# v2.8.0 -- attack behavior graph
+
+
+class TestGraphTabPresence:
+    """Graph tab button and page exist in the dashboard HTML."""
+
+    def _get_html(self):
+        import sys
+        sys.path.insert(0, "/home/claude/cnsl-v2.2.0")
+        from cnsl.dashboard import start_dashboard
+        import inspect
+        # Extract the HTML source from the function source directly
+        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
+            return f.read()
+
+    def test_graph_tab_button_present(self):
+        html = self._get_html()
+        assert "showTab('graph')" in html, "Graph tab button missing from nav"
+
+    def test_graph_page_div_present(self):
+        html = self._get_html()
+        assert 'id="page-graph"' in html, "Graph page div missing"
+
+    def test_graph_canvas_present(self):
+        html = self._get_html()
+        assert 'id="graph-canvas"' in html, "Graph canvas element missing"
+
+    def test_load_graph_js_function_present(self):
+        html = self._get_html()
+        assert "async function loadGraph()" in html, "loadGraph() JS function missing"
+
+    def test_render_graph_js_function_present(self):
+        html = self._get_html()
+        assert "function renderGraph()" in html, "renderGraph() JS function missing"
+
+    def test_graph_tooltip_present(self):
+        html = self._get_html()
+        assert 'id="graph-tooltip"' in html, "Graph tooltip element missing"
+
+    def test_graph_detail_panel_present(self):
+        html = self._get_html()
+        assert 'id="graph-detail"' in html, "Graph node detail panel missing"
+
+
+class TestGraphAPIRoute:
+    """GET /api/graph route registered in start_dashboard."""
+
+    def test_graph_api_route_registered(self):
+        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
+            src = f.read()
+        assert '"/api/graph"' in src, "/api/graph route missing from dashboard"
+
+
+class TestDashboardSignatureV4:
+    """start_dashboard must still accept all module params including zero_trust."""
+
+    def test_start_dashboard_has_zero_trust(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        assert "zero_trust" in sig.parameters
+        assert sig.parameters["zero_trust"].default is None
+
+    def test_start_dashboard_has_cloud_identity(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        assert "cloud_identity" in sig.parameters

@@ -23,6 +23,7 @@ Usage:
     python simulate.py siem           # SIEM/SOAR connector push (dry-run)
     python simulate.py federation     # multi-node federation (simulated cluster)
     python simulate.py cloud          # cloud identity logs (AWS/Azure simulated)
+    python simulate.py zerotrust      # zero-trust trust scoring
     python simulate.py live           # interactive mode
 """
 
@@ -46,6 +47,7 @@ from cnsl.pattern_learner import PatternLearner
 from cnsl.siem_connectors import SIEMRouter
 from cnsl.redis_sync      import RedisSync
 from cnsl.federation      import FederationBus
+from cnsl.zero_trust      import ZeroTrustEngine
 
 
 #  Terminal colours 
@@ -64,7 +66,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}+========================================================+
-|        CNSL -- Local Test Simulator  v2.6.0           |
+|        CNSL -- Local Test Simulator  v2.8.0           |
 |   No real server required -- all tests run locally    |
 +========================================================+{RST}
 """)
@@ -166,6 +168,7 @@ async def setup():
     # happens in production when Redis is unreachable.
     redis_sync = RedisSync(cfg, logger)
     federation = FederationBus(cfg, redis_sync, logger)
+    zero_trust  = ZeroTrustEngine(cfg)
 
     # Mirror engine.py's real wiring: remote signals from other nodes
     # update this node's own kill chain too.
@@ -181,7 +184,8 @@ async def setup():
                         kill_chain=kill_chain,
                         pattern_learner=pattern_learner,
                         siem_router=siem_router,
-                        federation=federation)
+                        federation=federation,
+                        zero_trust=zero_trust)
 
     return (detector, blocker, metrics, store, logger, notifier,
             kill_chain, pattern_learner, siem_router, federation)
@@ -995,6 +999,54 @@ async def scenario_cloud_identity(detector):
     log("Cloud identity scenario complete -- check Rules tab for cloud.* alerts", G)
 
 
+#  Scenario 22: Zero-Trust Trust Scoring 
+
+async def scenario_zero_trust(detector):
+    section("Scenario 22 -- Zero-Trust Trust Scoring")
+    from cnsl.zero_trust import TrustSignal
+
+    zt = detector.zero_trust
+    if not zt or not zt.enabled:
+        log("Zero-trust not wired -- pass zero_trust= to Detector", R)
+        return
+
+    ip   = "203.0.113.100"
+    user = "admin@corp.com"
+
+    print(f"  {BOLD}Demonstrating trust score degradation for {ip}:{RST}\n")
+
+    score = zt.get_score(ip, "ip")
+    print(f"  Initial score      : {Y}{score:.2f}{RST} (trusted)")
+
+    print(f"\n  {C}Applying brute-force signals x5{RST}")
+    for _ in range(5):
+        zt.apply_signal(ip, "ip", TrustSignal.BRUTE_FORCE_FAIL)
+    score = zt.get_score(ip, "ip")
+    print(f"  Score after 5 fails: {Y}{score:.2f}{RST} ({zt.get_record(ip,'ip').trust_label()})")
+
+    print(f"\n  {C}Applying UEBA anomaly to user{RST}")
+    zt.apply_signal(user, "user", TrustSignal.UEBA_ANOMALY)
+    user_score = zt.get_score(user, "user")
+    print(f"  User score         : {Y}{user_score:.2f}{RST} ({zt.get_record(user,'user').trust_label()})")
+
+    print(f"\n  {C}Threshold scaling effect (ssh.brute_force default=8):{RST}")
+    normal_thresh  = 8
+    eff_trusted    = zt.effective_threshold("trusted-ip", "ip", normal_thresh)
+    eff_suspicious = zt.effective_threshold(ip, "ip", normal_thresh)
+    print(f"  Trusted IP   (score=0.80): threshold = {G}{eff_trusted}{RST}")
+    print(f"  Suspicious IP (score={score:.2f}): threshold = {R}{eff_suspicious}{RST}")
+
+    print(f"\n  {C}Resetting {ip} to initial score{RST}")
+    zt.reset(ip, "ip")
+    score = zt.get_score(ip, "ip")
+    print(f"  Score after reset  : {G}{score:.2f}{RST} (trusted)")
+
+    stats = zt.stats()
+    print(f"\n  {BOLD}Zero-trust stats:{RST}  entities={stats['total_entities']}  "
+          f"trusted={stats.get('trusted',0)}  suspicious={stats.get('suspicious',0)}")
+    log("Zero-trust scenario complete", G)
+
+
 SCENARIO_MAP = {
     "brute":       "brute-force",
     "stuffing":    "credential stuffing",
@@ -1017,6 +1069,7 @@ SCENARIO_MAP = {
     "siem":        "SIEM/SOAR connector push",
     "federation":  "multi-node federation",
     "cloud":       "cloud identity logs",
+    "zerotrust":   "zero-trust trust scoring",
     "live":        "interactive",
 }
 
@@ -1118,6 +1171,10 @@ async def main():
 
         if mode in ("all", "cloud"):
             await scenario_cloud_identity(detector)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "zerotrust"):
+            await scenario_zero_trust(detector)
 
         if mode == "live":
             await interactive_mode(detector, blocker)

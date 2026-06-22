@@ -623,6 +623,17 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </svg>
     Kill Chain
   </div>
+  <div class="tab" onclick="showTab('graph')" id="tab-graph">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="2"  cy="7"  r="1.4" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="7"  cy="2"  r="1.4" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="12" cy="7"  r="1.4" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="5"  cy="11" r="1.4" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="10" cy="11" r="1.4" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M3.2 6.4L6.2 3M8 3L11 6.4M3.2 7.6L4.5 10M10.5 10L11 7.6M6.2 11h1.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+    </svg>
+    Graph
+  </div>
 </nav>
 
 <!-- banners -->
@@ -1050,6 +1061,57 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 <!-- SETTINGS -->
+<div class="page" id="page-graph">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Attack Behavior Graph</span>
+      <span style="font-size:11px;color:var(--muted)">Nodes = attacker IPs, sized by kill chain progress, colored by trust</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;color:var(--muted)">
+          Min incidents:
+          <select id="graph-min-incidents" onchange="renderGraph()" style="font-size:11px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;margin-left:4px">
+            <option value="1">1+</option>
+            <option value="2">2+</option>
+            <option value="5">5+</option>
+          </select>
+        </label>
+        <label style="font-size:11px;color:var(--muted)">
+          <input type="checkbox" id="graph-show-labels" checked onchange="renderGraph()"> Labels
+        </label>
+        <button onclick="loadGraph()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+      </div>
+    </div>
+    <!-- Legend -->
+    <div style="padding:8px 16px;display:flex;gap:16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <span>Node color:</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;margin-right:4px"></span>Trusted</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#f59e0b;margin-right:4px"></span>Moderate</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:4px"></span>Suspicious/Untrusted</span>
+      <span style="margin-left:8px">Node size: kill chain progress</span>
+      <span>Edge: shared attack rule</span>
+    </div>
+    <!-- Canvas -->
+    <div style="position:relative;height:480px;background:var(--bg);border-radius:0 0 6px 6px;overflow:hidden">
+      <canvas id="graph-canvas" style="width:100%;height:100%"></canvas>
+      <div id="graph-empty" style="display:none;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
+        No attack data yet -- incidents appear here as they are detected
+      </div>
+      <!-- Tooltip -->
+      <div id="graph-tooltip" style="display:none;position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;pointer-events:none;max-width:220px;z-index:10"></div>
+    </div>
+  </div>
+  <!-- Node detail panel -->
+  <div id="graph-detail" style="display:none">
+    <div class="tbl-wrap">
+      <div class="tbl-head">
+        <span class="tbl-head-title" id="graph-detail-title">Node Detail</span>
+        <button onclick="document.getElementById('graph-detail').style.display='none'" style="font-size:11px;padding:3px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer">Close</button>
+      </div>
+      <div id="graph-detail-body" style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px"></div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-killchain">
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head">
@@ -1096,6 +1158,18 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </div>
 
 <div class="page" id="page-settings">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Zero-Trust Trust Scores</span>
+      <span style="font-size:11px;color:var(--muted)">Per-entity trust scoring -- lower trust = lower alert threshold</span>
+      <button onclick="loadZeroTrust()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
+    </div>
+    <div id="zt-stats-bar" style="padding:8px 16px;display:flex;gap:20px;font-size:11px;border-bottom:1px solid var(--border)"></div>
+    <table>
+      <thead><tr><th>Entity</th><th>Type</th><th>Trust Label</th><th>Score</th><th>Signals</th><th>Last Signal</th><th>Actions</th></tr></thead>
+      <tbody id="zt-tbody"><tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No scored entities yet</td></tr></tbody>
+    </table>
+  </div>
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head">
       <span class="tbl-head-title">Cloud Identity Connectors</span>
@@ -1189,8 +1263,9 @@ function showTab(name){
   if(name==='ueba')      loadUEBA();
   if(name==='rules')     { loadRules(); loadSuggestedRules(); }
   if(name==='ratelimit') loadRateLimit();
-  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); }
+  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); loadZeroTrust(); }
   if(name==='killchain') loadKillChain();
+  if(name==='graph')     loadGraph();
 }
 
 //  Cases 
@@ -1430,6 +1505,257 @@ async function rlReset(ip){
 }
 
 //  Settings 
+// ---- Graph Visualization (force-directed, canvas-based) ----
+
+let _graphData = null;
+let _graphAnim  = null;
+let _graphNodes = [];
+let _graphEdges = [];
+
+async function loadGraph(){
+  const [attackers, incidents, kcData, ztData] = await Promise.all([
+    apiFetch('/api/attackers'),
+    apiFetch('/api/incidents?limit=200'),
+    apiFetch('/api/kill-chain?limit=200'),
+    apiFetch('/api/zero-trust/scores?limit=500'),
+  ]);
+  _graphData = {attackers, incidents, kc: kcData, zt: ztData};
+  renderGraph();
+}
+
+function renderGraph(){
+  if(!_graphData) return;
+  const {attackers, incidents, kc, zt} = _graphData;
+  const minInc  = parseInt($('graph-min-incidents').value, 10);
+  const showLbl = $('graph-show-labels').checked;
+  const canvas  = $('graph-canvas');
+  const empty   = $('graph-empty');
+  const tooltip = $('graph-tooltip');
+
+  // Build lookup maps
+  const kcMap = {};
+  (kc || []).forEach(c => { kcMap[c.ip] = c; });
+  const ztMap = {};
+  (zt || []).forEach(r => {
+    if(r.entity_type === 'ip') ztMap[r.entity_id] = r;
+  });
+
+  // Filter attackers by min incidents
+  const filtered = (attackers || []).filter(a => (a.incident_count || 1) >= minInc);
+  if(!filtered.length){
+    canvas.style.display = 'none';
+    empty.style.display  = 'flex';
+    return;
+  }
+  canvas.style.display = '';
+  empty.style.display  = 'none';
+
+  // Set canvas size
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const W = rect.width  || 800;
+  const H = rect.height || 480;
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Build nodes
+  const ipSet = new Set(filtered.map(a => a.src_ip));
+  _graphNodes = filtered.map(a => {
+    const ip   = a.src_ip;
+    const kci  = kcMap[ip];
+    const zti  = ztMap[ip];
+    const score    = zti  ? zti.score           : 0.8;
+    const kcScore  = kci  ? (kci.score || 0)    : 0;
+    const maxStage = kci  ? (kci.max_stage || 0) : 0;
+    const radius   = 8 + Math.round(kcScore * 18);
+    const color    = score >= 0.8 ? '#22c55e' :
+                     score >= 0.5 ? '#f59e0b' : '#ef4444';
+    return {
+      ip, score, kcScore, maxStage, radius, color,
+      incidentCount: a.incident_count || 1,
+      country: a.country || '',
+      maxSev:  a.max_severity || '',
+      kcLabel: kci ? kci.max_stage_name : '',
+      ztLabel: zti ? zti.label : 'unknown',
+      // Random initial position, re-used across frames for continuity
+      x: (existing => existing ? existing.x : W/2 + (Math.random()-.5)*200)
+          (_graphNodes.find(n => n.ip === ip)),
+      y: (existing => existing ? existing.y : H/2 + (Math.random()-.5)*150)
+          (_graphNodes.find(n => n.ip === ip)),
+      vx: 0, vy: 0,
+    };
+  });
+
+  // Build edges from shared rule names in recent incidents
+  const rulesByIp = {};
+  (incidents || []).forEach(inc => {
+    if(!ipSet.has(inc.src_ip)) return;
+    const reasons = inc.reasons || [];
+    reasons.forEach(r => {
+      const rule = r.split(':')[0].trim();
+      if(!rulesByIp[inc.src_ip]) rulesByIp[inc.src_ip] = new Set();
+      rulesByIp[inc.src_ip].add(rule);
+    });
+  });
+
+  _graphEdges = [];
+  const ipList = _graphNodes.map(n => n.ip);
+  for(let i = 0; i < ipList.length; i++){
+    for(let j = i+1; j < ipList.length; j++){
+      const a = rulesByIp[ipList[i]] || new Set();
+      const b = rulesByIp[ipList[j]] || new Set();
+      const shared = [...a].filter(r => b.has(r));
+      if(shared.length){
+        _graphEdges.push({i, j, label: shared[0], strength: shared.length});
+      }
+    }
+  }
+
+  // Force-directed layout simulation
+  const STEPS = 80;
+  const REPEL  = 3000;
+  const ATTRACT = 0.025;
+  const DAMP   = 0.88;
+  const IDEAL  = 140;
+
+  for(let step = 0; step < STEPS; step++){
+    // Repulsion between all nodes
+    for(let i = 0; i < _graphNodes.length; i++){
+      for(let j = i+1; j < _graphNodes.length; j++){
+        const ni = _graphNodes[i], nj = _graphNodes[j];
+        const dx = ni.x - nj.x, dy = ni.y - nj.y;
+        const d  = Math.sqrt(dx*dx + dy*dy) || 1;
+        const f  = REPEL / (d*d);
+        ni.vx += f*dx/d; ni.vy += f*dy/d;
+        nj.vx -= f*dx/d; nj.vy -= f*dy/d;
+      }
+    }
+    // Edge attraction
+    _graphEdges.forEach(e => {
+      const ni = _graphNodes[e.i], nj = _graphNodes[e.j];
+      const dx = nj.x - ni.x, dy = nj.y - ni.y;
+      const d  = Math.sqrt(dx*dx + dy*dy) || 1;
+      const f  = ATTRACT * (d - IDEAL);
+      ni.vx += f*dx/d; ni.vy += f*dy/d;
+      nj.vx -= f*dx/d; nj.vy -= f*dy/d;
+    });
+    // Center gravity
+    _graphNodes.forEach(n => {
+      n.vx += (W/2 - n.x) * 0.005;
+      n.vy += (H/2 - n.y) * 0.005;
+      n.vx *= DAMP; n.vy *= DAMP;
+      n.x  = Math.max(n.radius+10, Math.min(W-n.radius-10, n.x + n.vx));
+      n.y  = Math.max(n.radius+10, Math.min(H-n.radius-10, n.y + n.vy));
+    });
+  }
+
+  // Draw
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw edges
+  _graphEdges.forEach(e => {
+    const ni = _graphNodes[e.i], nj = _graphNodes[e.j];
+    ctx.save();
+    ctx.strokeStyle = 'rgba(100,116,139,0.35)';
+    ctx.lineWidth   = 1 + Math.min(e.strength-1, 2);
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(ni.x, ni.y);
+    ctx.lineTo(nj.x, nj.y);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // Draw nodes
+  _graphNodes.forEach(n => {
+    // Outer glow for high-severity nodes
+    if(n.maxSev === 'HIGH'){
+      const grad = ctx.createRadialGradient(n.x, n.y, n.radius, n.x, n.y, n.radius*2.5);
+      grad.addColorStop(0, n.color + '40');
+      grad.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius*2.5, 0, Math.PI*2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    // Fill
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.radius, 0, Math.PI*2);
+    ctx.fillStyle = n.color;
+    ctx.fill();
+    // Kill chain progress ring
+    if(n.kcScore > 0){
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.radius+2, -Math.PI/2, -Math.PI/2 + n.kcScore*Math.PI*2);
+      ctx.strokeStyle = '#ffffff66';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+    // Label
+    if(showLbl){
+      ctx.font      = '9px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'center';
+      const short = n.ip.split('.').slice(-2).join('.');
+      ctx.fillText(short, n.x, n.y + n.radius + 11);
+    }
+  });
+}
+
+// Click/hover on graph canvas
+(function(){
+  const canvas = document.getElementById('graph-canvas');
+  if(!canvas) return;
+  canvas.addEventListener('mousemove', e => {
+    if(!_graphNodes.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    const tip = $('graph-tooltip');
+    const hit = _graphNodes.find(n => {
+      const dx = n.x - mx, dy = n.y - my;
+      return Math.sqrt(dx*dx + dy*dy) <= n.radius + 4;
+    });
+    if(hit){
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX - rect.left + 12) + 'px';
+      tip.style.top  = (e.clientY - rect.top  - 10) + 'px';
+      tip.innerHTML = `<b>${escHtml(hit.ip)}</b><br>
+        Trust: <b style="color:${hit.color}">${escHtml(hit.ztLabel)}</b> (${Math.round(hit.score*100)}%)<br>
+        Kill chain: ${escHtml(hit.kcLabel||'none')} (${Math.round(hit.kcScore*100)}%)<br>
+        Incidents: ${hit.incidentCount}
+        ${hit.country ? `<br>Location: ${escHtml(hit.country)}` : ''}`;
+    } else {
+      tip.style.display = 'none';
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    $('graph-tooltip').style.display = 'none';
+  });
+  canvas.addEventListener('click', e => {
+    if(!_graphNodes.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top)  * (canvas.height / rect.height);
+    const hit = _graphNodes.find(n => {
+      const dx = n.x - mx, dy = n.y - my;
+      return Math.sqrt(dx*dx + dy*dy) <= n.radius + 4;
+    });
+    if(!hit) return;
+    $('graph-detail-title').textContent = `Node: ${hit.ip}`;
+    $('graph-detail').style.display = 'block';
+    $('graph-detail-body').innerHTML = [
+      ['IP',           hit.ip],
+      ['Trust Score',  `${Math.round(hit.score*100)}% (${hit.ztLabel})`],
+      ['Kill Chain',   hit.kcLabel || 'None'],
+      ['KC Progress',  `${Math.round(hit.kcScore*100)}%`],
+      ['Max Severity', hit.maxSev || '-'],
+      ['Incidents',    hit.incidentCount],
+      ['Location',     hit.country || '-'],
+    ].map(([k,v]) => `<div><span style="color:var(--muted);font-size:11px">${k}</span><div style="font-weight:600">${escHtml(String(v))}</div></div>`).join('');
+  });
+})();
+
 async function loadKillChain(){
   const completeOnly = document.getElementById('kc-complete-only').checked;
   const minScore     = document.getElementById('kc-min-score').value;
@@ -1523,6 +1849,67 @@ async function showKcDetail(ip){
     `First seen: ${escHtml(chain.first_seen)} &nbsp;|&nbsp; Last seen: ${escHtml(chain.last_seen)}` +
     (geo ? ` &nbsp;|&nbsp; Location: ${escHtml(geo)}` : '') +
     ` &nbsp;|&nbsp; Score: ${Math.round(chain.score * 100)}%`;
+}
+
+async function loadZeroTrust(){
+  const [stats, scores] = await Promise.all([
+    apiFetch('/api/zero-trust/stats'),
+    apiFetch('/api/zero-trust/scores?limit=100'),
+  ]);
+
+  if(!stats){
+    $('zt-stats-bar').innerHTML = '<span style="color:var(--muted)">Zero-trust not available</span>';
+    return;
+  }
+
+  $('zt-stats-bar').innerHTML = [
+    {label:'Total entities', value: stats.total_entities ?? 0},
+    {label:'Trusted',    value: stats.trusted    ?? 0, color:'#22c55e'},
+    {label:'Moderate',   value: stats.moderate   ?? 0, color:'#f59e0b'},
+    {label:'Suspicious', value: stats.suspicious ?? 0, color:'#ef4444'},
+    {label:'Untrusted',  value: stats.untrusted  ?? 0, color:'#dc2626'},
+    {label:'Avg score',  value: stats.avg_score  ?? ''},
+  ].map(s => `<span${s.color ? ` style="color:${s.color}"` : ''}><b>${s.value}</b> ${escHtml(s.label)}</span>`).join(
+    '<span style="color:var(--border)">|</span>'
+  );
+
+  if(!scores || !scores.length){
+    $('zt-tbody').innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">No scored entities yet -- signals appear after login events</td></tr>';
+    return;
+  }
+
+  const LABEL_COLOR = {trusted:'#22c55e', moderate:'#f59e0b', suspicious:'#ef4444', untrusted:'#dc2626'};
+  $('zt-tbody').innerHTML = scores.map(r => {
+    const pct   = Math.round(r.score * 100);
+    const color = LABEL_COLOR[r.label] || '#64748b';
+    const lastSig = (r.recent_signals || []).slice(-1)[0];
+    const lastSigText = lastSig
+      ? `${escHtml(lastSig.signal)} (${lastSig.delta > 0 ? '+' : ''}${lastSig.delta})`
+      : '-';
+    return `<tr>
+      <td><code>${escHtml(r.entity_id)}</code></td>
+      <td style="font-size:11px">${escHtml(r.entity_type)}</td>
+      <td><span style="color:${color};font-weight:600">${escHtml(r.label)}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:50px;height:6px;background:var(--surface-2,#2a2a2a);border-radius:3px">
+            <div style="width:${pct}%;height:6px;background:${color};border-radius:3px"></div>
+          </div>
+          <span style="font-size:11px">${pct}%</span>
+        </div>
+      </td>
+      <td>${r.signal_count}</td>
+      <td style="font-size:11px;color:var(--muted)">${escHtml(lastSigText)}</td>
+      <td>
+        <button onclick="ztReset('${escHtml(r.entity_id)}','${escHtml(r.entity_type)}')"
+          style="font-size:10px;padding:2px 7px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;cursor:pointer">Reset</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function ztReset(entityId, entityType){
+  await apiFetch(`/api/zero-trust/scores/${encodeURIComponent(entityId)}/reset?type=${entityType}`,{method:'POST'});
+  loadZeroTrust();
 }
 
 async function loadCloudIdentityStatus(){
@@ -2290,6 +2677,7 @@ async def start_dashboard(
     siem_router:     Any = None,
     federation:      Any = None,
     cloud_identity:  Any = None,
+    zero_trust:      Any = None,
 ) -> None:
     try:
         from aiohttp import web
@@ -3118,7 +3506,127 @@ async def start_dashboard(
         result = await es_pusher.push(norms)
         return web.json_response(result)
 
-    # ------------------------------------------------------------------ Cloud Identity API
+    #  Graph API
+
+    @router.get("/api/graph")
+    async def api_graph(req: web.Request) -> web.Response:
+        """
+        Return pre-computed behavior graph data (nodes + edges).
+        Used by external consumers; the dashboard builds its own graph
+        client-side by combining /api/attackers, /api/kill-chain, etc.
+        """
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        limit    = int(req.rel_url.query.get("limit", 50))
+        min_inc  = int(req.rel_url.query.get("min_incidents", 1))
+        attackers = await store.top_attackers(limit=limit * 2)
+        filtered  = [a for a in attackers if (a.get("incident_count") or 1) >= min_inc][:limit]
+        ip_set    = {a["src_ip"] for a in filtered}
+
+        # Kill chain data
+        kc_map = {}
+        if kill_chain:
+            for chain in kill_chain.get_all(limit=limit):
+                kc_map[chain.ip] = chain.to_dict()
+
+        # Zero-trust data
+        zt_map = {}
+        if zero_trust:
+            for rec in zero_trust.get_all(entity_type="ip", limit=limit*2):
+                zt_map[rec.entity_id] = rec.to_dict()
+
+        nodes = []
+        for a in filtered:
+            ip = a["src_ip"]
+            nodes.append({
+                "ip":            ip,
+                "incident_count": a.get("incident_count", 0),
+                "max_severity":   a.get("max_severity", ""),
+                "country":        a.get("country", ""),
+                "kill_chain":     kc_map.get(ip),
+                "trust":          zt_map.get(ip),
+            })
+
+        # Edges: shared rules
+        incidents = await store.recent_incidents(limit=200)
+        rules_by_ip = {}
+        for inc in incidents:
+            if inc.get("src_ip") not in ip_set:
+                continue
+            for r in (inc.get("reasons") or []):
+                rule = r.split(":")[0].strip()
+                rules_by_ip.setdefault(inc["src_ip"], set()).add(rule)
+
+        ip_list = [n["ip"] for n in nodes]
+        edges   = []
+        for i in range(len(ip_list)):
+            for j in range(i+1, len(ip_list)):
+                a_rules = rules_by_ip.get(ip_list[i], set())
+                b_rules = rules_by_ip.get(ip_list[j], set())
+                shared  = sorted(a_rules & b_rules)
+                if shared:
+                    edges.append({"source": ip_list[i], "target": ip_list[j],
+                                  "shared_rules": shared})
+
+        return web.json_response({"nodes": nodes, "edges": edges})
+
+    #  Zero-Trust API
+
+    @router.get("/api/zero-trust/stats")
+    async def api_zt_stats(req: web.Request) -> web.Response:
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if zero_trust is None:
+            return web.json_response({"error": "Zero-trust not enabled"}, status=400)
+        return web.json_response(zero_trust.stats())
+
+    @router.get("/api/zero-trust/scores")
+    async def api_zt_scores(req: web.Request) -> web.Response:
+        """Return all scored entities sorted by score ascending (untrusted first)."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if zero_trust is None:
+            return web.json_response({"error": "Zero-trust not enabled"}, status=400)
+        entity_type = req.rel_url.query.get("type")   # "ip" or "user"
+        max_score   = float(req.rel_url.query.get("max_score", 1.0))
+        limit       = int(req.rel_url.query.get("limit", 100))
+        records     = zero_trust.get_all(entity_type=entity_type,
+                                         max_score=max_score, limit=limit)
+        return web.json_response([r.to_dict() for r in records])
+
+    @router.get("/api/zero-trust/scores/{entity_id:.*}")
+    async def api_zt_score_entity(req: web.Request) -> web.Response:
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if zero_trust is None:
+            return web.json_response({"error": "Zero-trust not enabled"}, status=400)
+        entity_id   = req.match_info.get("entity_id", "")
+        entity_type = req.rel_url.query.get("type", "ip")
+        record      = zero_trust.get_record(entity_id, entity_type)
+        if record is None:
+            return web.json_response({"error": f"No score for {entity_id}"}, status=404)
+        return web.json_response(record.to_dict())
+
+    @router.post("/api/zero-trust/scores/{entity_id:.*}/reset")
+    async def api_zt_reset(req: web.Request) -> web.Response:
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if zero_trust is None:
+            return web.json_response({"error": "Zero-trust not enabled"}, status=400)
+        entity_id   = req.match_info.get("entity_id", "")
+        entity_type = req.rel_url.query.get("type", "ip")
+        ok = zero_trust.reset(entity_id, entity_type)
+        if not ok:
+            return web.json_response({"error": f"Not found: {entity_id}"}, status=404)
+        await logger.log("zero_trust_reset", {"entity_id": entity_id, "entity_type": entity_type})
+        return web.json_response({"ok": True})
+
+    #  Cloud Identity API
 
     @router.get("/api/cloud-identity/status")
     async def api_cloud_identity_status(req: web.Request) -> web.Response:
@@ -3130,7 +3638,7 @@ async def start_dashboard(
             return web.json_response({"error": "Cloud identity not enabled"}, status=400)
         return web.json_response(cloud_identity.status())
 
-    # ------------------------------------------------------------------ Federation API
+    #  Federation API
 
     @router.get("/api/federation/status")
     async def api_federation_status(req: web.Request) -> web.Response:
@@ -3178,7 +3686,7 @@ async def start_dashboard(
             return web.json_response({"error": f"No federation record for {ip}"}, status=404)
         return web.json_response(record.to_dict())
 
-    # ------------------------------------------------------------------ SIEM Connector API
+    #  SIEM Connector API
 
     @router.get("/api/siem/status")
     async def api_siem_status(req: web.Request) -> web.Response:
@@ -3237,7 +3745,7 @@ async def start_dashboard(
         await logger.log("siem_flush", {"counts": counts})
         return web.json_response({"flushed": counts})
 
-    # ------------------------------------------------------------------ Pattern Learner API
+    #  Pattern Learner API
 
     @router.get("/api/pattern-suggestions")
     async def api_pattern_suggestions_list(req: web.Request) -> web.Response:
@@ -3301,7 +3809,7 @@ async def start_dashboard(
         await logger.log("pattern_dismissed", {"id": sid})
         return web.json_response({"ok": True})
 
-    # ------------------------------------------------------------------ Kill Chain API
+    #  Kill Chain API
 
     @router.get("/api/kill-chain")
     async def api_kill_chain_list(req: web.Request) -> web.Response:
@@ -3374,6 +3882,8 @@ async def start_dashboard(
             "cloud_identity_enabled":  getattr(cloud_identity, "enabled", False),
             "cloud_aws_enabled":       getattr(getattr(cloud_identity, "aws",      None), "enabled", False),
             "cloud_azure_enabled":     getattr(getattr(cloud_identity, "azure_ad", None), "enabled", False),
+            "zero_trust_wired":        zero_trust is not None,
+            "zero_trust_enabled":      getattr(zero_trust, "enabled", False),
         })
 
     @router.get("/api/ml-status")

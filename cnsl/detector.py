@@ -168,6 +168,8 @@ class Detector:
         pattern_learner: Optional[Any]                 = None,
         siem_router:     Optional[Any]                 = None,
         federation:      Optional[Any]                 = None,
+        cloud_identity:  Optional[Any]                 = None,
+        zero_trust:      Optional[Any]                 = None,
     ):
         # Rule engine — all thresholds are read from here at evaluation time
         self.rules = RuleEngine(cfg)
@@ -224,10 +226,26 @@ class Detector:
         self.pattern_learner = pattern_learner
         self.siem_router     = siem_router
         self.federation       = federation
+        self.cloud_identity  = cloud_identity
+        self.zero_trust      = zero_trust
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
     #  Public: event ingestion 
+
+    def _zt_threshold(self, entity_id: str, entity_type: str,
+                      normal_threshold: int) -> int:
+        """
+        Return the zero-trust adjusted threshold for this entity.
+        If zero_trust is disabled or not wired, returns normal_threshold.
+        """
+        if self.zero_trust:
+            try:
+                return self.zero_trust.effective_threshold(
+                    entity_id, entity_type, normal_threshold)
+            except Exception:
+                pass
+        return normal_threshold
 
     def _kc_update(self, ip: str, kind: str, geo: Optional[Dict] = None,
                   severity: str = "LOW") -> None:
@@ -471,6 +489,11 @@ class Detector:
         geo = self.geoip.get_cached(ip) if self.geoip else None
         self._kc_update(ip, "SSH_FAIL", geo=geo, severity="MEDIUM")
 
+        # Zero-trust: brute force fails degrade IP trust
+        if self.zero_trust:
+            from .zero_trust import TrustSignal
+            self.zero_trust.apply_signal(ip, "ip", TrustSignal.BRUTE_FORCE_FAIL)
+
         if self.metrics:
             geo     = self.geoip.get_cached(ip) if self.geoip else None
             country = geo.get("country", "") if geo else ""
@@ -481,14 +504,16 @@ class Detector:
         sev, reasons = None, []
 
         r_bf = self.rules.get("ssh.brute_force")
-        if r_bf and r_bf.enabled and fail_count >= r_bf.effective_threshold:
+        if r_bf and r_bf.enabled and fail_count >= self._zt_threshold(
+                ip, "ip", r_bf.effective_threshold):
             sev = r_bf.effective_severity
             reasons.append(
                 f"brute_force: {fail_count} fails in {self.window_sec}s"
             )
 
         r_cs = self.rules.get("ssh.credential_stuffing")
-        if r_cs and r_cs.enabled and uniq_users >= r_cs.effective_threshold:
+        if r_cs and r_cs.enabled and uniq_users >= self._zt_threshold(
+                ip, "ip", r_cs.effective_threshold):
             sev = r_cs.effective_severity
             reasons.append(
                 f"credential_stuffing: {uniq_users} unique users in {self.window_sec}s"
@@ -519,7 +544,7 @@ class Detector:
                 f"credential_breach: success after {fail_count} fails"
             )
 
-        # UEBA — observe successful login for behavioral profiling
+        # UEBA -- observe successful login for behavioral profiling
         if self.ueba and self.ueba.enabled and ev.user:
             try:
                 anomaly = self.ueba.observe(username=ev.user, src_ip=ip, ts=t)
@@ -528,13 +553,26 @@ class Detector:
                     if not sev:
                         sev = "MEDIUM"
                     reasons.append(f"ueba: {anomaly.reason}")
-                    # Persist async (fire-and-forget)
+                    # Zero-trust: UEBA anomaly degrades user trust score
+                    if self.zero_trust and ev.user:
+                        from .zero_trust import TrustSignal
+                        self.zero_trust.apply_signal(
+                            ev.user, "user", TrustSignal.UEBA_ANOMALY)
                     if self.ueba.persist:
                         import asyncio
                         asyncio.create_task(
                             self.ueba.save_event(ev.user, ip, anomaly)
                         )
                 else:
+                    # Zero-trust: normal login from known IP improves trust
+                    if self.zero_trust and ev.user:
+                        from .zero_trust import TrustSignal
+                        from .ueba import UserProfile
+                        profile = self.ueba.get_profile(ev.user)
+                        signal  = (TrustSignal.KNOWN_IP_LOGIN
+                                   if (profile and ip in (profile.get("known_ips") or {}))
+                                   else TrustSignal.UNKNOWN_IP_LOGIN)
+                        self.zero_trust.apply_signal(ev.user, "user", signal)
                     if self.ueba.persist:
                         import asyncio
                         asyncio.create_task(
@@ -673,7 +711,8 @@ class Detector:
             r_cf = self.rules.get("cloud.signin_brute_force")
             fail_count = sum(1 for ts, _ in st.fails
                              if t - ts <= self.window_sec)
-            if r_cf and r_cf.enabled and fail_count >= r_cf.effective_threshold:
+            if r_cf and r_cf.enabled and fail_count >= self._zt_threshold(
+                    ip, "ip", r_cf.effective_threshold):
                 sev = r_cf.effective_severity
                 reasons.append(
                     f"cloud_signin_brute_force ({provider}): "
@@ -692,6 +731,10 @@ class Detector:
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
             self._kc_update(ip, "CLOUD_MFA_FAIL", geo=geo, severity="HIGH")
+            if self.zero_trust and ev.user:
+                from .zero_trust import TrustSignal
+                self.zero_trust.apply_signal(ev.user, "user", TrustSignal.MFA_FAILURE)
+                self.zero_trust.apply_signal(ip, "ip", TrustSignal.MFA_FAILURE)
 
         elif ev.kind == "CLOUD_RISKY_SIGNIN":
             risk_state = meta.get("risk_state", "unknown")
@@ -704,6 +747,10 @@ class Detector:
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
             self._kc_update(ip, "CLOUD_RISKY_SIGNIN", geo=geo, severity="HIGH")
+            if self.zero_trust and ev.user:
+                from .zero_trust import TrustSignal
+                self.zero_trust.apply_signal(ev.user, "user", TrustSignal.CLOUD_RISK_FLAG)
+                self.zero_trust.apply_signal(ip, "ip", TrustSignal.CLOUD_RISK_FLAG)
 
         elif ev.kind == "CLOUD_SIGNIN_SUCCESS":
             # Track success after repeated failures (possible breach)

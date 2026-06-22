@@ -407,5 +407,14 @@
       "client_secret": "",
       "lookback_sec": 300
     }
+  },
+  "zero_trust": {
+    "enabled": true,
+    "initial_score": 0.8,
+    "min_score": 0.05,
+    "recovery_per_day": 0.05,
+    "persist": true,
+    "max_entities": 50000,
+    "apply_to_threshold": true
   }
 }
