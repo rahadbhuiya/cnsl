@@ -884,7 +884,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <!--  ML  -->
 <div class="page" id="page-ml">
 
-  <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
     <div class="stat">
       <div class="stat-lbl">ML Detector</div>
       <div style="margin-top:6px" id="ml-status-pill"><span class="pill pill-off">disabled</span></div>
@@ -895,14 +895,20 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <div class="stat">
       <div class="stat-lbl">Tracked IPs</div>
-      <div class="stat-val c-blue" id="ml-tracked">—</div>
+      <div class="stat-val c-blue" id="ml-tracked">--</div>
+    </div>
+    <div class="stat">
+      <div class="stat-lbl">ML Alerts (recent)</div>
+      <div class="stat-val c-amber" id="ml-alert-count">--</div>
     </div>
   </div>
 
+  <!-- Training progress -->
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head">
-      <span class="tbl-head-title">Training progress</span>
+      <span class="tbl-head-title">Training Progress</span>
       <span style="font-size:11px;color:var(--muted)" id="ml-sample-lbl"></span>
+      <button onclick="mlTriggerRetrain()" id="ml-retrain-btn" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Retrain Now</button>
     </div>
     <div style="padding:14px 16px">
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
@@ -914,6 +920,65 @@ tr:hover td{background:rgba(255,255,255,.02);}
         Last trained: <span id="ml-last-trained" style="color:var(--text)">never</span>
       </div>
     </div>
+  </div>
+
+  <!-- Parameter tuning -->
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
+      <span class="tbl-head-title">Parameter Tuning</span>
+      <span style="font-size:11px;color:var(--muted)">Changes apply immediately -- no restart needed</span>
+    </div>
+    <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">
+          Contamination (0.001 - 0.5)
+          <span style="font-size:10px;color:var(--muted)"> -- expected fraction of anomalies</span>
+        </label>
+        <input id="ml-param-contamination" type="number" step="0.01" min="0.001" max="0.5"
+          style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">
+          Anomaly Score Threshold
+          <span style="font-size:10px;color:var(--muted)"> -- lower = stricter</span>
+        </label>
+        <input id="ml-param-threshold" type="number" step="0.01" min="-1" max="0"
+          style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">
+          Min Samples to Train
+        </label>
+        <input id="ml-param-min-samples" type="number" step="10" min="10"
+          style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">
+          Retrain Interval (seconds)
+        </label>
+        <input id="ml-param-retrain" type="number" step="60" min="60"
+          style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px">
+        <button onclick="mlSaveParams()" style="padding:6px 18px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Save Parameters</button>
+        <span id="ml-param-msg" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature importance -->
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Feature Importance (from recent alerts)</span></div>
+    <div id="ml-feature-bars" style="padding:14px 16px"></div>
+  </div>
+
+  <!-- Recent ML alerts -->
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Recent ML Anomalies</span></div>
+    <table>
+      <thead><tr><th>Time</th><th>IP</th><th>Score</th><th>Top Reasons</th></tr></thead>
+      <tbody id="ml-alerts-tbody"><tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr></tbody>
+    </table>
   </div>
 
   <div id="ml-disabled-note" style="display:none" class="banner banner-warn">
@@ -2298,26 +2363,105 @@ async function fetchFIM(){
 }
 
 async function fetchML(){
-  const d=await apiFetch('/api/ml-status');
-  console.log('[CNSL] /api/ml-status →', d);
-  if(!d)return;
+  const [d, alerts, feats] = await Promise.all([
+    apiFetch('/api/ml-status'),
+    apiFetch('/api/ml/alerts?limit=30'),
+    apiFetch('/api/ml/feature-stats'),
+  ]);
+  if(!d) return;
   const enabled = d.enabled === true;
-  $('ml-status-pill').innerHTML=enabled
-    ?'<span class="pill pill-on">enabled</span>'
-    :'<span class="pill pill-off">disabled</span>';
-  $('ml-disabled-note').style.display=enabled?'none':'flex';
-  if(!enabled)return;
+  $('ml-status-pill').innerHTML = enabled
+    ? '<span class="pill pill-on">enabled</span>'
+    : '<span class="pill pill-off">disabled</span>';
+  $('ml-disabled-note').style.display = enabled ? 'none' : 'flex';
+  if(!enabled) return;
   const trained = d.trained === true;
-  $('ml-trained-pill').innerHTML=trained
-    ?'<span class="pill pill-on">trained</span>'
-    :'<span class="pill pill-off">not trained</span>';
-  $('ml-tracked').textContent=d.tracked_ips??'0';
-  const cur=d.training_samples||0;
-  const min=d.min_samples||100;
-  const pct=Math.min(100,Math.round(cur/min*100));
-  $('ml-sample-count').textContent=cur+' / '+min;
-  $('ml-prog').style.width=pct+'%';
-  $('ml-last-trained').textContent=d.last_trained||'never';
+  $('ml-trained-pill').innerHTML = trained
+    ? '<span class="pill pill-on">trained</span>'
+    : '<span class="pill pill-off">not trained</span>';
+  $('ml-tracked').textContent     = d.tracked_ips     ?? '0';
+  $('ml-alert-count').textContent = d.recent_alert_count ?? '0';
+  const cur = d.training_samples || 0;
+  const min = d.min_samples || 100;
+  const pct = Math.min(100, Math.round(cur / min * 100));
+  $('ml-sample-count').textContent = cur + ' / ' + min;
+  $('ml-prog').style.width         = pct + '%';
+  $('ml-last-trained').textContent = d.last_trained || 'never';
+
+  // Populate param inputs with current values
+  if(document.getElementById('ml-param-contamination').value === ''){
+    $('ml-param-contamination').value = d.contamination ?? 0.05;
+    $('ml-param-threshold').value     = d.threshold     ?? -0.1;
+    $('ml-param-min-samples').value   = d.min_samples   ?? 100;
+    $('ml-param-retrain').value       = d.retrain_interval_sec ?? 3600;
+  }
+
+  // Feature importance bars
+  const featWrap = $('ml-feature-bars');
+  if(feats && Object.keys(feats).length){
+    const maxV = Math.max(...Object.values(feats));
+    featWrap.innerHTML = Object.entries(feats).slice(0, 10).map(([k, v]) => `
+      <div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:3px">
+          <span>${escHtml(k)}</span><span>${v}</span>
+        </div>
+        <div style="height:6px;background:var(--surface-2,#2a2a2a);border-radius:3px">
+          <div style="height:6px;width:${Math.round(v/maxV*100)}%;background:var(--accent);border-radius:3px"></div>
+        </div>
+      </div>`).join('');
+  } else {
+    featWrap.innerHTML = '<span style="font-size:12px;color:var(--muted)">No anomalies detected yet</span>';
+  }
+
+  // Recent alerts table
+  if(alerts && alerts.length){
+    $('ml-alerts-tbody').innerHTML = alerts.slice().reverse().map(a => {
+      const scorePct = Math.round(Math.abs(a.anomaly_score || 0) * 100);
+      const reasons  = (a.top_reasons || []).slice(0, 2).map(escHtml).join('; ');
+      return `<tr>
+        <td style="font-size:11px">${escHtml(a.ts || '')}</td>
+        <td><code>${escHtml(a.ip || '')}</code></td>
+        <td><span style="color:#f59e0b;font-weight:600">${scorePct}</span></td>
+        <td style="font-size:11px;color:var(--muted)">${reasons}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    $('ml-alerts-tbody').innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr>';
+  }
+}
+
+async function mlSaveParams(){
+  const msg = $('ml-param-msg');
+  const body = {
+    contamination:        parseFloat($('ml-param-contamination').value),
+    threshold:            parseFloat($('ml-param-threshold').value),
+    min_samples:          parseInt($('ml-param-min-samples').value, 10),
+    retrain_interval_sec: parseInt($('ml-param-retrain').value, 10),
+  };
+  const d = await apiFetch('/api/ml/params', {method:'PATCH', body: JSON.stringify(body)});
+  if(d && d.updated){
+    msg.textContent = 'Saved: ' + Object.keys(d.updated).join(', ');
+    msg.style.color = '#22c55e';
+  } else {
+    msg.textContent = 'Failed to save';
+    msg.style.color = '#ef4444';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+  fetchML();
+}
+
+async function mlTriggerRetrain(){
+  const btn = $('ml-retrain-btn');
+  btn.textContent = 'Retraining...';
+  btn.disabled    = true;
+  const d = await apiFetch('/api/ml/retrain', {method:'POST'});
+  if(d && d.ok){
+    btn.textContent = 'Started';
+    setTimeout(() => { btn.textContent = 'Retrain Now'; btn.disabled = false; fetchML(); }, 2000);
+  } else {
+    btn.textContent = d ? d.reason : 'Failed';
+    setTimeout(() => { btn.textContent = 'Retrain Now'; btn.disabled = false; }, 3000);
+  }
 }
 
 //  Actions 
@@ -3894,6 +4038,60 @@ async def start_dashboard(
         if ml_detector is None:
             return web.json_response({"enabled": False})
         return web.json_response(ml_detector.status())
+
+    @router.patch("/api/ml/params")
+    async def api_ml_params(req: web.Request) -> web.Response:
+        """Live-update ML parameters without restart."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if ml_detector is None:
+            return web.json_response({"error": "ML not enabled"}, status=400)
+        try:
+            body = await req.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON"}, status=400)
+        result = ml_detector.update_params(
+            contamination        = body.get("contamination"),
+            threshold            = body.get("threshold"),
+            min_samples          = body.get("min_samples"),
+            retrain_interval_sec = body.get("retrain_interval_sec"),
+        )
+        await logger.log("ml_params_updated", result.get("updated", {}))
+        return web.json_response(result)
+
+    @router.post("/api/ml/retrain")
+    async def api_ml_retrain(req: web.Request) -> web.Response:
+        """Force an immediate ML retrain."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if ml_detector is None:
+            return web.json_response({"error": "ML not enabled"}, status=400)
+        result = await ml_detector.trigger_retrain()
+        await logger.log("ml_retrain_triggered", result)
+        return web.json_response(result)
+
+    @router.get("/api/ml/alerts")
+    async def api_ml_alerts(req: web.Request) -> web.Response:
+        """Return recent ML anomaly alerts."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if ml_detector is None:
+            return web.json_response([])
+        limit = int(req.rel_url.query.get("limit", 50))
+        return web.json_response(ml_detector.recent_alerts_list(limit=limit))
+
+    @router.get("/api/ml/feature-stats")
+    async def api_ml_feature_stats(req: web.Request) -> web.Response:
+        """Return feature importance counts from recent ML alerts."""
+        if (r := _rate_check(req)): return r
+        _, err = _require_auth(req)
+        if err: return err
+        if ml_detector is None:
+            return web.json_response({})
+        return web.json_response(ml_detector.feature_stats())
 
     @router.get("/api/honeypot")
     async def api_honeypot_status(req: web.Request) -> web.Response:

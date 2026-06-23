@@ -223,6 +223,9 @@ class MLDetector:
         self._last_alert: Dict[str, float] = {}
         self._alert_cooldown = 300  # 5 minutes
 
+        # Recent alert history for dashboard display (max 200)
+        self._recent_alerts: deque = deque(maxlen=200)
+
     async def ingest(self, ev: Event) -> Optional[MLAlert]:
         """Process one event. Returns MLAlert if anomaly detected."""
         if not self.enabled or not ev.src_ip:
@@ -269,6 +272,7 @@ class MLDetector:
             ts=now(),
         )
         await self.logger.log("ml_anomaly", alert.to_dict())
+        self._recent_alerts.append(alert.to_dict())
         return alert
 
     async def _retrain(self) -> None:
@@ -372,4 +376,69 @@ class MLDetector:
             "min_samples":      self.min_samples,
             "last_trained":     iso_time(self._last_train) if self._trained and self._last_train else None,
             "tracked_ips":      len(self._accumulators),
+            "contamination":    self.contamination,
+            "threshold":        self.threshold,
+            "retrain_interval_sec": self.retrain_sec,
+            "recent_alert_count":   len(self._recent_alerts),
         }
+
+    def update_params(
+        self,
+        contamination:    Optional[float] = None,
+        threshold:        Optional[float] = None,
+        min_samples:      Optional[int]   = None,
+        retrain_interval_sec: Optional[int] = None,
+    ) -> Dict:
+        """
+        Live-update ML parameters without restart.
+        If contamination changes and the model is trained, it will be
+        re-fit on next retrain cycle with the new value.
+        Returns the updated status dict.
+        """
+        changed = {}
+        if contamination is not None:
+            self.contamination = max(0.001, min(0.5, float(contamination)))
+            changed["contamination"] = self.contamination
+        if threshold is not None:
+            self.threshold = float(threshold)
+            changed["threshold"] = self.threshold
+        if min_samples is not None:
+            self.min_samples = max(10, int(min_samples))
+            changed["min_samples"] = self.min_samples
+        if retrain_interval_sec is not None:
+            self.retrain_sec = max(60, int(retrain_interval_sec))
+            changed["retrain_interval_sec"] = self.retrain_sec
+        return {"updated": changed, **self.status()}
+
+    async def trigger_retrain(self) -> Dict:
+        """
+        Force an immediate retrain regardless of the retrain interval.
+        Returns a status dict indicating whether training started.
+        """
+        if not self.enabled:
+            return {"ok": False, "reason": "ML not enabled"}
+        if len(self._training_data) < self.min_samples:
+            return {
+                "ok": False,
+                "reason": f"Not enough samples ({len(self._training_data)} < {self.min_samples})",
+            }
+        self._last_train = 0.0  # force retrain on next ingest
+        asyncio.ensure_future(self._retrain())
+        return {"ok": True, "samples": len(self._training_data)}
+
+    def recent_alerts_list(self, limit: int = 50) -> List[Dict]:
+        """Return recent ML alerts for the dashboard."""
+        return list(self._recent_alerts)[-limit:]
+
+    def feature_stats(self) -> Dict:
+        """
+        Aggregate feature importance from recent alerts.
+        Returns {feature_name: count_of_times_it_was_a_top_reason}.
+        """
+        counts: Dict[str, int] = {}
+        for alert in self._recent_alerts:
+            for reason in alert.get("top_reasons", []):
+                key = reason.split(":")[0].strip()
+                counts[key] = counts.get(key, 0) + 1
+        # Sort by count descending
+        return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))

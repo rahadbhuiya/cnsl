@@ -1,128 +1,98 @@
-# Architecture
+# CNSL Architecture
+
+## Overview
+
+```
+Log Sources --> Parsers --> Queue --> Detector --> Correlator --> Blocker
+                                        |               |
+                                   Kill Chain      Notifier
+                                   Pattern Learner
+                                   Zero-Trust
+                                        |
+                                  Dashboard (Web UI)
+                                  SIEM Router (push)
+                                  Reporter
+```
 
 ## Module Map
 
 ```
 cnsl/
-├── models.py            Event, Detection dataclasses + constants
-├── config.py            Config loading, deep merge, typed accessors
-├── validator.py         Startup config validation with actionable errors
-├── logger.py            Async JSON logger (text labels, no emoji)
-│
-├── parsers.py           auth.log + tcpdump line parsers
-├── log_sources.py       nginx, apache, mysql, ufw, syslog parsers
-├── sources.py           Async log file tailers (inotify-style)
-├── syslog_receiver.py   UDP/TCP syslog server (RFC 3164 / RFC 5424)
-│
-├── normalizer.py        ECS-compatible event normalization + CEF export
-├── search_engine.py     KQL-like search, aggregations, Elasticsearch push
-│
-├── detector.py          Stateful per-IP detection engine (all rule evaluation)
-├── correlator.py        Cross-source correlation (6 rules, 60s window)
-├── ml_detector.py       ML anomaly detection (IsolationForest, auto-trains)
-├── threat_intel.py      AbuseIPDB lookups + behavioral baseline
-│
-├── blocker.py           iptables / ipset blocking backend
-├── honeypot.py          Fake SSH server (40+ commands, virtual filesystem)
-├── redis_sync.py        Distributed blocklist via Redis pub/sub
-│
-├── geoip.py             GeoIP enrichment (MaxMind offline + ip-api.com fallback)
-├── assets.py            Passive asset inventory via network events
-├── fim.py               File Integrity Monitoring (recursive directory watch)
-│
-├── auth.py              JWT authentication (bcrypt password hashes)
-├── rbac.py              Role-based access control (viewer/analyst/auditor/admin)
-├── dashboard.py         Web dashboard + REST API + SSE live feed
-├── metrics.py           Prometheus metrics (counters + gauges)
-├── grafana.py           Grafana dashboard JSON template generator
-├── reporter.py          PDF / HTML compliance reports (SOC2, ISO27001, PCI-DSS)
-├── notify.py            Telegram, Discord, Slack, Email, generic webhook
-├── store.py             SQLite async persistence (aiosqlite)
-└── engine.py            Main async event loop + CLI argument parser
+-- __init__.py              package version (2.8.0)
+-- __main__.py              python -m cnsl entrypoint
+--
+-- models.py                Event, Detection dataclasses
+-- config.py                config loading and defaults
+-- logger.py                async JSON logger
+--
+-- parsers.py               auth.log + tcpdump parsers
+-- log_sources.py           nginx, mysql, ufw, syslog parsers + file tailer
+-- syslog_receiver.py       UDP/TCP syslog ingestion (RFC 3164/5424)
+-- kafka_consumer.py        Kafka log ingestion
+-- agent.py                 remote log forwarder (WebSocket client)
+--
+-- detector.py              per-IP stateful detection engine
+-- correlator.py            cross-source correlation (6 rules)
+-- rules.py                 rule engine (14 built-in rules)
+-- normalizer.py            ECS schema normalization
+--
+-- kill_chain.py            attack kill chain tracker (7 stages)
+-- pattern_learner.py       automated pattern discovery + suggested rules
+-- zero_trust.py            per-entity trust scoring
+-- cloud_identity.py        AWS CloudTrail + Azure AD sign-in polling
+-- federation.py            multi-node detection sharing (Redis pub/sub)
+--
+-- ml_detector.py           ML anomaly detection (IsolationForest)
+-- ueba.py                  user/entity behavior analytics
+-- threat_feed.py           community threat feeds (6 feeds, CIDR matching)
+-- threat_intel.py          AbuseIPDB + behavioral baseline
+--
+-- blocker.py               iptables/ipset blocking backend
+-- honeypot.py              fake SSH server (40+ commands)
+-- active_response.py       honeypot redirect orchestration
+--
+-- siem_connectors.py       Splunk HEC + Sentinel + Webhook push
+-- es_pusher.py             Elasticsearch/OpenSearch bulk push
+-- redis_sync.py            distributed blocklist sync
+-- federation.py            cross-node detection signal sharing
+--
+-- dashboard.py             web UI + REST API + SSE/WebSocket (4000+ lines)
+-- search_engine.py         KQL-like full-text search
+-- reporter.py              PDF/HTML/JSON compliance reports
+-- metrics.py               Prometheus metrics
+--
+-- store.py                 SQLite-backed persistent state
+-- cases.py                 security case management
+-- fim_engine.py            file integrity monitoring
+-- asset_inventory.py       passive asset discovery
+-- geoip.py                 GeoIP enrichment
+--
+-- auth.py                  JWT + 2FA authentication
+-- rbac.py                  role-based access control
+-- rate_limiter.py          per-IP rate limiting
+-- tenants.py               multi-tenant support
+-- huddle_integration.py    load balancing across nodes
 ```
 
----
+## Data Flow
 
-## Event Flow
+1. Log sources (auth.log, nginx, mysql, ufw, syslog, Kafka, cloud APIs) are tailed or polled by source modules.
+2. Each line is parsed into an `Event` (ts, source, kind, src_ip, user, raw, meta).
+3. Events are put into a shared `asyncio.Queue`.
+4. `engine_loop()` drains the queue and calls `detector.handle(ev)`.
+5. Detector routes by `ev.kind` to the appropriate handler (`_on_ssh_fail`, `_on_web_event`, etc.).
+6. Each handler updates per-IP state, evaluates rules, and calls `_maybe_fire()`.
+7. `_maybe_fire()` creates a `Detection`, logs it, notifies, and optionally blocks.
+8. `Correlator` runs cross-source rules after every detection.
+9. Kill chain, pattern learner, zero-trust, federation, and SIEM router are called at each detection point.
+10. Dashboard reads from the store and live detector state via REST API and SSE.
 
-```
-Log Files / Network / Remote Syslog
-           │
-           ▼
-    parsers / log_sources            ← parse raw lines into Event objects
-           │
-           ▼
-    asyncio.Queue  (maxsize=10000)   ← backpressure — drops when full
-           │
-           ▼
-    engine_loop()
-      │
-      ├── normalizer.py              ← attach ECS schema to ev.meta["_ecs"]
-      │
-      ├── detector.handle(ev)
-      │     ├── country_block check  ← immediate HIGH block if in blocked list
-      │     ├── per-IP state update  ← sliding windows (fails, users, web hits)
-      │     ├── rule evaluation      ← brute-force, stuffing, breach, web, db, fw
-      │     ├── AbuseIPDB pre-check  ← known-bad IPs flagged on first event
-      │     ├── GeoIP enrichment     ← country, city, ISP, proxy flag
-      │     ├── correlator.ingest()  ← cross-source rules (6 rules)
-      │     ├── baseline.observe()   ← behavioral anomaly detection
-      │     └── incident → log → store → notify → block (if HIGH)
-      │
-      └── ml_detector.ingest(ev)     ← feature extraction + anomaly score
-           │
-           └── (on anomaly) → incident logged
-```
+## Key Design Decisions
 
----
+**Async throughout.** The engine, dashboard, log tailers, and all network I/O use `asyncio`. No threads.
 
-## Concurrency Model
+**Dry-run by default.** `actions.dry_run: true` in config means no real iptables changes until the operator explicitly enables execution.
 
-CNSL is a single-process async application built on `asyncio`.
+**SQLite persistence.** All incident history, FIM baselines, kill chain records, trust scores, and pattern suggestions survive restarts.
 
-- All I/O (log tailing, HTTP API, GeoIP lookups, notifications) is non-blocking
-- Blocking operations (iptables, SMTP, ML training) run in a thread executor
-- One `asyncio.Queue` decouples producers (parsers) from consumers (detector)
-- Queue `maxsize=10000` provides backpressure — events are dropped (not buffered forever) if the engine falls behind
-
----
-
-## Persistence
-
-SQLite via `aiosqlite`. Schema:
-
-| Table | Columns | Purpose |
-|:---|:---|:---|
-| `incidents` | id, ts, ip, severity, kind, reasons, fail_count, geo_json | Incident history |
-| `blocks` | ip, blocked_at, unblock_at, reason, dry_run | Active + expired blocks |
-| `fim_baseline` | path, mtime, size, sha256, permissions | FIM file state |
-
-The `store.init()` method runs `CREATE TABLE IF NOT EXISTS` and auto-migrates
-old schemas (adds missing columns with `ALTER TABLE ADD COLUMN`).
-
----
-
-## Dashboard (SSE + REST)
-
-The dashboard is a single-file async HTTP server built on `aiohttp`.
-
-- Static HTML/JS/CSS is served inline (no build step, no npm)
-- Live events stream via SSE (`/api/events/stream`) — the browser keeps one
-  long-lived connection open
-- REST endpoints serve JSON from SQLite or in-memory state
-- JWT tokens are issued on login and validated on every request
-- RBAC checks happen at the route handler level before any data is returned
-
----
-
-## Scaling
-
-CNSL is designed for single-server deployment. For multi-server setups:
-
-- Run one CNSL instance per server
-- Enable Redis (`"redis": { "enabled": true }`) to share the blocklist
-- Blocks propagated via Redis pub/sub are applied locally by each node
-- Unblocks are also propagated — the cluster stays consistent
-
-For high-volume environments (>10k events/sec) consider Kafka ingestion
-(on the roadmap) or pre-filtering with a BPF/eBPF layer before CNSL.
+**No external dependencies for core detection.** Core detection works with stdlib only. Optional packages (aiohttp, scikit-learn, MaxMind, Redis) unlock additional features but are never required.

@@ -4002,3 +4002,180 @@ class TestDashboardSignatureV4:
         from cnsl.dashboard import start_dashboard
         sig = inspect.signature(start_dashboard)
         assert "cloud_identity" in sig.parameters
+
+# v2.9.0 -- ML tuning UI
+
+
+class TestMLDetectorRecentAlerts:
+    """_recent_alerts deque is populated and bounded."""
+
+    def _make_detector(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "min_samples": 1,
+                      "contamination": 0.5, "anomaly_score_threshold": 0.0}}
+        return MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+
+    def test_recent_alerts_starts_empty(self):
+        det = self._make_detector()
+        assert len(det._recent_alerts) == 0
+
+    def test_recent_alerts_list_returns_empty(self):
+        det = self._make_detector()
+        assert det.recent_alerts_list() == []
+
+    def test_feature_stats_empty_when_no_alerts(self):
+        det = self._make_detector()
+        assert det.feature_stats() == {}
+
+
+class TestMLDetectorUpdateParams:
+    """update_params() applies valid changes and clamps values."""
+
+    def _make_detector(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "min_samples": 100,
+                      "contamination": 0.05, "anomaly_score_threshold": -0.1,
+                      "retrain_interval_sec": 3600}}
+        return MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+
+    def test_update_contamination(self):
+        det = self._make_detector()
+        result = det.update_params(contamination=0.1)
+        assert det.contamination == 0.1
+        assert result["updated"]["contamination"] == 0.1
+
+    def test_update_threshold(self):
+        det = self._make_detector()
+        det.update_params(threshold=-0.2)
+        assert det.threshold == -0.2
+
+    def test_update_min_samples(self):
+        det = self._make_detector()
+        det.update_params(min_samples=200)
+        assert det.min_samples == 200
+
+    def test_update_retrain_interval(self):
+        det = self._make_detector()
+        det.update_params(retrain_interval_sec=7200)
+        assert det.retrain_sec == 7200
+
+    def test_contamination_clamped_to_min(self):
+        det = self._make_detector()
+        det.update_params(contamination=-5.0)
+        assert det.contamination == 0.001
+
+    def test_contamination_clamped_to_max(self):
+        det = self._make_detector()
+        det.update_params(contamination=0.99)
+        assert det.contamination == 0.5
+
+    def test_min_samples_clamped_to_min(self):
+        det = self._make_detector()
+        det.update_params(min_samples=0)
+        assert det.min_samples == 10
+
+    def test_retrain_sec_clamped_to_min(self):
+        det = self._make_detector()
+        det.update_params(retrain_interval_sec=0)
+        assert det.retrain_sec == 60
+
+    def test_none_values_not_applied(self):
+        det = self._make_detector()
+        original = det.contamination
+        det.update_params(contamination=None)
+        assert det.contamination == original
+
+    def test_status_reflects_updated_params(self):
+        det = self._make_detector()
+        det.update_params(contamination=0.15, threshold=-0.2)
+        status = det.status()
+        assert status["contamination"] == 0.15
+        assert status["threshold"] == -0.2
+
+
+class TestMLDetectorTriggerRetrain:
+    """trigger_retrain() returns correct ok/fail status."""
+
+    def _make_detector(self, min_samples=100):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "min_samples": min_samples,
+                      "contamination": 0.05, "anomaly_score_threshold": -0.1}}
+        return MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+
+    def test_trigger_retrain_disabled_returns_false(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        det = MLDetector({"ml": {"enabled": False}}, JsonLogger("/dev/null", verbose=False))
+        result = _run(det.trigger_retrain())
+        assert result["ok"] is False
+        assert "enabled" in result["reason"]
+
+    def test_trigger_retrain_insufficient_samples_returns_false(self):
+        det = self._make_detector(min_samples=100)
+        # No training data accumulated
+        result = _run(det.trigger_retrain())
+        assert result["ok"] is False
+        assert "samples" in result["reason"].lower()
+
+
+class TestMLStatusIncludesNewFields:
+    """status() returns the new fields added for the tuning UI."""
+
+    def test_status_has_contamination(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "contamination": 0.07}}
+        det = MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+        s   = det.status()
+        assert "contamination" in s
+        assert s["contamination"] == 0.07
+
+    def test_status_has_threshold(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "anomaly_score_threshold": -0.15}}
+        det = MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+        assert det.status()["threshold"] == -0.15
+
+    def test_status_has_recent_alert_count(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        det = MLDetector({"ml": {"enabled": True}}, JsonLogger("/dev/null", verbose=False))
+        assert "recent_alert_count" in det.status()
+        assert det.status()["recent_alert_count"] == 0
+
+    def test_status_has_retrain_interval_sec(self):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "retrain_interval_sec": 7200}}
+        det = MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+        assert det.status()["retrain_interval_sec"] == 7200
+
+
+class TestMLAPIRoutes:
+    """New ML API routes present in dashboard source."""
+
+    def _src(self):
+        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
+            return f.read()
+
+    def test_params_patch_route(self):
+        assert '"/api/ml/params"' in self._src()
+
+    def test_retrain_post_route(self):
+        assert '"/api/ml/retrain"' in self._src()
+
+    def test_alerts_get_route(self):
+        assert '"/api/ml/alerts"' in self._src()
+
+    def test_feature_stats_route(self):
+        assert '"/api/ml/feature-stats"' in self._src()
+
+    def test_ml_save_params_js(self):
+        assert "async function mlSaveParams()" in self._src()
+
+    def test_ml_trigger_retrain_js(self):
+        assert "async function mlTriggerRetrain()" in self._src()
