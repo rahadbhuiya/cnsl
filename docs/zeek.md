@@ -84,19 +84,19 @@ breach rules.
 
 ### Web Attacks (`http.log`)
 
-- **Exploit paths** — `/wp-login.php`, `/.env`, `/phpmyadmin`, path traversal, etc.
-- **Auth failures** — HTTP 401/403 responses
-- **Scanner user-agents** — sqlmap, nikto, nmap, masscan, gobuster, nuclei, etc.
-- **Directory enumeration** — HTTP 404 responses
+- **Exploit paths** -- `/wp-login.php`, `/.env`, `/phpmyadmin`, path traversal, etc.
+- **Auth failures** -- HTTP 401/403 responses
+- **Scanner user-agents** -- sqlmap, nikto, nmap, masscan, gobuster, nuclei, etc.
+- **Directory enumeration** -- HTTP 404 responses
 
 ### DNS Tunneling (`dns.log`)
 
 Flags queries with high [Shannon entropy](https://en.wikipedia.org/wiki/Entropy_(information_theory))
-in the subdomain — a strong indicator of DNS tunneling or data exfiltration.
+in the subdomain -- a strong indicator of DNS tunneling or data exfiltration.
 
 ```
-# Low entropy (normal):   www.google.com  → entropy ≈ 1.5
-# High entropy (tunnel):  x7Kq2mN9pR4wZ.evil.com → entropy ≈ 3.8
+# Low entropy (normal):   www.google.com  -> entropy ~= 1.5
+# High entropy (tunnel):  x7Kq2mN9pR4wZ.evil.com -> entropy ~= 3.8
 ```
 
 The threshold is configurable. Lower = more sensitive (more false positives),

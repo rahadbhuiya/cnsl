@@ -9,22 +9,22 @@ investigating and resolving alerts.
 Cases are created automatically from every HIGH severity detection, or manually
 from the dashboard for any incident. Each case has:
 
-- **Status** — open → investigating → closed / false_positive
-- **Severity** — LOW / MEDIUM / HIGH (inherited from detection)
-- **Assigned to** — any dashboard username
-- **Notes** — append-only timestamped analyst notes with full audit trail
-- **Linked incident** — traceability back to the original detection
+- **Status** -- open -> investigating -> closed / false_positive
+- **Severity** -- LOW / MEDIUM / HIGH (inherited from detection)
+- **Assigned to** -- any dashboard username
+- **Notes** -- append-only timestamped analyst notes with full audit trail
+- **Linked incident** -- traceability back to the original detection
 
 ## Case Lifecycle
 
 ```
          open
-          │
-          ▼
-    investigating  ←─── (reassign, add notes anytime)
-          │
-    ┌─────┴──────┐
-    ▼            ▼
+          |
+          v
+    investigating  <---- (reassign, add notes anytime)
+          |
+    +-----+------+
+    v            v
   closed   false_positive
 ```
 
@@ -41,7 +41,7 @@ Cases are created automatically for every **HIGH** severity incident:
 - Web exploit attempt
 - Cross-source correlation hits
 
-MEDIUM and LOW incidents do not auto-create cases — create them manually
+MEDIUM and LOW incidents do not auto-create cases -- create them manually
 from the dashboard if needed.
 
 ---
@@ -96,7 +96,7 @@ Response:
   "cases": [
     {
       "id": 1,
-      "title": "SSH Brute-Force — 45.33.32.156",
+      "title": "SSH Brute-Force -- 45.33.32.156",
       "status": "open",
       "severity": "HIGH",
       "src_ip": "45.33.32.156",
@@ -155,7 +155,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 ```json
 {
   "id": 1,
-  "title": "SSH Brute-Force — 45.33.32.156",
+  "title": "SSH Brute-Force -- 45.33.32.156",
   "status": "investigating",
   "severity": "HIGH",
   "src_ip": "45.33.32.156",
@@ -165,7 +165,7 @@ curl -H "Authorization: Bearer $TOKEN" \
       "id": 1,
       "case_id": 1,
       "author": "system (alice)",
-      "body": "Status changed: open → investigating",
+      "body": "Status changed: open -> investigating",
       "ts": 1748685700.0,
       "time": "2026-05-31T10:01:40Z"
     },
@@ -268,7 +268,7 @@ POST /api/cases/{id}/notes
 curl -s -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"body": "Checked threat intel — IP confirmed malicious. Blocking permanently."}' \
+  -d '{"body": "Checked threat intel -- IP confirmed malicious. Blocking permanently."}' \
   http://127.0.0.1:8765/api/cases/1/notes
 ```
 

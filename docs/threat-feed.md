@@ -2,18 +2,18 @@
 
 CNSL downloads known-bad IP lists from multiple public threat intelligence
 feeds and checks every incoming IP against them. Hits are flagged or blocked
-immediately — before detection thresholds are reached.
+immediately -- before detection thresholds are reached.
 
 ## Built-in Feeds
 
 | Feed | Key | Default | Type |
 |:---|:---|:---:|:---|
-| Emerging Threats Compromised IPs | `emerging_threats` | ✓ | Plain IPs |
-| Feodo Tracker Botnet C2 | `feodo_tracker` | ✓ | Plain IPs |
-| CINS Army Score | `cins_army` | ✓ | Plain IPs |
-| abuse.ch SSL Blacklist | `abuse_ch_sslbl` | ✓ | Plain IPs |
-| Spamhaus DROP | `spamhaus_drop` | — | CIDR |
-| Spamhaus EDROP | `spamhaus_edrop` | — | CIDR |
+| Emerging Threats Compromised IPs | `emerging_threats` | yes | Plain IPs |
+| Feodo Tracker Botnet C2 | `feodo_tracker` | yes | Plain IPs |
+| CINS Army Score | `cins_army` | yes | Plain IPs |
+| abuse.ch SSL Blacklist | `abuse_ch_sslbl` | yes | Plain IPs |
+| Spamhaus DROP | `spamhaus_drop` | -- | CIDR |
+| Spamhaus EDROP | `spamhaus_edrop` | -- | CIDR |
 
 All feeds are free and require no API key.
 
@@ -61,7 +61,7 @@ All feeds are free and require no API key.
    - Incident is logged and saved
    - Case is auto-created (HIGH severity)
    - Notification is sent
-   - If `auto_block: true` — IP is immediately blocked via iptables/ipset
+   - If `auto_block: true` -- IP is immediately blocked via iptables/ipset
 
 ---
 

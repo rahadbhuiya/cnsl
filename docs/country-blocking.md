@@ -2,7 +2,7 @@
 
 Block all traffic from specific countries **before** detection thresholds are reached.
 The first event from any IP in a blocked country immediately triggers a `HIGH` severity
-block — no need to accumulate fails.
+block -- no need to accumulate fails.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ are never blocked by any rule).
 3. The IP is blocked, a notification is sent, and the incident is saved to the database
 4. Subsequent events from the same IP are silently dropped (already blocked)
 
-The check runs once per IP per session — if the block expires and the same IP
+The check runs once per IP per session -- if the block expires and the same IP
 reconnects, it will be checked again.
 
 ## Log Format
@@ -96,7 +96,7 @@ Country blocking is a coarse tool. Use it when:
 - You are seeing sustained attack volume from specific regions
 - Combined with `--execute` mode for real blocking
 
-In dry-run mode (the default), blocks are logged but not applied — safe to test.
+In dry-run mode (the default), blocks are logged but not applied -- safe to test.
 
 Always add your own management IP to the top-level `allowlist` before enabling
 live blocking (`dry_run: false`).

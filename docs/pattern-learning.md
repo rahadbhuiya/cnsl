@@ -251,4 +251,4 @@ and noted that manual rule authoring did not scale. The pattern learner
 automates what was previously done by hand -- watching which event combinations
 reliably preceded attacks and encoding them as rules.
 
-See `../old-research/paper/paper.md` for the original research paper.
+CNSL originated as a research prototype. The original research paper is available in the separate `cnsl-research` repository.

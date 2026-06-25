@@ -7,16 +7,16 @@ log ingestion from multiple sources in a decoupled architecture.
 
 ```
 Log Producers                  Kafka               CNSL
-─────────────                  ─────               ────
-nginx → filebeat  ──────────→  auth_logs  ──────→  detection
-auth.log → logstash ─────────→ nginx_logs ──────→  pipeline
-app servers → fluentd ───────→ syslog     ──────→  alerts
-zeek → kafka producer ───────→ zeek_ssh   ──────→  dashboard
+-------------                  -----               ----
+nginx -> filebeat  ----------->  auth_logs  ------->  detection
+auth.log -> logstash ----------> nginx_logs ------->  pipeline
+app servers -> fluentd --------> syslog     ------->  alerts
+zeek -> kafka producer --------> zeek_ssh   ------->  dashboard
 ```
 
 CNSL supports two Kafka client libraries:
-- **aiokafka** (preferred — async, native Python)
-- **confluent-kafka** (fallback — C-based, higher throughput)
+- **aiokafka** (preferred -- async, native Python)
+- **confluent-kafka** (fallback -- C-based, higher throughput)
 
 ---
 
@@ -91,7 +91,7 @@ pip install confluent-kafka
 
 ## Sending Events to Kafka
 
-### From filebeat (auth.log → Kafka)
+### From filebeat (auth.log -> Kafka)
 
 ```yaml
 # /etc/filebeat/filebeat.yml

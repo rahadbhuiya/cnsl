@@ -48,7 +48,7 @@ Multiple anomalies can fire simultaneously and are reported together.
 ### Profile Building
 
 CNSL observes every successful SSH login. For each username it tracks:
-- Hour-of-day distribution (0–23)
+- Hour-of-day distribution (0-23)
 - Set of known source IPs with last-seen timestamps
 - Rolling 7-day daily login counts
 - Recent IPs in the lateral movement window
@@ -215,3 +215,17 @@ ueba_profiles:
 ueba_anomalies:
   id, ts, time, username, src_ip, reason, anomaly_type
 ```
+---
+
+## Zero-Trust Integration
+
+When UEBA detects an anomaly on a successful SSH login, the
+`ZeroTrustEngine` automatically applies a `UEBA_ANOMALY` signal
+(-0.20) to the **user's** trust score.
+
+When login is normal from a known IP, a `KNOWN_IP_LOGIN` signal
+(+0.05) is applied (small trust boost).
+
+This means a user who accumulates UEBA anomalies will have a lower
+trust score, and will trigger detection alerts with fewer events
+(via threshold scaling). See `docs/zero-trust.md` for full details.

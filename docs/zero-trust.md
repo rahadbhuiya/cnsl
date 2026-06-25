@@ -262,4 +262,4 @@ attacker" should be treated differently. This implementation uses
 behavioral evidence (UEBA, cloud risk, MFA) to build the identity-based
 trust score the paper described.
 
-See `../old-research/paper/paper.md` for the original research paper.
+CNSL originated as a research prototype. The original research paper is available in the separate `cnsl-research` repository.

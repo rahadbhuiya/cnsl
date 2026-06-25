@@ -228,5 +228,4 @@ Federation is the direct implementation of the research paper's listed
 future work item: *"multi-node federation, allowing CNSL instances
 across different hosts to correlate attacker behavior collectively."*
 
-See `../old-research/paper/paper.md` and `paper2.md` for the original
-research papers that first described this requirement.
+The original research papers are available in the separate `cnsl-research` repository.

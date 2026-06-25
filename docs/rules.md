@@ -2,7 +2,7 @@
 
 Every detection in CNSL is driven by a named rule with an id, severity,
 threshold, and window. Rules can be enabled/disabled and threshold-tuned
-at runtime via the dashboard API — no restart required.
+at runtime via the dashboard API -- no restart required.
 
 ## Built-in Rules
 
@@ -17,6 +17,14 @@ at runtime via the dashboard API — no restart required.
 | `db.brute_force` | Database Brute Force | MEDIUM | 5 DB failures | 60s |
 | `fw.honeypot_port` | Honeypot Port Hit | HIGH | 1 connection | instant |
 | `net.repeat_offender` | Repeat Offender Escalation | HIGH | 3 incidents | 3600s |
+| `cloud.signin_brute_force` | Cloud Sign-in Brute Force | MEDIUM | 5 failures | 300s |
+| `cloud.mfa_failure` | Cloud MFA Failure / Bypass | HIGH | 1 failure | instant |
+| `cloud.risky_signin` | Cloud Risky Sign-in | HIGH | 1 flag | instant |
+| `cloud.signin_breach` | Cloud Sign-in Breach | HIGH | 3 prior failures | 300s |
+| `cloud.impossible_travel` | Cloud Impossible Travel | HIGH | 1 event | instant |
+
+Cloud rules (added in v2.6.0) apply to AWS CloudTrail and Azure AD events.
+All 14 rules can be adjusted or disabled from the dashboard Rules tab or via `PATCH /api/rules/{rule_id}`.
 
 ---
 
@@ -39,7 +47,7 @@ Unknown rule ids are silently ignored.
 }
 ```
 
-All four fields are optional — only specify what you want to change.
+All four fields are optional -- only specify what you want to change.
 
 ---
 
@@ -141,7 +149,7 @@ curl -s -X POST \
 
 ## Runtime Behaviour
 
-- Changes take effect **immediately** — the next event processed will use the new threshold/severity
+- Changes take effect **immediately** -- the next event processed will use the new threshold/severity
 - Overrides survive for the lifetime of the process; they are not persisted to the database
 - To make changes permanent, add them to `config.json` under `"rules"`
 - Disabling a rule means its events are still counted in state, but no alert is raised

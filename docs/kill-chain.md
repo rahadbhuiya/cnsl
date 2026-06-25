@@ -212,7 +212,7 @@ CREATE TABLE kc_chains (
 The kill chain tracker is the implementation of the core research thesis from the
 CNSL paper: *"intent-based detection"* -- tracking what an attacker is trying to
 accomplish rather than just counting individual events. The paper called this the
-*"cognitive layer"* -- the part of CNSL that reasons about attacker intent across
+*"correlated layer"* -- the part of CNSL that reasons about attacker intent across
 multiple log sources over time.
 
-See `../old-research/paper/paper.md` for the original research paper.
+CNSL originated as a research prototype. The original research paper is available in the separate `cnsl-research` repository.

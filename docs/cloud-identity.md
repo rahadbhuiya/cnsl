@@ -256,5 +256,4 @@ research paper. The paper noted that identity-based attacks against cloud
 accounts were increasingly common but outside the scope of host-based
 detection. These connectors implement that future work item directly.
 
-See `../old-research/paper/paper2.md` for the enterprise paper that
-first described this requirement.
+The enterprise version of the research paper is available in the separate `cnsl-research` repository.

@@ -1,4 +1,4 @@
-# CNSL Agent — Remote Log Forwarding
+# CNSL Agent -- Remote Log Forwarding
 
 The CNSL agent is a lightweight process that runs on remote servers and
 forwards log events to a central CNSL instance over WebSocket. This lets
@@ -8,20 +8,20 @@ a single CNSL instance protect an entire fleet.
 
 ```
 Remote server 1          Remote server 2
-┌─────────────┐         ┌─────────────┐
-│  cnsl.agent │         │  cnsl.agent │
-│  tails:     │         │  tails:     │
-│  auth.log   │         │  auth.log   │
-│  nginx.log  │   WS    │  syslog     │
-└──────┬──────┘         └──────┬──────┘
-       │  wss://cnsl.example.com/ws/agent
-       └──────────────┬────────┘
-                ┌─────▼──────┐
-                │  CNSL      │
-                │  /ws/agent │
-                │  detector  │
-                │  dashboard │
-                └────────────┘
++-------------+         +-------------+
+|  cnsl.agent |         |  cnsl.agent |
+|  tails:     |         |  tails:     |
+|  auth.log   |         |  auth.log   |
+|  nginx.log  |   WS    |  syslog     |
++------+------+         +------+------+
+       |  wss://cnsl.example.com/ws/agent
+       +--------------+--------+
+                +-----v------+
+                |  CNSL      |
+                |  /ws/agent |
+                |  detector  |
+                |  dashboard |
+                +------------+
 ```
 
 Events from all agents flow through the same detection pipeline, GeoIP
@@ -34,7 +34,7 @@ enrichment, UEBA, threat feed checks, and notification channels.
 **On each remote server:**
 
 ```bash
-# Install CNSL (minimal — no optional deps needed)
+# Install CNSL (minimal -- no optional deps needed)
 pip install cnsl
 
 # Or from source
@@ -172,7 +172,7 @@ ws.send(JSON.stringify({ type: "block",   ip: "1.2.3.4" }));
 ws.send(JSON.stringify({ type: "unblock", ip: "1.2.3.4" }));
 ```
 
-Permissions are enforced server-side — `block`/`unblock` require `analyst+` role.
+Permissions are enforced server-side -- `block`/`unblock` require `analyst+` role.
 
 ---
 

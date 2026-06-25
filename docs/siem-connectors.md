@@ -44,7 +44,7 @@ Payload format:
     "ip":             "45.33.32.1",
     "severity":       "HIGH",
     "reasons":        ["ssh_brute_force: 120 failures"],
-    "_cnsl_version":  "2.4.0",
+    "_cnsl_version":  "2.9.0",
     "_push_time":     "2024-11-15T02:14:33Z"
   }
 }
@@ -146,7 +146,7 @@ and any custom SOC ingest pipeline.
 Payload format:
 ```json
 {
-  "cnsl_version": "2.4.0",
+  "cnsl_version": "2.9.0",
   "push_time":    "2024-11-15T02:14:33Z",
   "event": {
     "ip":       "45.33.32.1",

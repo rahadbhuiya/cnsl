@@ -3941,12 +3941,9 @@ class TestGraphTabPresence:
     """Graph tab button and page exist in the dashboard HTML."""
 
     def _get_html(self):
-        import sys
-        sys.path.insert(0, "/home/claude/cnsl-v2.2.0")
-        from cnsl.dashboard import start_dashboard
-        import inspect
-        # Extract the HTML source from the function source directly
-        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
+        from pathlib import Path
+        dashboard_py = Path(__file__).parent.parent / "cnsl" / "dashboard.py"
+        with open(dashboard_py, encoding="utf-8") as f:
             return f.read()
 
     def test_graph_tab_button_present(self):
@@ -3982,8 +3979,8 @@ class TestGraphAPIRoute:
     """GET /api/graph route registered in start_dashboard."""
 
     def test_graph_api_route_registered(self):
-        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
-            src = f.read()
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "dashboard.py").read_text(encoding="utf-8")
         assert '"/api/graph"' in src, "/api/graph route missing from dashboard"
 
 
@@ -4159,8 +4156,8 @@ class TestMLAPIRoutes:
     """New ML API routes present in dashboard source."""
 
     def _src(self):
-        with open("/home/claude/cnsl-v2.2.0/cnsl/dashboard.py", encoding="utf-8") as f:
-            return f.read()
+        from pathlib import Path
+        return (Path(__file__).parent.parent / "cnsl" / "dashboard.py").read_text(encoding="utf-8")
 
     def test_params_patch_route(self):
         assert '"/api/ml/params"' in self._src()

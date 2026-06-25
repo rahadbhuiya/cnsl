@@ -13,8 +13,8 @@ and any RFC 6238 authenticator app. 2FA is per-user and optional.
 The login flow becomes two steps when 2FA is enabled:
 
 ```
-1. Enter username + password  →  partial token (valid 5 min)
-2. Enter 6-digit OTP code     →  full access token
+1. Enter username + password  ->  partial token (valid 5 min)
+2. Enter 6-digit OTP code     ->  full access token
 ```
 
 A partial token is only valid for the `/api/2fa/verify` endpoint.
@@ -24,7 +24,7 @@ It cannot access any other dashboard routes.
 
 ## Enabling 2FA (per user)
 
-### Step 1 — Generate QR code
+### Step 1 -- Generate QR code
 
 Log in to the dashboard, then call:
 
@@ -56,7 +56,7 @@ print('QR saved to cnsl_2fa_qr.png')
 " "otpauth://totp/CNSL:admin?secret=..."
 ```
 
-### Step 2 — Confirm with first OTP
+### Step 2 -- Confirm with first OTP
 
 After scanning, enter the first 6-digit code to activate:
 
@@ -68,7 +68,7 @@ curl -s -X POST \
   http://127.0.0.1:8765/api/2fa/confirm | jq .
 ```
 
-Success response — **save these backup codes now, they are shown only once:**
+Success response -- **save these backup codes now, they are shown only once:**
 
 ```json
 {
@@ -156,7 +156,7 @@ curl -s -X POST \
 
 | Endpoint | Method | Auth | Description |
 |:---|:---|:---|:---|
-| `/api/login` | POST | — | Step 1: password login. Returns `needs_2fa: true` + `partial_token` if 2FA enabled |
+| `/api/login` | POST | -- | Step 1: password login. Returns `needs_2fa: true` + `partial_token` if 2FA enabled |
 | `/api/2fa/verify` | POST | partial token | Step 2: submit OTP. Returns full access token |
 | `/api/2fa/setup` | POST | full token | Generate new TOTP secret, returns `otpauth://` URI |
 | `/api/2fa/confirm` | POST | full token | Confirm with first OTP, activates 2FA, returns backup codes |
@@ -167,7 +167,7 @@ curl -s -X POST \
 
 ## Security Notes
 
-- Partial tokens expire after **5 minutes** — if you do not complete 2FA in time, start over
-- TOTP allows ±1 window (±30 seconds) for clock drift
-- Backup codes are SHA-256 hashed before storage — even with DB access they cannot be recovered
-- Brute-force protection from the password step still applies — 5 failed password attempts locks the IP for 60 seconds
+- Partial tokens expire after **5 minutes** -- if you do not complete 2FA in time, start over
+- TOTP allows +/-1 window (+/-30 seconds) for clock drift
+- Backup codes are SHA-256 hashed before storage -- even with DB access they cannot be recovered
+- Brute-force protection from the password step still applies -- 5 failed password attempts locks the IP for 60 seconds

@@ -6,11 +6,11 @@ while sharing the underlying detection engine and infrastructure.
 
 ## When to Use Multi-Tenant
 
-- **MSSPs** — manage multiple customer environments from one CNSL instance
-- **Large organizations** — isolate departments (IT, Finance, HR) with different rules
-- **SaaS deployments** — offer CNSL as a service to multiple customers
+- **MSSPs** -- manage multiple customer environments from one CNSL instance
+- **Large organizations** -- isolate departments (IT, Finance, HR) with different rules
+- **SaaS deployments** -- offer CNSL as a service to multiple customers
 
-Single-tenant mode (default) is unchanged — existing configs work without modification.
+Single-tenant mode (default) is unchanged -- existing configs work without modification.
 
 ---
 
@@ -70,19 +70,19 @@ Single-tenant mode (default) is unchanged — existing configs work without modi
 
 | Resource | Isolated per tenant | Shared |
 |:---|:---:|:---:|
-| User accounts | ✓ | |
-| JWT tokens | ✓ (tenant_id claim) | |
-| Alert rules (overrides) | ✓ | |
-| Notifications | ✓ | |
-| Allowlist | ✓ | |
-| Country block config | ✓ | |
-| Incidents (DB rows) | ✓ (tenant_id column) | |
-| Cases | ✓ | |
-| Detection engine | | ✓ |
-| GeoIP | | ✓ |
-| Threat feed | | ✓ |
-| Log sources | | ✓ |
-| Blocker (iptables) | | ✓ |
+| User accounts | yes | |
+| JWT tokens | yes (tenant_id claim) | |
+| Alert rules (overrides) | yes | |
+| Notifications | yes | |
+| Allowlist | yes | |
+| Country block config | yes | |
+| Incidents (DB rows) | yes (tenant_id column) | |
+| Cases | yes | |
+| Detection engine | | yes |
+| GeoIP | | yes |
+| Threat feed | | yes |
+| Log sources | | yes |
+| Blocker (iptables) | | yes |
 
 ---
 

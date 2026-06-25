@@ -20,19 +20,22 @@ pip install -e ".[full]"
 ## Install Extras
 
 ```bash
-pip install -e .            # core only (pure stdlib — zero deps)
+pip install -e .            # core only (pure stdlib -- zero deps)
 pip install -e ".[full]"    # everything recommended
 pip install -e ".[dev]"     # + testing tools
 ```
 
 | Extra | Packages | Required for |
 |:---|:---|:---|
-| `full` | aiohttp, aiosqlite, pyyaml, bcrypt, sklearn, numpy, reportlab | Dashboard, DB, auth, ML, PDF reports |
+| `full` | aiohttp, aiosqlite, pyyaml, bcrypt, PyJWT, pyotp, scikit-learn, numpy, reportlab | Dashboard, DB, auth, 2FA, ML, PDF reports |
 | `auth` | bcrypt, PyJWT | Dashboard login |
+| `2fa` | pyotp | Two-factor authentication (TOTP) |
 | `db` | aiosqlite | SQLite persistence |
 | `geoip` | geoip2 | MaxMind offline GeoIP |
 | `ml` | scikit-learn, numpy | ML anomaly detection |
 | `reports` | reportlab | PDF compliance reports |
+| `redis` | redis | Distributed blocklist + federation |
+| `kafka` | aiokafka | Kafka log ingestion |
 | `dev` | pytest + all above | Running tests |
 
 > Always use the virtualenv Python (`venv/bin/python`) with `sudo`.
@@ -60,7 +63,7 @@ sudo nano /etc/systemd/system/cnsl.service
 
 ```ini
 [Unit]
-Description=CNSL — Correlated Network Security Layer
+Description=CNSL -- Correlated Network Security Layer
 After=network.target redis.service
 Wants=redis.service
 

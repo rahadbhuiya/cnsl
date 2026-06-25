@@ -2,17 +2,17 @@
 
 CNSL integrates with [HuddleCluster](https://github.com/rahadbhuiya/HuddleCluster)
 to provide intelligent, self-organizing load balancing across multiple CNSL instances.
-No central coordinator is needed — nodes self-organize using temperature scores.
+No central coordinator is needed -- nodes self-organize using temperature scores.
 
 ## How It Works
 
 ```
-CNSL-01 (inner ring)  ←── attacks flooding in ──→  temp 0.85 → evicted
-CNSL-02 (inner ring)  ←── normal traffic      ──→  temp 0.30 → stays
-CNSL-03 (outer ring)  ←── resting             ──→  temp 0.10 → promoted
+CNSL-01 (inner ring)  <--- attacks flooding in --->  temp 0.85 -> evicted
+CNSL-02 (inner ring)  <--- normal traffic      --->  temp 0.30 -> stays
+CNSL-03 (outer ring)  <--- resting             --->  temp 0.10 -> promoted
 ```
 
-**Temperature score** = CNSL load converted to [0.0 – 1.0]:
+**Temperature score** = CNSL load converted to [0.0 - 1.0]:
 
 | Metric | Weight |
 |:---|:---:|
@@ -22,9 +22,9 @@ CNSL-03 (outer ring)  ←── resting             ──→  temp 0.10 → pro
 
 | Temperature | Ring | Meaning |
 |:---|:---|:---|
-| 0.0 – 0.35 | Inner or outer | Idle — coolest node gets promoted |
-| 0.35 – 0.75 | Inner | Healthy, serving traffic |
-| 0.75+ | Outer (evicted) | Overloaded — resting, not serving |
+| 0.0 - 0.35 | Inner or outer | Idle -- coolest node gets promoted |
+| 0.35 - 0.75 | Inner | Healthy, serving traffic |
+| 0.75+ | Outer (evicted) | Overloaded -- resting, not serving |
 
 ---
 
@@ -61,8 +61,8 @@ pip install git+https://github.com/rahadbhuiya/HuddleCluster.git
 |:---|:---|
 | `nodes` | All CNSL instances in the cluster |
 | `max_inner_size` | How many nodes actively serve traffic at once |
-| `heat_threshold` | Temperature above this → node evicted to outer ring |
-| `cool_threshold` | Temperature below this → node promoted back to inner ring |
+| `heat_threshold` | Temperature above this -> node evicted to outer ring |
+| `cool_threshold` | Temperature below this -> node promoted back to inner ring |
 | `gossip` | UDP multicast temperature sharing (no central coordinator) |
 | `health_check` | Periodically GET `/api/stats` to verify nodes are alive |
 | `state_file` | Persist cluster state across CNSL restarts |
@@ -120,7 +120,7 @@ sudo ufw allow 7946/udp
 # docker-compose.yml (3-node cluster)
 services:
   cnsl-01:
-    image: cnsl:2.1.0
+    image: cnsl:2.9.0
     environment:
       - CNSL_NODE_ID=cnsl-01
     ports: ["8765:8765"]
@@ -128,7 +128,7 @@ services:
       - ./config/config-01.json:/etc/cnsl/config.json
 
   cnsl-02:
-    image: cnsl:2.1.0
+    image: cnsl:2.9.0
     environment:
       - CNSL_NODE_ID=cnsl-02
     ports: ["8766:8765"]
@@ -136,7 +136,7 @@ services:
       - ./config/config-02.json:/etc/cnsl/config.json
 
   cnsl-03:
-    image: cnsl:2.1.0
+    image: cnsl:2.9.0
     environment:
       - CNSL_NODE_ID=cnsl-03
     ports: ["8767:8765"]

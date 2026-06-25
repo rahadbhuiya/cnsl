@@ -367,3 +367,162 @@ python -m cnsl --grafana-export
 ```
 
 Import in Grafana: Dashboards → Import → Upload `cnsl_grafana_dashboard.json`
+
+---
+
+## Kill Chain Tracker
+
+```json
+{
+  "kill_chain": {
+    "enabled":       true,
+    "max_chains":    5000,
+    "stage_ttl_sec": 86400,
+    "persist":       true
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `true` | Enable kill chain tracking |
+| `max_chains` | `5000` | Max IP chains in memory (oldest evicted) |
+| `stage_ttl_sec` | `86400` | Chains not updated for this long are pruned |
+| `persist` | `true` | Save to SQLite on shutdown |
+
+---
+
+## Automated Pattern Learning
+
+```json
+{
+  "pattern_learning": {
+    "enabled":          true,
+    "lookback_sec":     300,
+    "min_occurrences":  5,
+    "max_suggestions":  50,
+    "persist":          true
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `true` | Enable pattern discovery |
+| `lookback_sec` | `300` | Event window to look back on each alert |
+| `min_occurrences` | `5` | Times a pattern must repeat to generate a suggestion |
+| `max_suggestions` | `50` | Max suggestions in memory (weakest evicted) |
+
+---
+
+## SIEM / SOAR Connectors
+
+```json
+{
+  "siem": {
+    "splunk": {
+      "enabled":      false,
+      "hec_url":      "https://splunk.example.com:8088",
+      "token":        "your-hec-token",
+      "index":        "cnsl",
+      "sourcetype":   "cnsl:incident",
+      "verify_ssl":   true,
+      "timeout_sec":  5,
+      "max_retries":  3,
+      "min_severity": "MEDIUM"
+    },
+    "sentinel": {
+      "enabled":      false,
+      "workspace_id": "your-workspace-id",
+      "shared_key":   "your-shared-key",
+      "log_type":     "CNSLIncident",
+      "min_severity": "MEDIUM"
+    },
+    "webhook": {
+      "enabled":      false,
+      "url":          "https://your-soar.example.com/api/ingest",
+      "bearer_token": "",
+      "verify_ssl":   true,
+      "min_severity": "MEDIUM"
+    }
+  }
+}
+```
+
+See `docs/siem-connectors.md` for full per-connector documentation.
+
+---
+
+## Multi-Node Federation
+
+Federation reuses the `redis` config block for connection details.
+
+```json
+{
+  "federation": {
+    "enabled":           true,
+    "min_severity":      "LOW",
+    "dedupe_window_sec": 5,
+    "max_remote_ips":    10000
+  }
+}
+```
+
+Requires `redis.enabled: true`. All nodes must share the same Redis instance and `key_prefix`.
+
+---
+
+## Cloud Identity Connectors
+
+```json
+{
+  "cloud_identity": {
+    "enabled":           true,
+    "poll_interval_sec": 60,
+    "aws": {
+      "enabled":           false,
+      "access_key_id":     "",
+      "secret_access_key": "",
+      "region":            "us-east-1",
+      "lookback_sec":      300
+    },
+    "azure_ad": {
+      "enabled":       false,
+      "tenant_id":     "",
+      "client_id":     "",
+      "client_secret": "",
+      "lookback_sec":  300
+    }
+  }
+}
+```
+
+See `docs/cloud-identity.md` for required IAM permissions and setup steps.
+
+---
+
+## Zero-Trust Trust Score Engine
+
+```json
+{
+  "zero_trust": {
+    "enabled":            true,
+    "initial_score":      0.8,
+    "min_score":          0.05,
+    "recovery_per_day":   0.05,
+    "persist":            true,
+    "max_entities":       50000,
+    "apply_to_threshold": true
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `true` | Enable zero-trust scoring |
+| `initial_score` | `0.8` | Starting score for new entities |
+| `min_score` | `0.05` | Floor -- score never drops below this |
+| `recovery_per_day` | `0.05` | Trust improvement per day of quiet |
+| `apply_to_threshold` | `true` | Whether to scale detection thresholds by trust score |
+
+See `docs/zero-trust.md` for full documentation.

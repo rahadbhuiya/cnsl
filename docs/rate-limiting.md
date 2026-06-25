@@ -6,15 +6,15 @@ against the login endpoint, and volumetric DDoS attacks.
 
 ## How It Works
 
-**Rate limiting** — sliding window per IP. Each IP gets N requests per
+**Rate limiting** -- sliding window per IP. Each IP gets N requests per
 window. Exceeding the limit returns `429 Too Many Requests` with a
 `Retry-After` header.
 
-**DDoS detection** — separate high-frequency counter per IP. If an IP
+**DDoS detection** -- separate high-frequency counter per IP. If an IP
 sends more than `ddos_threshold` requests in `ddos_window_sec` seconds,
 it is flagged as a DDoS source and optionally auto-blocked via iptables/ipset.
 
-**Per-endpoint limits** — stricter limits for sensitive endpoints like
+**Per-endpoint limits** -- stricter limits for sensitive endpoints like
 `/api/login` to prevent credential stuffing.
 
 ---
@@ -49,7 +49,7 @@ it is flagged as a DDoS source and optionally auto-blocked via iptables/ipset.
 | `auto_block` | Block DDoS IPs via iptables/ipset (default: true) |
 | `auto_block_duration_sec` | How long to block DDoS IPs (default: 900s = 15min) |
 | `whitelist` | IPs never rate-limited (your management IPs, load balancers) |
-| `endpoints` | Per-endpoint overrides — override `requests_per_min` and `window_sec` |
+| `endpoints` | Per-endpoint overrides -- override `requests_per_min` and `window_sec` |
 
 ---
 

@@ -1,6 +1,6 @@
 # Notifications
 
-CNSL supports five notification channels. All are independent — a failure in one
+CNSL supports five notification channels. All are independent -- a failure in one
 never affects the others. Configure under `"notifications"` in your config file.
 
 ## Severity Filter
@@ -42,14 +42,14 @@ Send a daily summary of all alerts to Telegram and/or Slack:
 }
 ```
 
-- `hour` — UTC hour to send the digest (0–23, default: 8)
+- `hour` -- UTC hour to send the digest (0-23, default: 8)
 - Digest includes total alert count, HIGH/MEDIUM/LOW breakdown, unique IPs, and top 3 events
 
 ---
 
 ## Telegram
 
-1. Create a bot via `@BotFather` on Telegram → copy the bot token
+1. Create a bot via `@BotFather` on Telegram -> copy the bot token
 2. Get your chat ID from `@userinfobot`
 
 ```json
@@ -67,7 +67,7 @@ names are automatically escaped so formatting never breaks.
 
 ## Discord
 
-Create a webhook in your Discord server: Channel Settings → Integrations → Webhooks.
+Create a webhook in your Discord server: Channel Settings -> Integrations -> Webhooks.
 
 ```json
 "discord": {
@@ -95,7 +95,7 @@ Create an incoming webhook at https://api.slack.com/apps
 
 ## Email (SMTP)
 
-Sends HTML + plaintext multipart alerts. Runs in a thread executor — never
+Sends HTML + plaintext multipart alerts. Runs in a thread executor -- never
 blocks the detection engine.
 
 ```json
@@ -117,15 +117,15 @@ blocks the detection engine.
 
 | Provider | Host | Port | TLS | SSL |
 |:---|:---|:---|:---:|:---:|
-| Gmail | smtp.gmail.com | 587 | ✓ | — |
-| Gmail (SSL) | smtp.gmail.com | 465 | — | ✓ |
-| Outlook/Hotmail | smtp-mail.outlook.com | 587 | ✓ | — |
-| Yahoo | smtp.mail.yahoo.com | 587 | ✓ | — |
-| SendGrid | smtp.sendgrid.net | 587 | ✓ | — |
-| Postmark | smtp.postmarkapp.com | 587 | ✓ | — |
-| Self-hosted | your.mail.server | 587 | ✓ | — |
+| Gmail | smtp.gmail.com | 587 | yes | -- |
+| Gmail (SSL) | smtp.gmail.com | 465 | -- | yes |
+| Outlook/Hotmail | smtp-mail.outlook.com | 587 | yes | -- |
+| Yahoo | smtp.mail.yahoo.com | 587 | yes | -- |
+| SendGrid | smtp.sendgrid.net | 587 | yes | -- |
+| Postmark | smtp.postmarkapp.com | 587 | yes | -- |
+| Self-hosted | your.mail.server | 587 | yes | -- |
 
-**Gmail setup:** Enable 2FA → Google Account → Security → App Passwords → generate password.
+**Gmail setup:** Enable 2FA -> Google Account -> Security -> App Passwords -> generate password.
 Use the App Password, not your regular Gmail password.
 
 ### Email alert format
