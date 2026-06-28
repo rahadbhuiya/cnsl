@@ -4176,3 +4176,296 @@ class TestMLAPIRoutes:
 
     def test_ml_trigger_retrain_js(self):
         assert "async function mlTriggerRetrain()" in self._src()
+
+# v3.0.0 -- OT/IoT protocol support
+
+
+class TestOTParserModbus:
+    """parse_modbus() correctly classifies Modbus function codes."""
+
+    def test_fc3_read_from_unknown_ip_is_scan(self):
+        from cnsl.ot_parser import parse_modbus, OTEventKind
+        ev = parse_modbus("modbus client: 1.2.3.4 fc: 3 holding registers")
+        assert ev is not None
+        assert ev.kind == OTEventKind.MODBUS_SCAN
+        assert ev.src_ip == "1.2.3.4"
+
+    def test_fc3_read_from_trusted_ip_is_none(self):
+        from cnsl.ot_parser import parse_modbus
+        ev = parse_modbus("modbus client: 1.2.3.4 fc: 3 holding registers",
+                          trusted_ips={"1.2.3.4"})
+        assert ev is None
+
+    def test_fc6_write_always_flagged(self):
+        from cnsl.ot_parser import parse_modbus, OTEventKind
+        ev = parse_modbus("modbus client: 1.2.3.4 fc: 6 single register write",
+                          trusted_ips={"1.2.3.4"})
+        assert ev is not None
+        assert ev.kind == OTEventKind.MODBUS_WRITE
+
+    def test_fc16_write_multiple_registers(self):
+        from cnsl.ot_parser import parse_modbus, OTEventKind
+        ev = parse_modbus("modbus src: 5.6.7.8 function_code: 16")
+        assert ev is not None
+        assert ev.kind == OTEventKind.MODBUS_WRITE
+        assert ev.meta["function_code"] == 16
+
+    def test_fc1_read_coils_from_trusted_is_none(self):
+        from cnsl.ot_parser import parse_modbus
+        ev = parse_modbus("modbus from: 10.0.0.1 fc=1 read coils",
+                          trusted_ips={"10.0.0.1"})
+        assert ev is None
+
+    def test_exception_line_returns_exception_kind(self):
+        from cnsl.ot_parser import parse_modbus, OTEventKind
+        ev = parse_modbus("modbus exception code 2 from 1.2.3.4 gateway error")
+        assert ev is not None
+        assert ev.kind == OTEventKind.MODBUS_EXCEPTION
+
+    def test_empty_line_returns_none(self):
+        from cnsl.ot_parser import parse_modbus
+        assert parse_modbus("") is None
+        assert parse_modbus("   ") is None
+
+    def test_unrelated_line_returns_none(self):
+        from cnsl.ot_parser import parse_modbus
+        assert parse_modbus("nginx 200 GET /index.html") is None
+
+    def test_meta_includes_protocol(self):
+        from cnsl.ot_parser import parse_modbus
+        ev = parse_modbus("modbus src: 1.2.3.4 fc: 3 read")
+        assert ev is not None
+        assert ev.meta["protocol"] == "modbus"
+
+    def test_source_is_modbus(self):
+        from cnsl.ot_parser import parse_modbus
+        ev = parse_modbus("modbus client: 1.2.3.4 fc: 6 write")
+        assert ev is not None
+        assert ev.source == "modbus"
+
+
+class TestOTParserDNP3:
+    """parse_dnp3() correctly classifies DNP3 events."""
+
+    def test_unsolicited_from_unknown_ip(self):
+        from cnsl.ot_parser import parse_dnp3, OTEventKind
+        ev = parse_dnp3("dnp3 unsolicited response from 10.0.0.5")
+        assert ev is not None
+        assert ev.kind == OTEventKind.DNP3_UNSOLICITED
+        assert ev.src_ip == "10.0.0.5"
+
+    def test_unsolicited_from_trusted_ip_is_none(self):
+        from cnsl.ot_parser import parse_dnp3
+        ev = parse_dnp3("dnp3 unsolicited response from 10.0.0.5",
+                        trusted_ips={"10.0.0.5"})
+        assert ev is None
+
+    def test_auth_fail_detected(self):
+        from cnsl.ot_parser import parse_dnp3, OTEventKind
+        ev = parse_dnp3("dnp3 authentication failed from 10.0.0.9 bad mac")
+        assert ev is not None
+        assert ev.kind == OTEventKind.DNP3_AUTH_FAIL
+
+    def test_invalid_hmac_detected(self):
+        from cnsl.ot_parser import parse_dnp3, OTEventKind
+        ev = parse_dnp3("dnp security fail invalid hmac from 192.168.1.5")
+        assert ev is not None
+        assert ev.kind == OTEventKind.DNP3_AUTH_FAIL
+
+    def test_unrelated_line_returns_none(self):
+        from cnsl.ot_parser import parse_dnp3
+        assert parse_dnp3("sshd failed password for root") is None
+
+    def test_empty_line_returns_none(self):
+        from cnsl.ot_parser import parse_dnp3
+        assert parse_dnp3("") is None
+
+
+class TestOTParserSCADA:
+    """parse_scada() correctly classifies SCADA/HMI log events."""
+
+    def test_unauthorized_from_ip(self):
+        from cnsl.ot_parser import parse_scada, OTEventKind
+        ev = parse_scada("unauthorized command from 192.168.50.99")
+        assert ev is not None
+        assert ev.kind == OTEventKind.UNAUTHORIZED_CMD
+
+    def test_denied_from_ip(self):
+        from cnsl.ot_parser import parse_scada, OTEventKind
+        ev = parse_scada("access denied from ip 10.10.10.50 setpoint change")
+        assert ev is not None
+        assert ev.kind == OTEventKind.UNAUTHORIZED_CMD
+
+    def test_alarm_with_ip(self):
+        from cnsl.ot_parser import parse_scada, OTEventKind
+        ev = parse_scada("alarm: high pressure trip from operator 192.168.1.10")
+        assert ev is not None
+        assert ev.kind == OTEventKind.SCADA_ALARM
+
+    def test_alarm_without_ip(self):
+        from cnsl.ot_parser import parse_scada, OTEventKind
+        ev = parse_scada("CRITICAL: emergency shutdown ALARM triggered")
+        assert ev is not None
+        assert ev.kind == OTEventKind.SCADA_ALARM
+        assert ev.src_ip is None
+
+    def test_empty_returns_none(self):
+        from cnsl.ot_parser import parse_scada
+        assert parse_scada("") is None
+
+
+class TestMakeOTParser:
+    """make_ot_parser() factory returns correct parser per protocol."""
+
+    def _cfg(self, trusted=None):
+        return {"ot": {"enabled": True,
+                       "trusted_ips": trusted or [],
+                       "alert_on_any_write": True}}
+
+    def test_modbus_parser_returned(self):
+        from cnsl.ot_parser import make_ot_parser
+        p = make_ot_parser("modbus", self._cfg())
+        assert p is not None
+        assert callable(p)
+
+    def test_dnp3_parser_returned(self):
+        from cnsl.ot_parser import make_ot_parser
+        p = make_ot_parser("dnp3", self._cfg())
+        assert p is not None
+
+    def test_scada_parser_returned(self):
+        from cnsl.ot_parser import make_ot_parser
+        p = make_ot_parser("scada", self._cfg())
+        assert p is not None
+
+    def test_unknown_protocol_returns_none(self):
+        from cnsl.ot_parser import make_ot_parser
+        assert make_ot_parser("profinet", self._cfg()) is None
+
+    def test_trusted_ips_passed_to_parser(self):
+        from cnsl.ot_parser import make_ot_parser
+        p = make_ot_parser("modbus", self._cfg(trusted=["1.2.3.4"]))
+        # FC3 read from trusted IP should return None
+        assert p("modbus client: 1.2.3.4 fc: 3") is None
+
+    def test_write_still_flagged_for_trusted_ip(self):
+        from cnsl.ot_parser import make_ot_parser, OTEventKind
+        p = make_ot_parser("modbus", self._cfg(trusted=["1.2.3.4"]))
+        ev = p("modbus client: 1.2.3.4 fc: 6 write register")
+        assert ev is not None
+        assert ev.kind == OTEventKind.MODBUS_WRITE
+
+
+class TestOTKindsInDetector:
+    """_OT_KINDS is defined and _ALL_HANDLED includes OT kinds."""
+
+    def test_ot_kinds_set_exists(self):
+        from cnsl.detector import _OT_KINDS
+        assert "OT_MODBUS_SCAN"      in _OT_KINDS
+        assert "OT_MODBUS_WRITE"     in _OT_KINDS
+        assert "OT_DNP3_UNSOLICITED" in _OT_KINDS
+        assert "OT_SCADA_ALARM"      in _OT_KINDS
+        assert "OT_UNAUTHORIZED_CMD" in _OT_KINDS
+
+    def test_all_handled_includes_ot(self):
+        from cnsl.detector import _ALL_HANDLED
+        assert "OT_MODBUS_WRITE" in _ALL_HANDLED
+        assert "OT_SCADA_ALARM"  in _ALL_HANDLED
+
+
+class TestOTRulesRegistered:
+    """The 3 OT detection rules are in the RuleEngine."""
+
+    def test_ot_rules_present(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        for rule_id in ("ot.modbus_write", "ot.modbus_scan", "ot.scada_alarm"):
+            assert re.get(rule_id) is not None, f"Rule {rule_id!r} missing"
+
+    def test_modbus_write_is_high_threshold_one(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        r = re.get("ot.modbus_write")
+        assert r.effective_severity == "HIGH"
+        assert r.effective_threshold == 1
+
+    def test_modbus_scan_is_medium_threshold_five(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        r = re.get("ot.modbus_scan")
+        assert r.effective_severity == "MEDIUM"
+        assert r.effective_threshold == 5
+
+    def test_scada_alarm_is_high_threshold_one(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        r = re.get("ot.scada_alarm")
+        assert r.effective_severity == "HIGH"
+        assert r.effective_threshold == 1
+
+
+class TestOTEventDetection:
+    """OT events routed through Detector trigger correct alerts."""
+
+    def _make_detector(self):
+        from cnsl.logger import JsonLogger
+        from cnsl.blocker import Blocker
+        cfg = {"thresholds": {}, "actions": {"dry_run": True},
+               "logging": {"console_verbose": False}}
+        logger  = JsonLogger("/dev/null", verbose=False)
+        blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                          ipset_name="test", block_duration_sec=10,
+                          allowlist=set(), logger=logger)
+        return Detector(cfg, logger, blocker)
+
+    def _make_ot_event(self, kind, ip="192.168.100.99",
+                       protocol="modbus", fc=None):
+        from cnsl.models import Event, now
+        meta = {"protocol": protocol}
+        if fc is not None:
+            meta["function_code"] = fc
+        return Event(ts=now(), source=protocol, kind=kind,
+                     src_ip=ip, user=None, raw=f"ot {kind}",
+                     meta=meta)
+
+    def test_modbus_write_fires_immediately(self):
+        from cnsl.ot_parser import OTEventKind
+        det = self._make_detector()
+        ip  = "192.168.100.99"
+        _run(det.handle(self._make_ot_event(
+            OTEventKind.MODBUS_WRITE, ip=ip, fc=6)))
+        assert det._state[ip].total_incidents > 0
+
+    def test_modbus_scan_below_threshold_no_alert(self):
+        from cnsl.ot_parser import OTEventKind
+        det = self._make_detector()
+        ip  = "192.168.100.88"
+        for _ in range(4):  # threshold is 5
+            _run(det.handle(self._make_ot_event(
+                OTEventKind.MODBUS_SCAN, ip=ip)))
+        assert det._state[ip].total_incidents == 0
+
+    def test_modbus_scan_at_threshold_fires(self):
+        from cnsl.ot_parser import OTEventKind
+        det = self._make_detector()
+        ip  = "192.168.100.77"
+        for _ in range(5):
+            _run(det.handle(self._make_ot_event(
+                OTEventKind.MODBUS_SCAN, ip=ip)))
+        assert det._state[ip].total_incidents > 0
+
+    def test_scada_alarm_fires_immediately(self):
+        from cnsl.ot_parser import OTEventKind
+        det = self._make_detector()
+        ip  = "192.168.100.66"
+        _run(det.handle(self._make_ot_event(
+            OTEventKind.SCADA_ALARM, ip=ip, protocol="scada")))
+        assert det._state[ip].total_incidents > 0
+
+    def test_unauthorized_cmd_fires_immediately(self):
+        from cnsl.ot_parser import OTEventKind
+        det = self._make_detector()
+        ip  = "192.168.100.55"
+        _run(det.handle(self._make_ot_event(
+            OTEventKind.UNAUTHORIZED_CMD, ip=ip, protocol="scada")))
+        assert det._state[ip].total_incidents > 0

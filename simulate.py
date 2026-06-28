@@ -24,6 +24,7 @@ Usage:
     python simulate.py federation     # multi-node federation (simulated cluster)
     python simulate.py cloud          # cloud identity logs (AWS/Azure simulated)
     python simulate.py zerotrust      # zero-trust trust scoring
+    python simulate.py ot             # OT/IoT protocols (Modbus/DNP3/SCADA)
     python simulate.py live           # interactive mode
 """
 
@@ -66,7 +67,7 @@ BOLD= "\033[1m"
 def banner():
     print(f"""
 {C}{BOLD}+========================================================+
-|        CNSL -- Local Test Simulator  v2.9.0           |
+|        CNSL -- Local Test Simulator  v3.0.0           |
 |   No real server required -- all tests run locally    |
 +========================================================+{RST}
 """)
@@ -1047,6 +1048,63 @@ async def scenario_zero_trust(detector):
     log("Zero-trust scenario complete", G)
 
 
+#  Scenario 23: OT/IoT Protocol Events 
+
+async def scenario_ot_iot(detector):
+    section("Scenario 23 -- OT/IoT Protocol Events (Modbus + DNP3 + SCADA)")
+    from cnsl.ot_parser import OTEventKind
+    from cnsl.models import Event, now as _now
+
+    print(f"  {BOLD}Simulating an ICS/SCADA attack sequence:{RST}")
+    print(f"  Attacker 192.168.100.99 probes a PLC, then writes to it\n")
+
+    attacker = "192.168.100.99"
+    plc      = "192.168.100.50"  # victim PLC
+
+    print(f"  {C}Phase 1 -- Modbus Reconnaissance (FC3 read sweeps x6){RST}")
+    for i in range(1, 7):
+        ev = Event(ts=_now(), source="modbus", kind=OTEventKind.MODBUS_SCAN,
+                   src_ip=attacker, user=None, raw=f"modbus FC3 from {attacker}",
+                   meta={"protocol": "modbus", "function_code": 3})
+        await detector.handle(ev)
+        print(f"  [{i}/6] OT_MODBUS_SCAN from {attacker}")
+        await asyncio.sleep(0.1)
+
+    print(f"\n  {C}Phase 2 -- Modbus Write (FC6 single register write){RST}")
+    ev = Event(ts=_now(), source="modbus", kind=OTEventKind.MODBUS_WRITE,
+               src_ip=attacker, user=None, raw=f"modbus FC6 WRITE from {attacker}",
+               meta={"protocol": "modbus", "function_code": 6, "trusted": False})
+    await detector.handle(ev)
+    print(f"  OT_MODBUS_WRITE (FC6) from {attacker} -- HIGH alert should fire")
+    await asyncio.sleep(0.3)
+
+    print(f"\n  {C}Phase 3 -- SCADA Unauthorized Command{RST}")
+    ev = Event(ts=_now(), source="scada", kind=OTEventKind.UNAUTHORIZED_CMD,
+               src_ip=attacker, user=None, raw=f"DENIED: setpoint change from {attacker}",
+               meta={"protocol": "scada", "detail": "unauthorized"})
+    await detector.handle(ev)
+    print(f"  OT_UNAUTHORIZED_CMD from {attacker}")
+    await asyncio.sleep(0.2)
+
+    print(f"\n  {C}Phase 4 -- DNP3 Auth Failure{RST}")
+    ev = Event(ts=_now(), source="dnp3", kind=OTEventKind.DNP3_AUTH_FAIL,
+               src_ip=attacker, user=None, raw=f"DNP3 auth fail from {attacker}",
+               meta={"protocol": "dnp3", "detail": "auth_failure"})
+    await detector.handle(ev)
+    print(f"  OT_DNP3_AUTH_FAIL from {attacker}")
+    await asyncio.sleep(0.2)
+
+    kc = detector.kill_chain
+    if kc:
+        chain = kc.get_chain(attacker)
+        if chain:
+            print(f"\n  {BOLD}Kill chain for {attacker}:{RST}  "
+                  f"max_stage={chain.to_dict()['max_stage_name']}  "
+                  f"score={int(chain.score*100)}%")
+
+    log("OT/IoT scenario complete -- ot.modbus_write and ot.scada_alarm rules checked", G)
+
+
 SCENARIO_MAP = {
     "brute":       "brute-force",
     "stuffing":    "credential stuffing",
@@ -1070,6 +1128,7 @@ SCENARIO_MAP = {
     "federation":  "multi-node federation",
     "cloud":       "cloud identity logs",
     "zerotrust":   "zero-trust trust scoring",
+    "ot":          "OT/IoT protocols (Modbus/DNP3/SCADA)",
     "live":        "interactive",
 }
 
@@ -1175,6 +1234,10 @@ async def main():
 
         if mode in ("all", "zerotrust"):
             await scenario_zero_trust(detector)
+            await asyncio.sleep(0.4)
+
+        if mode in ("all", "ot"):
+            await scenario_ot_iot(detector)
 
         if mode == "live":
             await interactive_mode(detector, blocker)

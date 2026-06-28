@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="CNSL"
-LABEL org.opencontainers.image.description="Correlated Network Security Layer v2.9.0"
-LABEL org.opencontainers.image.version="2.9.0"
+LABEL org.opencontainers.image.description="Correlated Network Security Layer v3.0.0"
+LABEL org.opencontainers.image.version="3.0.0"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/rahadbhuiya/cnsl"
 

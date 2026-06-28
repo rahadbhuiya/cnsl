@@ -86,8 +86,19 @@ _CLOUD_KINDS: Set[str] = {
     "CLOUD_IMPOSSIBLE_TRAVEL",
 }
 
+# OT/ICS kinds
+_OT_KINDS: Set[str] = {
+    "OT_MODBUS_SCAN",
+    "OT_MODBUS_WRITE",
+    "OT_MODBUS_EXCEPTION",
+    "OT_DNP3_UNSOLICITED",
+    "OT_DNP3_AUTH_FAIL",
+    "OT_SCADA_ALARM",
+    "OT_UNAUTHORIZED_CMD",
+}
+
 _ALL_HANDLED: Set[str] = (
-    _SSH_KINDS | _WEB_KINDS | _DB_KINDS | _FW_KINDS | _SYS_KINDS | _CLOUD_KINDS
+    _SSH_KINDS | _WEB_KINDS | _DB_KINDS | _FW_KINDS | _SYS_KINDS | _CLOUD_KINDS | _OT_KINDS
 )
 
 
@@ -330,6 +341,9 @@ class Detector:
 
         elif ev.kind in _CLOUD_KINDS:
             await self._on_cloud_event(ip, ev, st, t)
+
+        elif ev.kind in _OT_KINDS:
+            await self._on_ot_event(ip, ev, st, t)
 
         #  Correlator (cross-source, Phase 2) 
         if self.correlator:
@@ -778,6 +792,86 @@ class Detector:
 
         if sev is not None:
             await self._maybe_fire(ip, st, t, sev, reasons, trigger="cloud",
+                                   fail_count=len(st.fails), uniq_users=0)
+
+    async def _on_ot_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
+        """
+        Handle OT/ICS events (Modbus, DNP3, SCADA).
+
+        OT events are treated differently from IT events:
+          - A single MODBUS_WRITE from any IP is already suspicious
+          - MODBUS_SCAN = reconnaissance (Recon kill chain stage)
+          - DNP3_AUTH_FAIL = HIGH, immediate alert
+          - SCADA_ALARM = HIGH, immediate alert
+          - UNAUTHORIZED_CMD = HIGH, immediate alert
+        """
+        sev     = None
+        reasons = []
+        meta    = ev.meta or {}
+        proto   = meta.get("protocol", "ot")
+
+        if ev.kind == "OT_MODBUS_WRITE":
+            r = self.rules.get("ot.modbus_write")
+            if r and r.enabled:
+                sev = r.effective_severity
+                fc  = meta.get("function_code", "?")
+                trusted = meta.get("trusted", False)
+                reasons.append(
+                    f"ot_modbus_write: FC{fc} write from "
+                    f"{'trusted' if trusted else 'UNTRUSTED'} IP"
+                )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "OT_MODBUS_WRITE", geo=geo, severity="HIGH")
+
+        elif ev.kind == "OT_MODBUS_SCAN":
+            r = self.rules.get("ot.modbus_scan")
+            if r and r.enabled:
+                st.fails.append((t, 1))
+                st.total_fails += 1
+                fail_count = sum(1 for ts, _ in st.fails
+                                 if t - ts <= self.window_sec)
+                if fail_count >= self._zt_threshold(
+                        ip, "ip", r.effective_threshold):
+                    sev = r.effective_severity
+                    reasons.append(
+                        f"ot_modbus_scan: {fail_count} read sweeps "
+                        f"in {self.window_sec}s"
+                    )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, "OT_MODBUS_SCAN", geo=geo, severity="MEDIUM")
+
+        elif ev.kind == "OT_MODBUS_EXCEPTION":
+            r = self.rules.get("ot.modbus_write")
+            if r and r.enabled:
+                sev = "MEDIUM"
+                reasons.append("ot_modbus_exception: device returned exception code")
+
+        elif ev.kind in ("OT_DNP3_UNSOLICITED", "OT_DNP3_AUTH_FAIL"):
+            r = self.rules.get("ot.scada_alarm")
+            if r and r.enabled:
+                sev = "HIGH" if ev.kind == "OT_DNP3_AUTH_FAIL" else "MEDIUM"
+                reasons.append(
+                    f"ot_dnp3: {ev.kind.lower()} from {ip or 'unknown'}"
+                )
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, ev.kind, geo=geo, severity=sev or "MEDIUM")
+
+        elif ev.kind in ("OT_SCADA_ALARM", "OT_UNAUTHORIZED_CMD"):
+            r = self.rules.get("ot.scada_alarm")
+            if r and r.enabled:
+                sev = r.effective_severity
+                detail = meta.get("detail", ev.kind.lower())
+                reasons.append(f"ot_scada: {detail} ({proto})")
+            geo = self.geoip.get_cached(ip) if self.geoip else None
+            self._kc_update(ip, ev.kind, geo=geo, severity="HIGH")
+
+        # OT events always logged regardless of alert threshold
+        await self.logger.log("ot_event", {
+            "ip": ip, "kind": ev.kind, "meta": meta, "source": ev.source,
+        })
+
+        if sev is not None:
+            await self._maybe_fire(ip, st, t, sev, reasons, trigger="ot",
                                    fail_count=len(st.fails), uniq_users=0)
 
     #  Correlation alert handler (Phase 2) 

@@ -510,7 +510,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="hdr-title">CNSL</span>
-    <span class="badge">v2.1.1</span>
+    <span class="badge">v3.0.0</span>
   </div>
   <div class="live-dot" title="Live"></div>
   <button class="hdr-btn" id="pdf-btn" onclick="exportPDF()" title="Export PDF report">

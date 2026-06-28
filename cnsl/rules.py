@@ -225,6 +225,34 @@ _BUILTIN_RULES: List[Rule] = [
         window_sec  = 0,
         tags        = ["cloud", "impossible-travel", "azure"],
     ),
+    # OT/ICS rules
+    Rule(
+        id          = "ot.modbus_write",
+        name        = "OT Modbus Write Command",
+        description = "Fires on any Modbus write function code (FC 5/6/15/16). Writes are always suspicious in OT environments.",
+        severity    = "HIGH",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["ot", "modbus", "ics", "high-priority"],
+    ),
+    Rule(
+        id          = "ot.modbus_scan",
+        name        = "OT Modbus Reconnaissance Scan",
+        description = "Fires when an IP sends repeated Modbus read sweeps -- reconnaissance of PLC register layout.",
+        severity    = "MEDIUM",
+        threshold   = 5,
+        window_sec  = 60,
+        tags        = ["ot", "modbus", "reconnaissance"],
+    ),
+    Rule(
+        id          = "ot.scada_alarm",
+        name        = "OT SCADA / DNP3 Alarm",
+        description = "Fires on SCADA alarms, DNP3 unsolicited responses, or unauthorized command attempts.",
+        severity    = "HIGH",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["ot", "scada", "dnp3", "ics", "high-priority"],
+    ),
 ]
 
 # Quick lookup by id

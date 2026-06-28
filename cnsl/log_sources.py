@@ -582,4 +582,23 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
                 )
             )
 
+    # OT/IoT log sources (Modbus, DNP3, SCADA)
+    ot_cfg = cfg.get("ot", {})
+    if ot_cfg.get("enabled"):
+        import asyncio as _asyncio
+        from .ot_parser import make_ot_parser
+        ot_sources = ot_cfg.get("log_sources", {})
+        for protocol, path in ot_sources.items():
+            if not path or not isinstance(path, str):
+                continue
+            parser = make_ot_parser(protocol, cfg)
+            if parser is None:
+                continue
+            tasks.append(
+                _asyncio.create_task(
+                    tail_log_file(queue, path, parser, logger, f"ot_{protocol}"),
+                    name=f"ot_{protocol}",
+                )
+            )
+
     return tasks

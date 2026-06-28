@@ -4,6 +4,42 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.0.0 -- OT/IoT Protocol Support (Modbus, DNP3, SCADA)
+
+**New module: `cnsl/ot_parser.py`**
+- `parse_modbus(line, trusted_ips, alert_on_any_write)` -- parses Modbus gateway log lines; FC 1-4 reads from non-trusted IPs -> `OT_MODBUS_SCAN`; FC 5/6/15/16 writes from any IP -> `OT_MODBUS_WRITE`; exception codes -> `OT_MODBUS_EXCEPTION`. Compatible with mbpoll, libmodbus, EasyModbus, Prosoft, Moxa MGate.
+- `parse_dnp3(line, trusted_ips)` -- parses DNP3 gateway logs; unsolicited responses from non-trusted IPs -> `OT_DNP3_UNSOLICITED`; authentication failures (bad MAC, invalid HMAC, security fail) -> `OT_DNP3_AUTH_FAIL`. Compatible with OpenDNP3, Triangle MicroWorks, SEL RTAC.
+- `parse_scada(line, trusted_ips)` -- parses SCADA/HMI logs; unauthorized/denied commands -> `OT_UNAUTHORIZED_CMD`; alarm/critical/trip lines -> `OT_SCADA_ALARM`. Compatible with Ignition, Wonderware, Kepware, FactoryTalk.
+- `make_ot_parser(protocol, cfg)` -- factory function returning the right parser for "modbus", "dnp3", or "scada"; reads `trusted_ips` and `alert_on_any_write` from `cfg["ot"]`
+- 7 new event kinds: `OT_MODBUS_SCAN`, `OT_MODBUS_WRITE`, `OT_MODBUS_EXCEPTION`, `OT_DNP3_UNSOLICITED`, `OT_DNP3_AUTH_FAIL`, `OT_SCADA_ALARM`, `OT_UNAUTHORIZED_CMD`
+
+**`cnsl/log_sources.py`**
+- OT log sources registration added to `get_log_tasks()` -- reads `cfg["ot"]["log_sources"]` dict and starts a `tail_log_file` task per protocol when `ot.enabled` is true
+
+**`cnsl/detector.py`**
+- `_OT_KINDS` set added alongside `_CLOUD_KINDS`, `_WEB_KINDS`, etc.
+- `_ALL_HANDLED` updated to include all OT kinds
+- `_on_ot_event()` handler routes all 7 OT event kinds; evaluates `ot.modbus_write`, `ot.modbus_scan`, `ot.scada_alarm` rules; calls `_kc_update()` for kill chain integration; calls `_maybe_fire()` for alert generation; every OT event logged via `ot_event` logger regardless of threshold
+- `OT_MODBUS_WRITE` fires on first write (threshold=1), even from trusted IPs -- writes are always suspicious
+- `OT_MODBUS_SCAN` uses sliding window count with zero-trust threshold scaling
+
+**`cnsl/rules.py`**
+- 3 new OT detection rules: `ot.modbus_write` (HIGH/1), `ot.modbus_scan` (MEDIUM/5/60s), `ot.scada_alarm` (HIGH/1)
+- Total built-in rules: 17 (was 14)
+
+**`cnsl/engine.py`** -- version bumped to 3.0.0
+
+**`config/config.example.json`**
+- `ot` block added: `enabled`, `log_sources` (modbus/dnp3/scada paths), `trusted_ips`, `alert_on_any_write`
+
+**`simulate.py`** -- scenario 23: ICS attack sequence (Modbus scan -> write -> SCADA alarm -> DNP3 auth fail), v3.0.0
+
+**`tests/test_cnsl.py`** -- 7 new test classes, 38 tests (469 total, zero regressions)
+
+**`docs/ot-iot.md`** -- New documentation file
+
+---
+
 ### v2.9.0 -- ML Tuning UI
 
 **`cnsl/ml_detector.py`**

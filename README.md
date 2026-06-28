@@ -98,7 +98,9 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
 | [`docs/api.md`](docs/api.md) | Full REST API reference |
+| [`docs/ot-iot.md`](docs/ot-iot.md) | OT/ICS protocol support (Modbus, DNP3, SCADA) |
 | [`docs/changelog.md`](docs/changelog.md) | Version history |
+| [`docs/`](docs/) | All documentation (26 guides) |
 
 ---
 

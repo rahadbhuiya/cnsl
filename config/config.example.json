@@ -416,5 +416,15 @@
     "persist": true,
     "max_entities": 50000,
     "apply_to_threshold": true
+  },
+  "ot": {
+    "enabled": false,
+    "log_sources": {
+      "modbus": "",
+      "dnp3": "",
+      "scada": ""
+    },
+    "trusted_ips": [],
+    "alert_on_any_write": true
   }
 }

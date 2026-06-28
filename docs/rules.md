@@ -24,7 +24,12 @@ at runtime via the dashboard API -- no restart required.
 | `cloud.impossible_travel` | Cloud Impossible Travel | HIGH | 1 event | instant |
 
 Cloud rules (added in v2.6.0) apply to AWS CloudTrail and Azure AD events.
-All 14 rules can be adjusted or disabled from the dashboard Rules tab or via `PATCH /api/rules/{rule_id}`.
+| `ot.modbus_write` | OT Modbus Write Command | HIGH | 1 write | instant |
+| `ot.modbus_scan` | OT Modbus Recon Scan | MEDIUM | 5 sweeps | 60s |
+| `ot.scada_alarm` | OT SCADA / DNP3 Alarm | HIGH | 1 event | instant |
+
+OT rules (added in v3.0.0) apply to Modbus, DNP3, and SCADA log events.
+All 17 rules can be adjusted or disabled from the dashboard Rules tab or via `PATCH /api/rules/{rule_id}`.
 
 ---
 

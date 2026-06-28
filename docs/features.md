@@ -46,6 +46,10 @@
 | Zero-Trust | Low-trust entities trigger alerts at lower event counts (threshold scaling) |
 | Zero-Trust | Score decay and recovery over time, manual reset from dashboard |
 | Graph | Force-directed attack behavior graph -- nodes colored by trust, sized by kill chain |
+| OT/IoT | Modbus TCP/RTU log parsing -- read sweep detection, write command alerting |
+| OT/IoT | DNP3 log parsing -- unsolicited response detection, Secure Authentication failures |
+| OT/IoT | SCADA/HMI log parsing -- alarm flood detection, unauthorized command attempts |
+| OT/IoT | Full kill chain integration: Modbus scan -> write -> SCADA alarm maps to Recon -> Exploit -> Actions |
 | Response | iptables / ipset auto-block with configurable auto-unblock timer |
 | Response | Country-based blocking before thresholds fire |
 | Response | Honeypot redirect -- attacker lands on a fake Ubuntu shell (40+ commands) |

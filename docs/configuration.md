@@ -41,7 +41,7 @@ sudo nano /etc/cnsl/config.json
 ```
 
 > **Always** add your own IP to `allowlist` before setting `dry_run: false`.
-> Use absolute paths for `db_path` — relative paths reset the baseline on restart.
+> Use absolute paths for `db_path` -- relative paths reset the baseline on restart.
 
 ---
 
@@ -66,7 +66,7 @@ sudo nano /etc/cnsl/config.json
 
 ```json
 "actions": {
-  "dry_run":                   true,        // SAFE DEFAULT — change to false to enable
+  "dry_run":                   true,        // SAFE DEFAULT -- change to false to enable
   "block_duration_sec":        900,         // 15-minute block
   "block_backend":             "iptables",  // "iptables" | "ipset"
   "ipset_name":                "cnsl_blocklist",
@@ -210,7 +210,7 @@ Get a bot token from `@BotFather`. Get your chat ID from `@userinfobot`.
 |:---|:---|
 | `smtp_host` | SMTP server hostname |
 | `smtp_port` | 587 for STARTTLS (default), 465 for SSL, 25 for plain |
-| `use_tls` | STARTTLS on port 587 — recommended |
+| `use_tls` | STARTTLS on port 587 -- recommended |
 | `use_ssl` | Implicit SSL on port 465 |
 | `username` / `password` | SMTP credentials (use app passwords for Gmail) |
 | `from` | Sender address shown in the email |
@@ -366,7 +366,7 @@ Export Grafana template:
 python -m cnsl --grafana-export
 ```
 
-Import in Grafana: Dashboards → Import → Upload `cnsl_grafana_dashboard.json`
+Import in Grafana: Dashboards -> Import -> Upload `cnsl_grafana_dashboard.json`
 
 ---
 
@@ -526,3 +526,107 @@ See `docs/cloud-identity.md` for required IAM permissions and setup steps.
 | `apply_to_threshold` | `true` | Whether to scale detection thresholds by trust score |
 
 See `docs/zero-trust.md` for full documentation.
+
+---
+
+## Reporting
+
+```json
+{
+  "reporting": {
+    "enabled":    true,
+    "output_dir": "/var/lib/cnsl/reports",
+    "format":     "html"
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `true` | Enable report generation |
+| `output_dir` | `./reports` | Directory where reports are saved |
+| `format` | `html` | Default format: `html`, `pdf`, or `json` |
+
+Trigger a report via `POST /api/report/generate` or the Reports tab.
+
+---
+
+## Kafka Log Ingestion
+
+```json
+{
+  "kafka": {
+    "enabled":          false,
+    "bootstrap_servers": "localhost:9092",
+    "topic":            "cnsl-logs",
+    "group_id":         "cnsl",
+    "auto_offset_reset": "latest"
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `false` | Enable Kafka consumer |
+| `bootstrap_servers` | | Comma-separated list of broker addresses |
+| `topic` | `cnsl-logs` | Kafka topic to consume |
+| `group_id` | `cnsl` | Consumer group ID |
+| `auto_offset_reset` | `latest` | `latest` or `earliest` |
+
+Requires `kafka-python` installed: `pip install kafka-python`.
+
+---
+
+## Multi-Tenant
+
+```json
+{
+  "tenants": {
+    "enabled": false,
+    "tenants": [
+      {
+        "id":   "tenant-a",
+        "name": "Tenant A",
+        "ip_ranges": ["10.0.0.0/8"],
+        "overrides": {
+          "thresholds": {"fails_threshold": 5}
+        }
+      }
+    ]
+  }
+}
+```
+
+When tenants are enabled, each detected IP is matched against `ip_ranges`
+and the matching tenant's `overrides` are applied on top of the base config.
+
+
+---
+
+## OT/IoT Log Sources
+
+```json
+{
+  "ot": {
+    "enabled": false,
+    "log_sources": {
+      "modbus": "/var/log/modbus-gateway.log",
+      "dnp3":   "/var/log/dnp3-gateway.log",
+      "scada":  "/var/log/scada-hmi.log"
+    },
+    "trusted_ips":        [],
+    "alert_on_any_write": true
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `false` | Enable OT log ingestion |
+| `log_sources.modbus` | `""` | Path to Modbus gateway log |
+| `log_sources.dnp3` | `""` | Path to DNP3 gateway log |
+| `log_sources.scada` | `""` | Path to SCADA/HMI syslog |
+| `trusted_ips` | `[]` | IPs allowed to read from PLCs without triggering scan alert |
+| `alert_on_any_write` | `true` | Fire HIGH alert on any Modbus write FC, even from trusted IPs |
+
+See `docs/ot-iot.md` for full documentation including log format compatibility.
