@@ -132,7 +132,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.0.0")
+    ap.add_argument("--version",     action="version", version="CNSL 3.1.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -250,19 +250,17 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if ueba.enabled:
         await ueba.init()
 
-    # Kill chain tracker
+    # Kill chain tracker + pattern learner -- load in parallel from SQLite
     kill_chain_tracker = KillChainTracker(cfg)
+    pattern_learner    = PatternLearner(cfg)
     if store.available:
-        await kill_chain_tracker.load_all(store)
-
-    # Pattern learner
-    pattern_learner = PatternLearner(cfg)
-    if store.available:
-        await pattern_learner.load_all(store)
+        await asyncio.gather(
+            kill_chain_tracker.load_all(store),
+            pattern_learner.load_all(store),
+        )
 
     # SIEM/SOAR connectors
     siem_router = SIEMRouter(cfg)
-
     # Wire federation: remote signals from other nodes update this node's
     # kill chain too, so each node sees the attacker's full cross-node path
     async def _on_remote_signal(signal):
@@ -276,8 +274,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # Tenant manager
     tenant_manager = TenantManager(cfg)
 
-    # Rate limiter
-    rate_limiter = RateLimiter(cfg)
+    # Rate limiter (uses Redis for distributed counting when available)
+    rate_limiter = RateLimiter(cfg, redis_sync=redis_sync)
 
     # HuddleCluster integration (multi-node load balancing)
     huddle = HuddleManager(cfg, metrics=metrics, logger=logger)
@@ -451,12 +449,35 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     def _handle_sig(*_):
         stop.set()
 
+    # SIGHUP: reload config file without restarting the process.
+    # Applies updated rule thresholds, severities, and enable/disable flags.
+    # Does NOT restart log tailers, Redis connections, or dashboard.
+    _cfg_path = args.config if args.config else None
+
+    def _handle_sighup(*_):
+        if _cfg_path:
+            try:
+                new_cfg = load_config(_cfg_path)
+                detector.rules._apply_config(new_cfg)
+                await_log = logger.log("config_reloaded", {
+                    "path": _cfg_path, "msg": "rules reloaded via SIGHUP"
+                })
+                asyncio.ensure_future(await_log)
+            except Exception as e:
+                asyncio.ensure_future(logger.log("config_reload_error",
+                                                  {"error": str(e)}))
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, _handle_sig)
         except NotImplementedError:
             signal.signal(sig, lambda s, f: stop.set())
+
+    try:
+        loop.add_signal_handler(signal.SIGHUP, _handle_sighup)
+    except (NotImplementedError, AttributeError):
+        pass  # Windows does not support SIGHUP
 
     print("", flush=True)
     print("╔═══════════════════════════════════════════╗")

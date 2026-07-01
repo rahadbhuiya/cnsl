@@ -30,6 +30,8 @@ from .zero_trust    import ZT_SCHEMA
 
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA cache_size=-8000;
 
 CREATE TABLE IF NOT EXISTS incidents (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,8 +57,9 @@ CREATE TABLE IF NOT EXISTS blocks (
     dry_run     INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX IF NOT EXISTS idx_incidents_ip ON incidents(src_ip);
-CREATE INDEX IF NOT EXISTS idx_incidents_ts ON incidents(ts);
+CREATE INDEX IF NOT EXISTS idx_incidents_ip  ON incidents(src_ip);
+CREATE INDEX IF NOT EXISTS idx_incidents_ts  ON incidents(ts);
+CREATE INDEX IF NOT EXISTS idx_incidents_sev ON incidents(severity);
 """
 
 

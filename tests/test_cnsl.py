@@ -4469,3 +4469,183 @@ class TestOTEventDetection:
         _run(det.handle(self._make_ot_event(
             OTEventKind.UNAUTHORIZED_CMD, ip=ip, protocol="scada")))
         assert det._state[ip].total_incidents > 0
+# v3.1.0 -- Batch 1+2+3 fixes
+
+
+class TestLegacyThresholdsApplied:
+    """cfg["thresholds"]["fails_threshold"] now actually affects ssh.brute_force."""
+
+    def test_fails_threshold_sets_ssh_brute_force(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({"thresholds": {"fails_threshold": 3}})
+        assert re.get("ssh.brute_force").effective_threshold == 3
+
+    def test_fails_threshold_default_when_not_set(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({})
+        assert re.get("ssh.brute_force").effective_threshold == 8
+
+    def test_explicit_rule_override_takes_priority_over_legacy(self):
+        """cfg["rules"] override beats cfg["thresholds"] fallback."""
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({
+            "thresholds": {"fails_threshold": 3},
+            "rules": {"ssh.brute_force": {"threshold": 12}},
+        })
+        assert re.get("ssh.brute_force").effective_threshold == 12
+
+    def test_web_threshold_maps_to_web_scan_flood(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({"thresholds": {"web_threshold": 10}})
+        assert re.get("web.scan_flood").effective_threshold == 10
+
+    def test_db_threshold_maps_to_db_brute_force(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({"thresholds": {"db_threshold": 4}})
+        assert re.get("db.brute_force").effective_threshold == 4
+
+    def test_invalid_threshold_value_ignored(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({"thresholds": {"fails_threshold": "not-a-number"}})
+        # Should fall back to default 8, not crash
+        assert re.get("ssh.brute_force").effective_threshold == 8
+
+    def test_none_threshold_value_ignored(self):
+        from cnsl.rules import RuleEngine
+        re = RuleEngine({"thresholds": {"fails_threshold": None}})
+        assert re.get("ssh.brute_force").effective_threshold == 8
+
+
+class TestNoDuplicateFunctions:
+    """log_sources.py must have exactly one definition of each function."""
+
+    def _src(self):
+        from pathlib import Path
+        return (Path(__file__).parent.parent / "cnsl" / "log_sources.py"
+                ).read_text(encoding="utf-8")
+
+    def test_parse_mysql_defined_once(self):
+        assert self._src().count("def parse_mysql(") == 1
+
+    def test_parse_ufw_defined_once(self):
+        assert self._src().count("def parse_ufw(") == 1
+
+    def test_parse_syslog_defined_once(self):
+        assert self._src().count("def parse_syslog(") == 1
+
+    def test_tail_log_file_defined_once(self):
+        assert self._src().count("async def tail_log_file(") == 1
+
+    def test_get_log_tasks_defined_once(self):
+        assert self._src().count("def get_log_tasks(") == 1
+
+
+class TestSQLiteWALMode:
+    """store.py schema must include WAL and synchronous=NORMAL pragmas."""
+
+    def _schema(self):
+        from cnsl.store import _SCHEMA
+        return _SCHEMA
+
+    def test_wal_mode_pragma_present(self):
+        assert "journal_mode=WAL" in self._schema()
+
+    def test_synchronous_normal_pragma_present(self):
+        assert "synchronous=NORMAL" in self._schema()
+
+    def test_severity_index_present(self):
+        assert "idx_incidents_sev" in self._schema()
+
+    def test_ip_index_present(self):
+        assert "idx_incidents_ip" in self._schema()
+
+    def test_ts_index_present(self):
+        assert "idx_incidents_ts" in self._schema()
+
+
+class TestRequestSizeLimit:
+    """dashboard.py must set client_max_size on the aiohttp Application."""
+
+    def test_client_max_size_set(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "dashboard.py"
+               ).read_text(encoding="utf-8")
+        assert "client_max_size" in src, \
+            "client_max_size missing from web.Application() -- no request size limit"
+
+
+class TestDistributedRateLimiter:
+    """RateLimiter accepts redis_sync param and exposes increment_distributed."""
+
+    def test_accepts_redis_sync_param(self):
+        from cnsl.rate_limiter import RateLimiter
+        import inspect
+        sig = inspect.signature(RateLimiter.__init__)
+        assert "redis_sync" in sig.parameters
+
+    def test_redis_sync_defaults_to_none(self):
+        from cnsl.rate_limiter import RateLimiter
+        import inspect
+        sig = inspect.signature(RateLimiter.__init__)
+        assert sig.parameters["redis_sync"].default is None
+
+    def test_increment_distributed_method_exists(self):
+        from cnsl.rate_limiter import RateLimiter
+        assert hasattr(RateLimiter, "increment_distributed")
+        assert callable(RateLimiter.increment_distributed)
+
+    def test_increment_distributed_returns_minus_one_without_redis(self):
+        from cnsl.rate_limiter import RateLimiter
+        rl = RateLimiter({"rate_limiting": {"enabled": True}}, redis_sync=None)
+        result = _run(rl.increment_distributed("1.2.3.4", 60))
+        assert result == -1
+
+    def test_no_redis_does_not_crash_check(self):
+        from cnsl.rate_limiter import RateLimiter
+        rl = RateLimiter({"rate_limiting": {"enabled": True}}, redis_sync=None)
+        allowed, retry = rl.check("1.2.3.4")
+        assert isinstance(allowed, bool)
+
+
+class TestTailLogFileRotation:
+    """tail_log_file has inode-tracking fallback when tail binary unavailable."""
+
+    def test_inode_tracking_present_in_source(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "log_sources.py"
+               ).read_text(encoding="utf-8")
+        assert "st_ino" in src, \
+            "inode tracking missing from tail_log_file fallback"
+
+    def test_shutil_which_check_present(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "log_sources.py"
+               ).read_text(encoding="utf-8")
+        assert "shutil.which" in src, \
+            "shutil.which check missing -- no fallback detection"
+
+
+class TestStartupParallelism:
+    """engine.py uses asyncio.gather for kill_chain + pattern_learner load."""
+
+    def test_gather_used_for_parallel_load(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "engine.py"
+               ).read_text(encoding="utf-8")
+        assert "asyncio.gather(" in src, \
+            "asyncio.gather missing from engine.py startup -- loads are sequential"
+        assert "kill_chain_tracker.load_all" in src
+        assert "pattern_learner.load_all" in src
+
+
+class TestSIGHUPHotReload:
+    """engine.py registers SIGHUP handler for config hot-reload."""
+
+    def test_sighup_handler_registered(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "engine.py"
+               ).read_text(encoding="utf-8")
+        assert "SIGHUP" in src, \
+            "SIGHUP handler missing from engine.py -- no config hot-reload"
+        assert "_handle_sighup" in src
+        assert "_apply_config" in src

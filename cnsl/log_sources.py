@@ -165,209 +165,6 @@ def parse_mysql(line: str) -> Optional[Event]:
         return None
     return Event(
         ts=now(), source="mysql", kind="DB_AUTH_FAIL",
-        src_ip=_clean_ip(m.group("ip")), user=m.group("user"),
-        raw=line.strip(),
-        meta={"db": "mysql"},
-    )
-
-
-
-# UFW firewall log
-
-
-# Jan  1 00:00:00 host kernel: [UFW BLOCK] IN=eth0 SRC=1.2.3.4 DST=5.6.7.8 ... DPT=22
-_UFW_RE = re.compile(
-    r'\[UFW (?P<action>BLOCK|ALLOW|LIMIT)\].*?'
-    r'SRC=(?P<src>[\da-fA-F\.:]+).*?'
-    r'DST=(?P<dst>[\da-fA-F\.:]+)',
-    re.IGNORECASE,
-)
-_UFW_DPT_RE = re.compile(r'DPT=(\d+)')
-
-# Ports that should never get legitimate traffic
-_HONEYPOT_PORTS = {23, 2323, 3389, 5900, 5985, 6379, 27017, 9200}
-
-
-def parse_ufw(line: str) -> Optional[Event]:
-    m = _UFW_RE.search(line)
-    if not m:
-        return None
-
-    action = m.group("action")
-    src    = _clean_ip(m.group("src"))
-    dst    = _clean_ip(m.group("dst"))
-    dpt_m  = _UFW_DPT_RE.search(line)
-    dpt    = int(dpt_m.group(1)) if dpt_m else 0
-
-    if action != "BLOCK":
-        return None
-
-    kind = "FW_HONEYPOT_PORT" if dpt in _HONEYPOT_PORTS else "FW_BLOCK"
-
-    return Event(
-        ts=now(), source="ufw", kind=kind,
-        src_ip=src, dst_ip=dst,
-        raw=line.strip(),
-        meta={"dst_port": dpt, "action": action},
-    )
-
-
-
-# Syslog — sudo abuse, su failures
-
-
-# Jan  1 00:00:00 host sudo: baduser : user NOT in sudoers
-# Jan  1 00:00:00 host su[1234]: FAILED su for root by baduser
-_SUDO_FAIL_RE = re.compile(r'sudo:.*NOT in sudoers|sudo:.*authentication failure', re.I)
-_SU_FAIL_RE   = re.compile(r'su\[\d+\].*FAILED su for (\S+) by (\S+)', re.I)
-
-
-def parse_syslog(line: str) -> Optional[Event]:
-    s = line.strip()
-
-    if _SUDO_FAIL_RE.search(s):
-        um   = re.search(r'sudo:\s+(\S+)\s+:', s)
-        user = um.group(1) if um else None
-        return Event(
-            ts=now(), source="syslog", kind="SUDO_FAIL",
-            src_ip=None, user=user, raw=s,
-            meta={"type": "privilege_escalation"},
-        )
-
-    m = _SU_FAIL_RE.search(s)
-    if m:
-        return Event(
-            ts=now(), source="syslog", kind="SU_FAIL",
-            src_ip=None, user=m.group(2), raw=s,
-            meta={"target_user": m.group(1), "type": "privilege_escalation"},
-        )
-
-    return None
-
-
-
-# Log file tailer factory
-
-
-import asyncio
-from .logger import JsonLogger
-
-_RETRY_DELAY = 5
-
-
-async def tail_log_file(
-    queue:    asyncio.Queue,
-    path:     str,
-    parser,
-    logger:   JsonLogger,
-    source:   str,
-) -> None:
-    """
-    Generic async log file tailer.
-    Calls parser(line) -> Event | None on each line.
-    Retries on failure (handles log rotation via tail -F).
-    """
-    await logger.log("source_start", {"source": source, "path": path})
-
-    _file_warned = False
-    while True:
-        import os
-        if not os.path.exists(path):
-            if not _file_warned:
-                await logger.log("source_waiting", {
-                    "source": source, "path": path,
-                    "msg": "File not found, waiting...",
-                })
-                _file_warned = True
-            await asyncio.sleep(60)   # check once per minute to avoid log spam
-            continue
-        _file_warned = False  # reset if file appears
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "tail", "-F", path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            assert proc.stdout
-
-            try:
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    text = line.decode(errors="ignore").strip()
-                    if not text:
-                        continue
-                    ev = parser(text)
-                    if ev:
-                        await queue.put(ev)
-            finally:
-                try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    pass
-
-        except Exception as e:
-            await logger.log("source_error", {"source": source, "error": str(e)})
-
-        await logger.log("source_restart", {"source": source, "delay": _RETRY_DELAY})
-        await asyncio.sleep(_RETRY_DELAY)
-
-
-def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
-    """
-    Build list of asyncio tasks based on configured log sources.
-    """
-    import asyncio as _asyncio
-
-    sources = cfg.get("log_sources", {})
-    tasks   = []
-
-    parsers = {
-        "nginx":  lambda line: parse_web_access(line, "nginx"),
-        "apache": lambda line: parse_web_access(line, "apache"),
-        "mysql":  parse_mysql,
-        "ufw":    parse_ufw,
-        "syslog": parse_syslog,
-    }
-
-    for name, path in sources.items():
-        if not path or not isinstance(path, str):
-            continue
-        parser = parsers.get(name)
-        if parser is None:
-            continue
-        tasks.append(
-            _asyncio.create_task(
-                tail_log_file(queue, path, parser, logger, name),
-                name=f"logsrc_{name}",
-            )
-        )
-
-    return tasks
-
-
-
-
-
-# MySQL error log
-
-# 2025-01-01T00:00:00.000000Z 0 [Warning] Access denied for user 'root'@'1.2.3.4'
-
-_MYSQL_DENY_RE = re.compile(
-    r"Access denied for user '(?P<user>[^']+)'@'(?P<ip>[\da-fA-F\.:]+)'",
-    re.IGNORECASE,
-)
-
-
-def parse_mysql(line: str) -> Optional[Event]:
-    m = _MYSQL_DENY_RE.search(line)
-    if not m:
-        return None
-    return Event(
-        ts=now(), source="mysql", kind="DB_AUTH_FAIL",
         src_ip=m.group("ip"), user=m.group("user"),
         raw=line.strip(),
         meta={"db": "mysql"},
@@ -471,13 +268,24 @@ async def tail_log_file(
     """
     Generic async log file tailer.
     Calls parser(line) -> Event | None on each line.
-    Retries on failure (handles log rotation via tail -F).
+
+    Rotation handling:
+      - Primary: uses `tail -F` (follows filename, handles rename-rotation
+        and copytruncate-rotation automatically)
+      - Fallback: pure-Python inode-tracking loop used when `tail` is not
+        available (minimal containers, Alpine, etc.). Detects copytruncate
+        rotation by comparing the current file inode with the one at open
+        time, and reopen when they differ.
     """
+    import os
+    import shutil
+
     await logger.log("source_start", {"source": source, "path": path})
 
     _file_warned = False
+    _use_tail_f  = shutil.which("tail") is not None
+
     while True:
-        import os
         if not os.path.exists(path):
             if not _file_warned:
                 await logger.log("source_waiting", {
@@ -485,37 +293,59 @@ async def tail_log_file(
                     "msg": "File not found, waiting...",
                 })
                 _file_warned = True
-            await asyncio.sleep(60)   # check once per minute to avoid log spam
+            await asyncio.sleep(60)
             continue
-        _file_warned = False  # reset if file appears
+        _file_warned = False
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "tail", "-F", path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            assert proc.stdout
-
-            try:
-                while True:
-                    line = await proc.stdout.readline()
-                    if not line:
-                        break
-                    text = line.decode(errors="ignore").strip()
-                    if not text:
-                        continue
-                    ev = parser(text)
-                    if ev:
-                        await queue.put(ev)
-            finally:
-                # Always kill the subprocess — prevents zombie accumulation
-                # on log rotation, EOF, or exception.
+            if _use_tail_f:
+                #  Primary path: tail -F 
+                proc = await asyncio.create_subprocess_exec(
+                    "tail", "-F", path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                assert proc.stdout
                 try:
-                    proc.kill()
-                    await proc.wait()
-                except Exception:
-                    pass
+                    while True:
+                        line = await proc.stdout.readline()
+                        if not line:
+                            break
+                        text = line.decode(errors="ignore").strip()
+                        if not text:
+                            continue
+                        ev = parser(text)
+                        if ev:
+                            await queue.put(ev)
+                finally:
+                    try:
+                        proc.kill()
+                        await proc.wait()
+                    except Exception:
+                        pass
+            else:
+                #  Fallback: Python inode-tracking 
+                with open(path, encoding="utf-8", errors="ignore") as fh:
+                    fh.seek(0, 2)           # seek to end on first open
+                    open_inode = os.fstat(fh.fileno()).st_ino
+                    while True:
+                        line = fh.readline()
+                        if line:
+                            text = line.strip()
+                            if text:
+                                ev = parser(text)
+                                if ev:
+                                    await queue.put(ev)
+                        else:
+                            await asyncio.sleep(0.25)
+                            # Rotation detection: inode changed or file smaller
+                            try:
+                                cur_inode = os.stat(path).st_ino
+                                cur_size  = os.stat(path).st_size
+                                if cur_inode != open_inode or cur_size < fh.tell():
+                                    break   # reopen the file
+                            except OSError:
+                                break
 
         except Exception as e:
             await logger.log("source_error", {"source": source, "error": str(e)})

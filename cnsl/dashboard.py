@@ -4527,7 +4527,8 @@ async def start_dashboard(
 
     #  Start 
 
-    app = web.Application()
+    # 4 MB request size limit -- prevents large-payload memory spikes
+    app = web.Application(client_max_size=4 * 1024 * 1024)
     app.add_routes(router)
 
     runner = web.AppRunner(app)

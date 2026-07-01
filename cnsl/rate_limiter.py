@@ -56,7 +56,7 @@ class RateLimiter:
         is_ddos = rl.check_ddos(ip)
     """
 
-    def __init__(self, cfg: Dict[str, Any]):
+    def __init__(self, cfg: Dict[str, Any], redis_sync=None):
         rl = cfg.get("rate_limiting", {})
 
         self.enabled            = bool(rl.get("enabled", False))
@@ -70,6 +70,12 @@ class RateLimiter:
         self.whitelist: Set[str] = set(rl.get("whitelist", ["127.0.0.1", "::1"]))
         self.endpoint_cfg: Dict[str, Dict] = rl.get("endpoints", {})
 
+        # Optional Redis backend for distributed rate limiting.
+        # When redis_sync is provided and connected, counters are stored
+        # in Redis so all cluster nodes share the same rate limit state.
+        # Falls back to local in-memory counting when Redis is unavailable.
+        self._redis_sync = redis_sync
+
         # Per-IP sliding window: {ip: deque([(ts, count), ...])}
         self._windows: Dict[str, deque] = defaultdict(lambda: deque())
         # DDoS detection window: {ip: deque([ts, ...])}
@@ -78,6 +84,32 @@ class RateLimiter:
         self._blocked_until: Dict[str, float] = {}
         # Stats
         self._stats: Dict[str, int] = defaultdict(int)
+
+    @property
+    def _redis(self):
+        """Return Redis connection if available, else None."""
+        if self._redis_sync and getattr(self._redis_sync, "connected", False):
+            return getattr(self._redis_sync, "_redis", None)
+        return None
+
+    async def increment_distributed(self, ip: str, window_sec: int) -> int:
+        """
+        Increment and return the request count for this IP in Redis.
+        Used when Redis is available for distributed rate limiting.
+        Returns -1 if Redis is unavailable (caller falls back to local).
+        """
+        redis = self._redis
+        if redis is None:
+            return -1
+        try:
+            prefix = getattr(self._redis_sync, "prefix", "cnsl")
+            key    = f"{prefix}:rl:{ip}"
+            count  = await redis.incr(key)
+            if count == 1:
+                await redis.expire(key, window_sec)
+            return int(count)
+        except Exception:
+            return -1
 
     #  Core check 
 

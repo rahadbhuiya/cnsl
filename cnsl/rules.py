@@ -395,17 +395,50 @@ class RuleEngine:
     #  Internal 
 
     def _apply_config(self, cfg: Dict[str, Any]) -> None:
-        """Apply config.json rule overrides. Unknown rule ids are ignored."""
+        """
+        Apply config.json rule overrides. Unknown rule ids are ignored.
+
+        Reads from two config locations:
+          1. cfg["rules"][rule_id] -- preferred, explicit per-rule overrides
+          2. cfg["thresholds"]     -- legacy block; maps known keys to rules
+             so existing configs continue working without changes
+        """
+        # 1. Explicit per-rule overrides (preferred)
         rules_cfg = cfg.get("rules", {})
-        if not isinstance(rules_cfg, dict):
+        if isinstance(rules_cfg, dict):
+            for rule_id, overrides in rules_cfg.items():
+                if not isinstance(overrides, dict):
+                    continue
+                self.update(
+                    rule_id,
+                    enabled   = overrides.get("enabled"),
+                    threshold = overrides.get("threshold"),
+                    severity  = overrides.get("severity"),
+                    window    = overrides.get("window_sec"),
+                )
+
+        # 2. Legacy thresholds block -- maps to rule overrides so that
+        #    existing configs with "thresholds": {"fails_threshold": 5}
+        #    actually take effect (previously these were silently ignored)
+        thresholds = cfg.get("thresholds", {})
+        if not isinstance(thresholds, dict):
             return
-        for rule_id, overrides in rules_cfg.items():
-            if not isinstance(overrides, dict):
+
+        _LEGACY_MAP = {
+            # legacy key          rule_id                   field
+            "fails_threshold":   ("ssh.brute_force",        "threshold"),
+            "web_threshold":     ("web.scan_flood",         "threshold"),
+            "db_threshold":      ("db.brute_force",         "threshold"),
+        }
+        for legacy_key, (rule_id, field) in _LEGACY_MAP.items():
+            val = thresholds.get(legacy_key)
+            if val is None:
                 continue
-            self.update(
-                rule_id,
-                enabled   = overrides.get("enabled"),
-                threshold = overrides.get("threshold"),
-                severity  = overrides.get("severity"),
-                window    = overrides.get("window_sec"),
-            )
+            try:
+                val = int(val)
+            except (TypeError, ValueError):
+                continue
+            # Only apply if no explicit rule override already set it
+            rule = self._rules.get(rule_id)
+            if rule and rule._override_threshold is None:
+                self.update(rule_id, threshold=val)
