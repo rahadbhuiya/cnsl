@@ -3942,9 +3942,12 @@ class TestGraphTabPresence:
 
     def _get_html(self):
         from pathlib import Path
-        dashboard_py = Path(__file__).parent.parent / "cnsl" / "dashboard.py"
-        with open(dashboard_py, encoding="utf-8") as f:
-            return f.read()
+        root = Path(__file__).parent.parent / "cnsl"
+        # HTML is now in dashboard_html.py; routes remain in dashboard.py
+        return (
+            (root / "dashboard.py").read_text(encoding="utf-8") +
+            (root / "dashboard_html.py").read_text(encoding="utf-8")
+        )
 
     def test_graph_tab_button_present(self):
         html = self._get_html()
@@ -3981,7 +3984,7 @@ class TestGraphAPIRoute:
     def test_graph_api_route_registered(self):
         from pathlib import Path
         src = (Path(__file__).parent.parent / "cnsl" / "dashboard.py").read_text(encoding="utf-8")
-        assert '"/api/graph"' in src, "/api/graph route missing from dashboard"
+        assert '"/api/graph"' in src, "/api/graph route missing from dashboard.py"
 
 
 class TestDashboardSignatureV4:
@@ -4157,7 +4160,12 @@ class TestMLAPIRoutes:
 
     def _src(self):
         from pathlib import Path
-        return (Path(__file__).parent.parent / "cnsl" / "dashboard.py").read_text(encoding="utf-8")
+        root = Path(__file__).parent.parent / "cnsl"
+        # Routes are in dashboard.py; JS functions moved with HTML to dashboard_html.py
+        return (
+            (root / "dashboard.py").read_text(encoding="utf-8") +
+            (root / "dashboard_html.py").read_text(encoding="utf-8")
+        )
 
     def test_params_patch_route(self):
         assert '"/api/ml/params"' in self._src()
@@ -4649,3 +4657,111 @@ class TestSIGHUPHotReload:
             "SIGHUP handler missing from engine.py -- no config hot-reload"
         assert "_handle_sighup" in src
         assert "_apply_config" in src
+
+# v3.2.0 -- Batch 4: dashboard split + PostgreSQL backend
+
+
+class TestDashboardSplit:
+    """dashboard_html.py must exist and contain _LOGIN_HTML and _HTML."""
+
+    def test_dashboard_html_module_exists(self):
+        from pathlib import Path
+        assert (Path(__file__).parent.parent / "cnsl" / "dashboard_html.py").exists(), \
+            "cnsl/dashboard_html.py missing -- HTML not split from dashboard.py"
+
+    def test_login_html_in_html_module(self):
+        from cnsl.dashboard_html import _LOGIN_HTML
+        assert "<!DOCTYPE html>" in _LOGIN_HTML
+        assert "login" in _LOGIN_HTML.lower()
+
+    def test_main_html_in_html_module(self):
+        from cnsl.dashboard_html import _HTML
+        assert "<!DOCTYPE html>" in _HTML
+        assert len(_HTML) > 10000  # must be the full template
+
+    def test_dashboard_imports_from_html_module(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "dashboard.py"
+               ).read_text(encoding="utf-8")
+        assert "from .dashboard_html import" in src, \
+            "dashboard.py does not import from dashboard_html.py"
+
+    def test_dashboard_py_under_2000_lines(self):
+        from pathlib import Path
+        lines = len((Path(__file__).parent.parent / "cnsl" / "dashboard.py"
+                     ).read_text(encoding="utf-8").splitlines())
+        assert lines < 2000, \
+            f"dashboard.py has {lines} lines -- split did not reduce size enough"
+
+    def test_html_module_has_no_route_handlers(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "dashboard_html.py"
+               ).read_text(encoding="utf-8")
+        assert "@router." not in src, \
+            "dashboard_html.py contains route handlers -- should only have HTML"
+
+
+class TestStoreBackendConfig:
+    """Store accepts full cfg dict and reads backend + db_path from it."""
+
+    def test_store_accepts_cfg_dict(self):
+        from cnsl.store import Store
+        s = Store({"store": {"backend": "sqlite", "db_path": ":memory:"}})
+        assert s._backend == "sqlite"
+        assert s.db_path == ":memory:"
+
+    def test_store_accepts_plain_path_string(self):
+        from cnsl.store import Store
+        s = Store(":memory:")
+        assert s._backend == "sqlite"
+        assert s.db_path == ":memory:"
+
+    def test_store_postgresql_backend_detected(self):
+        from cnsl.store import Store
+        s = Store({"store": {"backend": "postgresql",
+                             "dsn": "postgresql://user:pass@localhost/cnsl"}})
+        assert s._backend == "postgresql"
+        assert "postgresql" in s._pg_dsn
+
+    def test_store_default_backend_is_sqlite(self):
+        from cnsl.store import Store
+        s = Store({})
+        assert s._backend == "sqlite"
+
+    def test_store_sqlite_init_works(self):
+        from cnsl.store import Store
+        s = Store(":memory:")
+        result = _run(s.init())
+        assert result is True
+        assert s.available is True
+        _run(s.close())
+
+    def test_store_postgresql_graceful_fail_without_asyncpg(self):
+        from cnsl.store import Store
+        import sys
+        # Temporarily hide asyncpg if installed
+        asyncpg = sys.modules.get("asyncpg")
+        sys.modules["asyncpg"] = None
+        try:
+            s = Store({"store": {"backend": "postgresql",
+                                 "dsn": "postgresql://user:pass@localhost/cnsl"}})
+            result = _run(s.init())
+            # Should return False (asyncpg not available) without crashing
+            assert result is False
+        finally:
+            if asyncpg is not None:
+                sys.modules["asyncpg"] = asyncpg
+            elif "asyncpg" in sys.modules:
+                del sys.modules["asyncpg"]
+
+    def test_store_close_both_backends_no_crash(self):
+        from cnsl.store import Store
+        s = Store(":memory:")
+        _run(s.init())
+        _run(s.close())  # must not raise
+
+    def test_init_postgresql_requires_dsn(self):
+        from cnsl.store import Store
+        s = Store({"store": {"backend": "postgresql", "dsn": ""}})
+        result = _run(s.init())
+        assert result is False  # no DSN -> fail gracefully

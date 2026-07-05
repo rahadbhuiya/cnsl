@@ -132,7 +132,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.1.0")
+    ap.add_argument("--version",     action="version", version="CNSL 3.2.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -228,7 +228,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if getattr(args, "no_rate_limit", False):
         cfg.setdefault("rate_limiting", {})["enabled"] = False
 
-    store    = Store(cfg.get("store", {}).get("db_path", "./cnsl_state.db"))
+    store    = Store(cfg)  # accepts full cfg; reads store.backend + store.dsn
     blocker.store = store      # wire in so remove_block() is called on unblock
     if not (getattr(args, "no_db", False) or cfg.get("_no_db")):
         ok = await store.init()

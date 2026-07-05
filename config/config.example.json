@@ -89,7 +89,12 @@
     "allowlist": []
   },
   "store": {
-    "db_path": "/var/lib/cnsl/cnsl_state.db"
+    "backend": "sqlite",
+    "db_path": "/var/lib/cnsl/cnsl_state.db",
+    "_postgresql_example": {
+      "backend": "postgresql",
+      "dsn": "postgresql://cnsl:password@localhost:5432/cnsl"
+    }
   },
   "logging": {
     "json_log_path": "/var/log/cnsl.jsonl",
