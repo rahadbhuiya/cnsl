@@ -24,7 +24,7 @@ from .blocker         import Blocker, ensure_ipset
 from .config          import apply_cli_overrides, load_config, safe_int
 from .detector        import Detector
 from .geoip           import GeoIP
-from .validator       import validate_and_exit
+from .validator       import validate_and_exit, validate_and_print
 from .logger          import JsonLogger
 from .metrics         import Metrics
 from .models          import Event, iso_time, now
@@ -132,7 +132,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.2.0")
+    ap.add_argument("--version",     action="version", version="CNSL 3.3.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -153,8 +153,10 @@ Examples:
                     help="Show running status and block counts, then exit")
     ap.add_argument("--init",          action="store_true",
                     help="Interactive setup wizard — create /etc/cnsl/config.json")
-    ap.add_argument("--check-update",  action="store_true",
+    ap.add_argument("--check-update",     action="store_true",
                     help="Check if a newer version is available on PyPI")
+    ap.add_argument("--validate-config",  action="store_true",
+                    help="Validate config file and print all errors/warnings, then exit")
     return ap
 
 
@@ -646,6 +648,11 @@ def main() -> None:
         asyncio.run(_show_status(cfg))
         return
 
+    # Config validation (--validate-config)
+    if getattr(args, 'validate_config', False):
+        ok = validate_and_print(cfg)
+        raise SystemExit(0 if ok else 1)
+
     # Update check
     if getattr(args, 'check_update', False):
         asyncio.run(_check_update())
@@ -657,7 +664,7 @@ def main() -> None:
             from .store    import Store
             from .fim      import FIMEngine
             from .reporter import Reporter
-            s = Store(cfg.get('store',{}).get('db_path','./cnsl_state.db'))
+            s = Store(cfg)
             await s.init()
             r = Reporter(store=s, cfg=cfg)
             path = await r.generate(format=args.report, period_days=args.report_days)
