@@ -5087,3 +5087,114 @@ class TestCLIValidateConfigFlag:
                ).read_text(encoding="utf-8")
         assert "--validate-config" in src
         assert "validate_and_print" in src
+
+# v3.4.0 -- health check endpoint
+
+
+class TestMetricsLastEventTs:
+    """Metrics tracks _last_event_ts on inc_event()."""
+
+    def test_last_event_ts_zero_initially(self):
+        from cnsl.metrics import Metrics
+        m = Metrics()
+        assert m._last_event_ts == 0.0
+
+    def test_last_event_ts_updated_on_inc_event(self):
+        import time
+        from cnsl.metrics import Metrics
+        m = Metrics()
+        before = time.time()
+        m.inc_event()
+        assert m._last_event_ts >= before
+
+    def test_start_attribute_exists(self):
+        from cnsl.metrics import Metrics
+        m = Metrics()
+        assert hasattr(m, "_start")
+        assert m._start > 0
+
+
+class TestHealthEndpointRoute:
+    """GET /api/health route is registered in dashboard.py."""
+
+    def _src(self):
+        from pathlib import Path
+        return (Path(__file__).parent.parent / "cnsl" / "dashboard.py"
+                ).read_text(encoding="utf-8")
+
+    def test_health_route_registered(self):
+        assert '"/api/health"' in self._src(), \
+            "/api/health route missing from dashboard.py"
+
+    def test_health_no_auth_required(self):
+        src = self._src()
+        # Find the health endpoint and verify no _require_auth before it
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "_require_auth" not in health_block, \
+            "/api/health must not require auth (used by load balancer probes)"
+
+    def test_health_returns_version(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "__version__" in health_block
+
+    def test_health_checks_database(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "database" in health_block
+
+    def test_health_checks_redis(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "redis" in health_block
+
+    def test_health_checks_event_queue(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "event_queue" in health_block
+
+    def test_health_returns_503_on_unhealthy(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "503" in health_block
+
+    def test_health_has_status_levels(self):
+        src = self._src()
+        health_idx = src.find('"/api/health"')
+        system_idx = src.find('"/api/system"')
+        health_block = src[health_idx:system_idx]
+        assert "healthy" in health_block
+        assert "degraded" in health_block
+        assert "unhealthy" in health_block
+
+
+class TestStartDashboardHealthParams:
+    """start_dashboard now accepts queue and redis_sync params."""
+
+    def test_queue_param_in_signature(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        assert "queue" in sig.parameters, \
+            "start_dashboard missing queue param needed by /api/health"
+        assert sig.parameters["queue"].default is None
+
+    def test_redis_sync_param_in_signature(self):
+        import inspect
+        from cnsl.dashboard import start_dashboard
+        sig = inspect.signature(start_dashboard)
+        assert "redis_sync" in sig.parameters, \
+            "start_dashboard missing redis_sync param needed by /api/health"
+        assert sig.parameters["redis_sync"].default is None

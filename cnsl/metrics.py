@@ -24,6 +24,7 @@ class Metrics:
 
     def __init__(self):
         self._start = time.time()
+        self._last_event_ts: float = 0.0
 
         # Counters
         self.incidents_total:   Dict[str, int] = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
@@ -63,6 +64,7 @@ class Metrics:
 
     def inc_event(self) -> None:
         self.events_processed += 1
+        self._last_event_ts = time.time()
 
     # Exposition 
 

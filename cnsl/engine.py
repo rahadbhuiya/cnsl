@@ -132,7 +132,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.3.0")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.0")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -441,7 +441,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             siem_router=siem_router,
                             federation=federation,
                             cloud_identity=cloud_identity,
-                            zero_trust=zero_trust),
+                            zero_trust=zero_trust,
+                            queue=queue,
+                            redis_sync=redis_sync),
             name="dashboard",
         ))
 

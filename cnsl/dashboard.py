@@ -1,11 +1,12 @@
 """
-cnsl/dashboard.py — Live web dashboard with JWT auth, WebSocket, SSE, REST API.
+cnsl/dashboard.py -- Live web dashboard with JWT auth, WebSocket, SSE, REST API.
 
 Routes:
   GET  /                     HTML dashboard (requires auth if enabled)
   GET  /login                Login page
   POST /api/login            Get JWT token (2FA-aware)
   POST /api/logout           Revoke token
+  GET  /api/health           Health check (no auth required; for load balancers/k8s)
   GET  /api/stats            Engine summary + uptime + ssh_fails
   GET  /api/incidents        Recent incidents
   GET  /api/top-attackers    Top attacker IPs
@@ -101,7 +102,10 @@ async def start_dashboard(
     federation:      Any = None,
     cloud_identity:  Any = None,
     zero_trust:      Any = None,
+    queue:           Any = None,
+    redis_sync:      Any = None,
 ) -> None:
+    from . import __version__
     try:
         from aiohttp import web
         import aiohttp
@@ -1405,6 +1409,114 @@ async def start_dashboard(
             "watch_paths": getattr(fim, "_watch_paths", []),
             "alerts":      alerts,
         })
+
+    @router.get("/api/health")
+    async def api_health(req: web.Request) -> web.Response:
+        """
+        Health check endpoint for load balancers and Kubernetes probes.
+
+        Does NOT require authentication -- liveness probes must work
+        without credentials.
+
+        Returns HTTP 200 with status="healthy" or status="degraded"
+        when CNSL is functioning. Returns HTTP 503 when unhealthy.
+
+        Status levels:
+          healthy   -- all checks passing
+          degraded  -- optional components unavailable (Redis, ML)
+                       but core detection is functioning
+          unhealthy -- database unavailable or event queue backed up;
+                       Kubernetes will restart the pod
+        """
+        import time as _t
+
+        checks = {}
+        overall = "healthy"
+
+        # -- Database check --
+        if store.available:
+            t0 = _t.monotonic()
+            try:
+                await store.db_fetchall("SELECT 1", None)
+                db_latency = round((_t.monotonic() - t0) * 1000, 1)
+                checks["database"] = {"status": "ok", "latency_ms": db_latency}
+            except Exception as e:
+                checks["database"] = {"status": "error", "error": str(e)[:80]}
+                overall = "unhealthy"
+        else:
+            checks["database"] = {"status": "unavailable"}
+            # DB unavailable is only unhealthy if persistence was expected
+            if overall == "healthy":
+                overall = "degraded"
+
+        # -- Redis check --
+        if redis_sync.connected:
+            t0 = _t.monotonic()
+            try:
+                await redis_sync._redis.ping()
+                redis_latency = round((_t.monotonic() - t0) * 1000, 1)
+                checks["redis"] = {"status": "ok", "latency_ms": redis_latency}
+            except Exception as e:
+                checks["redis"] = {"status": "error", "error": str(e)[:80]}
+                if overall == "healthy":
+                    overall = "degraded"
+        else:
+            checks["redis"] = {"status": "disabled"}
+
+        # -- Event queue check --
+        try:
+            q_depth = queue.qsize() if hasattr(queue, "qsize") else -1
+            q_status = "ok"
+            if q_depth > 5000:
+                q_status = "backlogged"
+                overall = "degraded"
+            elif q_depth > 20000:
+                q_status = "critical"
+                overall = "unhealthy"
+            checks["event_queue"] = {"status": q_status, "depth": q_depth}
+        except Exception:
+            checks["event_queue"] = {"status": "unknown"}
+
+        # -- Last event age check --
+        try:
+            last_ts = getattr(metrics, "_last_event_ts", None)
+            if last_ts:
+                age = int(_t.time() - last_ts)
+                checks["last_event"] = {"status": "ok", "age_sec": age}
+            else:
+                checks["last_event"] = {"status": "no_events_yet"}
+        except Exception:
+            checks["last_event"] = {"status": "unknown"}
+
+        # -- Detector check --
+        try:
+            tracked = len(detector._state) if hasattr(detector, "_state") else -1
+            checks["detector"] = {"status": "ok", "tracked_ips": tracked}
+        except Exception:
+            checks["detector"] = {"status": "unknown"}
+
+        # -- ML check (degraded only, never unhealthy) --
+        if ml_detector:
+            ml_st = ml_detector.status()
+            checks["ml"] = {
+                "status":  "ok" if ml_st.get("enabled") else "disabled",
+                "trained": ml_st.get("trained", False),
+            }
+            if ml_st.get("enabled") and not ml_st.get("trained"):
+                checks["ml"]["status"] = "training"
+
+        import time as _t2
+        uptime = int(_t2.time() - metrics._start) if hasattr(metrics, "_start") else 0
+
+        body = {
+            "status":      overall,
+            "version":     __version__,
+            "uptime_sec":  uptime,
+            "checks":      checks,
+        }
+
+        http_status = 200 if overall in ("healthy", "degraded") else 503
+        return web.json_response(body, status=http_status)
 
     @router.get("/api/system")
     async def api_system(req: web.Request) -> web.Response:
