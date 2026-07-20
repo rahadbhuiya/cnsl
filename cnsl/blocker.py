@@ -5,6 +5,9 @@ Supports:
   - iptables  (simple, default)
   - ipset     (fast, preferred for production with many IPs)
 
+Both backends are IPv6-aware: IPv6 addresses are routed to ip6tables /
+a separate "inet6" ipset automatically (see _backend_for_ip / _ipset_name_for_ip).
+
 Default mode is DRY-RUN — no commands are executed unless --execute is passed.
 
 Safety rules enforced here:
@@ -12,17 +15,39 @@ Safety rules enforced here:
   2. Already-blocked IPs are not blocked again.
   3. All blocks are temporary (auto-unblock after block_duration_sec).
   4. Every action is logged to JsonLogger before execution.
-  5. iptables commands use subprocess with argument list (no shell injection).
+  5. iptables/ip6tables commands use subprocess with argument list (no shell injection).
 """
 
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import subprocess
 from typing import Any, Dict, Optional, Set
 
 from .logger import JsonLogger
 from .models import now, iso_time
+
+
+def _is_ipv6(ip: str) -> bool:
+    """Return True if `ip` parses as an IPv6 address. Defaults to False (v4) on parse failure."""
+    try:
+        return isinstance(ipaddress.ip_address(ip), ipaddress.IPv6Address)
+    except ValueError:
+        return False
+
+
+def _iptables_bin(ip: str) -> str:
+    """Pick the right binary — ip6tables for IPv6 addresses, iptables otherwise."""
+    return "ip6tables" if _is_ipv6(ip) else "iptables"
+
+
+def _ipset_name_for_ip(base_name: str, ip: str) -> str:
+    """
+    ipset requires separate sets per address family (hash:ip is either
+    inet or inet6, never mixed). IPv6 blocks go into "<base_name>_v6".
+    """
+    return f"{base_name}_v6" if _is_ipv6(ip) else base_name
 
 
 class Blocker:
@@ -99,9 +124,10 @@ class Blocker:
 
     async def _execute_block(self, ip: str) -> bool:
         if self.backend == "ipset":
-            cmd = ["sudo", "ipset", "add", self.ipset_name, ip, "-exist"]
+            set_name = _ipset_name_for_ip(self.ipset_name, ip)
+            cmd = ["sudo", "ipset", "add", set_name, ip, "-exist"]
         else:
-            cmd = ["sudo", "iptables", "-I", self.chain, "1", "-s", ip, "-j", "DROP"]
+            cmd = ["sudo", _iptables_bin(ip), "-I", self.chain, "1", "-s", ip, "-j", "DROP"]
 
         return await self._run(cmd, "action_block_executed", "action_block_failed", ip)
 
@@ -113,9 +139,10 @@ class Blocker:
 
         if not self.dry_run:
             if self.backend == "ipset":
-                cmd = ["sudo", "ipset", "del", self.ipset_name, ip, "-exist"]
+                set_name = _ipset_name_for_ip(self.ipset_name, ip)
+                cmd = ["sudo", "ipset", "del", set_name, ip, "-exist"]
             else:
-                cmd = ["sudo", "iptables", "-D", self.chain, "-s", ip, "-j", "DROP"]
+                cmd = ["sudo", _iptables_bin(ip), "-D", self.chain, "-s", ip, "-j", "DROP"]
 
             await self._run(cmd, "action_unblock_executed", "action_unblock_failed", ip)
 
@@ -154,13 +181,22 @@ class Blocker:
 
 async def ensure_ipset(name: str, logger: JsonLogger) -> bool:
     """
-    Create the ipset blocklist and the iptables rule pointing at it.
-    Call once at startup when using the ipset backend.
+    Create the ipset blocklist(s) and the iptables/ip6tables rules pointing
+    at them. Call once at startup when using the ipset backend.
+
+    ipset can't mix address families in one set, so this creates two sets:
+      <name>     hash:ip family inet   (IPv4) — matched by iptables
+      <name>_v6  hash:ip family inet6  (IPv6) — matched by ip6tables
     """
     cmds = [
-        ["sudo", "ipset", "create", name, "hash:ip", "timeout", "0", "-exist"],
+        ["sudo", "ipset", "create", name, "hash:ip", "family", "inet",
+         "timeout", "0", "-exist"],
         ["sudo", "iptables", "-I", "INPUT", "1", "-m", "set",
          "--match-set", name, "src", "-j", "DROP"],
+        ["sudo", "ipset", "create", f"{name}_v6", "hash:ip", "family", "inet6",
+         "timeout", "0", "-exist"],
+        ["sudo", "ip6tables", "-I", "INPUT", "1", "-m", "set",
+         "--match-set", f"{name}_v6", "src", "-j", "DROP"],
     ]
     for cmd in cmds:
         try:
@@ -169,5 +205,5 @@ async def ensure_ipset(name: str, logger: JsonLogger) -> bool:
             await logger.log("ipset_setup_failed", {"cmd": cmd, "error": str(e)})
             return False
 
-    await logger.log("ipset_setup_ok", {"name": name})
+    await logger.log("ipset_setup_ok", {"name": name, "name_v6": f"{name}_v6"})
     return True

@@ -52,6 +52,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .logger import JsonLogger
 from .models import iso_time, now
+from .blocker import _iptables_bin
 
 
 
@@ -999,14 +1000,25 @@ class ActiveResponse:
         if ip in self._redirected:
             return "already_redirected"
 
+        iptables_bin = _iptables_bin(ip)
+
+        # DNAT can't cross address families (can't NAT an IPv6 attacker to
+        # an IPv4-only honeypot without NAT64, which we don't set up here).
+        # Fall back to a plain drop in that case rather than silently no-op.
+        if _iptables_bin(self.honeypot_host) != iptables_bin:
+            await self.logger.log("honeypot_redirect_family_mismatch", {
+                "ip": ip, "honeypot_host": self.honeypot_host,
+            })
+            return await self._drop(ip)
+
         cmds = [
             # Redirect incoming SSH from attacker to honeypot
-            ["sudo", "iptables", "-t", "nat", "-I", "PREROUTING", "1",
+            ["sudo", iptables_bin, "-t", "nat", "-I", "PREROUTING", "1",
              "-s", ip, "-p", "tcp", "--dport", "22",
              "-j", "DNAT", "--to-destination",
              f"{self.honeypot_host}:{self.honeypot_port}"],
             # Allow traffic to honeypot
-            ["sudo", "iptables", "-I", "FORWARD", "1",
+            ["sudo", iptables_bin, "-I", "FORWARD", "1",
              "-s", ip, "-d", self.honeypot_host, "-j", "ACCEPT"],
         ]
 
@@ -1032,7 +1044,7 @@ class ActiveResponse:
 
     async def _tarpit(self, ip: str) -> str:
         """Slow down attacker with TCP TARPIT."""
-        cmd = ["sudo", "iptables", "-I", "INPUT", "1",
+        cmd = ["sudo", _iptables_bin(ip), "-I", "INPUT", "1",
                "-s", ip, "-p", "tcp", "--dport", "22",
                "-j", "TARPIT"]
         try:
@@ -1045,8 +1057,8 @@ class ActiveResponse:
             return "tarpit_failed"
 
     async def _drop(self, ip: str) -> str:
-        """Standard iptables DROP."""
-        cmd = ["sudo", "iptables", "-I", "INPUT", "1",
+        """Standard iptables/ip6tables DROP."""
+        cmd = ["sudo", _iptables_bin(ip), "-I", "INPUT", "1",
                "-s", ip, "-j", "DROP"]
         try:
             subprocess.run(cmd, check=True,
@@ -1062,12 +1074,13 @@ class ActiveResponse:
         if ip not in self._redirected:
             return
 
+        iptables_bin = _iptables_bin(ip)
         cmds = [
-            ["sudo", "iptables", "-t", "nat", "-D", "PREROUTING",
+            ["sudo", iptables_bin, "-t", "nat", "-D", "PREROUTING",
              "-s", ip, "-p", "tcp", "--dport", "22",
              "-j", "DNAT", "--to-destination",
              f"{self.honeypot_host}:{self.honeypot_port}"],
-            ["sudo", "iptables", "-D", "FORWARD",
+            ["sudo", iptables_bin, "-D", "FORWARD",
              "-s", ip, "-d", self.honeypot_host, "-j", "ACCEPT"],
         ]
         for cmd in cmds:

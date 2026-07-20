@@ -4,6 +4,22 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.1 -- IPv6-aware blocking
+
+**`cnsl/blocker.py`**
+- `Blocker` now routes IPv6 addresses to `ip6tables` instead of `iptables` (which silently rejects/mis-handles `-s <ipv6>`). New `_iptables_bin(ip)` helper picks the binary per-address.
+- `ipset` backend: IPv6 blocks now go into a separate `<ipset_name>_v6` set, since a single `ipset` set can't mix `inet`/`inet6` families. New `_ipset_name_for_ip()` helper.
+- `ensure_ipset()` now creates both the IPv4 (`family inet`) and IPv6 (`family inet6`) sets plus their matching `iptables`/`ip6tables` rules at startup.
+
+**`cnsl/honeypot.py`**
+- `ActiveResponse._drop`, `_tarpit`, `_redirect_to_honeypot`, and `remove_redirect` are now IPv6-aware via the same `_iptables_bin()` helper.
+- DNAT redirect can't cross address families (an IPv6 attacker can't be NATed to an IPv4-only honeypot host without NAT64). When the attacker IP and `honeypot_host` are different families, redirect now falls back to a plain drop instead of silently issuing a broken iptables rule.
+
+**Tests**
+- 12 new tests (`TestBlockerIPv6`, `TestHoneypotIPv6`) covering binary selection, ipset naming, `ensure_ipset` dual-family setup, and the honeypot family-mismatch fallback.
+
+---
+
 ### v3.0.0 -- OT/IoT Protocol Support (Modbus, DNP3, SCADA)
 
 **New module: `cnsl/ot_parser.py`**
