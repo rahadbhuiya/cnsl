@@ -18,6 +18,7 @@ Routes:
   GET  /api/honeypot         Honeypot status + recent sessions
   POST /api/block            Manual block
   POST /api/unblock          Manual unblock
+  GET  /api/audit            Compliance audit trail (who did what, when)
   GET  /ws                   WebSocket live feed + bidirectional actions
   GET  /ws/agent             WebSocket agent ingestion endpoint
   GET  /stream               SSE live event stream (backward compat)
@@ -28,7 +29,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from .config import safe_int
 
 if TYPE_CHECKING:
     from .auth        import AuthManager
@@ -104,6 +107,7 @@ async def start_dashboard(
     zero_trust:      Any = None,
     queue:           Any = None,
     redis_sync:      Any = None,
+    audit_log:       Any = None,
 ) -> None:
     from . import __version__
     try:
@@ -145,6 +149,23 @@ async def start_dashboard(
 
     def _get_client_ip(req: web.Request) -> str:
         return req.headers.get("X-Forwarded-For", req.remote or "unknown").split(",")[0].strip()
+
+    async def _audit(req: web.Request, user_payload: dict, action: str,
+                      target: Optional[str] = None, details: Optional[dict] = None) -> None:
+        """Record a compliance audit entry. Never raises -- auditing must
+        not break the action it's recording."""
+        if audit_log is None:
+            return
+        try:
+            await audit_log.record(
+                actor=user_payload.get("sub", "?"),
+                action=action,
+                target=target,
+                details=details or {},
+                source_ip=_get_client_ip(req),
+            )
+        except Exception:
+            pass
 
     def _require_auth(req: web.Request):
         """Returns (payload, None) or (None, Response)."""
@@ -1663,6 +1684,7 @@ async def start_dashboard(
             return web.json_response({"error": f"invalid IP address: {ip!r}"}, status=400)
         ok = await blocker.block_ip(ip, reason=f"manual:{user_payload.get('sub','?')}")
         await logger.log("dashboard_manual_block", {"ip": ip, "by": user_payload.get("sub"), "ok": ok})
+        await _audit(req, user_payload, "block", target=ip, details={"ok": ok})
         return web.json_response({"blocked": ok, "ip": ip})
 
     @router.post("/api/unblock")
@@ -1677,6 +1699,7 @@ async def start_dashboard(
             return web.json_response({"error": "ip required"}, status=400)
         await blocker._unblock_ip(ip)
         await logger.log("dashboard_manual_unblock", {"ip": ip, "by": user_payload.get("sub")})
+        await _audit(req, user_payload, "unblock", target=ip)
         return web.json_response({"unblocked": True, "ip": ip})
 
     #  SSE (kept for backward compatibility) 
@@ -1914,7 +1937,28 @@ async def start_dashboard(
         if err: return err
         if (r := _require_perm(user_payload, "admin")): return r
         auth.rotate_secret()
+        await _audit(req, user_payload, "rotate_secret")
         return web.json_response({"ok": True, "message": "Secret rotated — all sessions invalidated."})
+
+    @router.get("/api/audit")
+    async def api_audit(req: web.Request) -> web.Response:
+        """Compliance audit trail — who did what, when. Requires logs:read."""
+        if (r := _rate_check(req)): return r
+        user_payload, err = _require_auth(req)
+        if err: return err
+        if (r := _require_perm(user_payload, "logs:read")): return r
+        if audit_log is None:
+            return web.json_response({"entries": [], "total": 0})
+        q = req.rel_url.query
+        actor  = q.get("actor")
+        action = q.get("action")
+        target = q.get("target")
+        limit  = safe_int(q.get("limit"), 100)
+        offset = safe_int(q.get("offset"), 0)
+        entries = await audit_log.list(actor=actor, action=action, target=target,
+                                        limit=limit, offset=offset)
+        total = await audit_log.count(actor=actor, action=action)
+        return web.json_response({"entries": entries, "total": total})
 
     #  Start 
 

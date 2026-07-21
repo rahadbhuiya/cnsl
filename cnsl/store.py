@@ -22,6 +22,7 @@ from .ueba          import UEBA_SCHEMA
 from .kill_chain    import KC_SCHEMA
 from .pattern_learner import PL_SCHEMA
 from .zero_trust    import ZT_SCHEMA
+from .audit         import _AUDIT_SCHEMA
 
 
 
@@ -124,6 +125,7 @@ class Store:
             await self._db.executescript(KC_SCHEMA)
             await self._db.executescript(PL_SCHEMA)
             await self._db.executescript(ZT_SCHEMA)
+            await self._db.executescript(_AUDIT_SCHEMA)
             await self._db.commit()
             # Migration: add 'kind' column to existing DBs that don't have it
             try:

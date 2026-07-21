@@ -68,6 +68,45 @@ curl -X POST http://127.0.0.1:8765/api/block \
 
 ---
 
+## Audit Log
+
+```
+GET  /api/audit               Compliance audit trail -- who did what, when
+```
+
+Requires the `auditor` or `admin` role (`logs:read` permission). Records every
+manual block/unblock and secret rotation with the acting user, source IP, and
+timestamp -- separate from the general detection-event log, for SOC2/ISO27001-style
+review.
+
+| Param | Default | Description |
+|:---|:---|:---|
+| `actor` | (all) | Filter by username |
+| `action` | (all) | Filter: `block`, `unblock`, `rotate_secret` |
+| `target` | (all) | Filter by target (e.g. blocked IP) |
+| `limit` | `100` | Max entries (capped at 1000) |
+| `offset` | `0` | Pagination offset |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:8765/api/audit?actor=admin&action=block&limit=20"
+```
+
+Response:
+
+```json
+{
+  "entries": [
+    {"id": 3, "time": "2026-07-19T10:15:00Z", "actor": "admin",
+     "action": "block", "target": "1.2.3.4", "details": {"ok": true},
+     "source_ip": "10.0.0.5"}
+  ],
+  "total": 3
+}
+```
+
+---
+
 ## Kill Chain
 
 ```

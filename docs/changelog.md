@@ -4,6 +4,29 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.2 -- Compliance audit trail
+
+**New module: `cnsl/audit.py`**
+- `AuditLog` -- append-only, SQLite-backed audit trail (same connection-sharing pattern as `CaseManager`/`UEBAEngine`). Records `actor`, `action`, `target`, `details` (JSON), `source_ip`, and timestamp for administrative/security actions.
+- `record()` never raises -- a logging failure never blocks the action being audited.
+- `list()` / `count()` support filtering by actor, action, target, and time.
+
+**`cnsl/store.py`**
+- `_AUDIT_SCHEMA` wired into SQLite init alongside the existing case/UEBA/kill-chain/pattern-learner/zero-trust schemas.
+
+**`cnsl/dashboard.py`**
+- New `GET /api/audit` endpoint (requires `logs:read`, i.e. `auditor`+ role) with `actor`/`action`/`target`/`limit`/`offset` filters.
+- Manual `POST /api/block`, `POST /api/unblock`, and `POST /api/auth/rotate-secret` now write an audit entry (actor, source IP, target, outcome) via a new `_audit()` helper.
+- `start_dashboard()` accepts a new optional `audit_log` kwarg.
+
+**`cnsl/engine.py`**
+- `AuditLog` instantiated and initialized alongside `CaseManager`; wired into `start_dashboard()`.
+
+**Tests**
+- 8 new tests (`TestAuditLog`, `TestDashboardAuditEndpoint`) covering record/list round-trip, filtering, ordering, an unavailable-store no-op path, and RBAC wiring.
+
+---
+
 ### v3.4.1 -- IPv6-aware blocking
 
 **`cnsl/blocker.py`**

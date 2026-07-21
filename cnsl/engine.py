@@ -32,6 +32,7 @@ from .notify          import Notifier
 from .sources         import run_tcpdump, tail_authlog
 from .store           import Store
 from .cases           import CaseManager
+from .audit            import AuditLog
 from .threat_feed     import ThreatFeed
 from .ueba            import UEBAEngine
 from .kafka_consumer  import KafkaConsumer
@@ -132,7 +133,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.1")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.2")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -241,6 +242,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     case_manager = CaseManager(store)
     if store.available:
         await case_manager.init()
+
+    # Compliance audit trail (manual block/unblock, secret rotation, etc.)
+    audit_log = AuditLog(store)
+    if store.available:
+        await audit_log.init()
 
     # Community threat feed
     threat_feed = ThreatFeed(cfg)
@@ -443,7 +449,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             cloud_identity=cloud_identity,
                             zero_trust=zero_trust,
                             queue=queue,
-                            redis_sync=redis_sync),
+                            redis_sync=redis_sync,
+                            audit_log=audit_log),
             name="dashboard",
         ))
 
