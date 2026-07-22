@@ -359,6 +359,31 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # Public interface
 
 
+def resolve_config_path(path: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve the config file path CNSL would load, without loading it.
+
+    Search order when no explicit path is given:
+      1. /etc/cnsl/config.json
+      2. /etc/cnsl/config.yaml
+      3. /etc/cnsl/config.yml
+      4. ./config.json  (current working directory)
+      5. None (built-in defaults only)
+    """
+    if path:
+        return path
+    candidates = [
+        "/etc/cnsl/config.json",
+        "/etc/cnsl/config.yaml",
+        "/etc/cnsl/config.yml",
+        os.path.join(os.getcwd(), "config.json"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     """Return merged config (defaults + optional file overrides).
 
@@ -371,18 +396,7 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     cfg: Dict[str, Any] = _deep_copy(DEFAULT_CONFIG)
 
     # Resolve path — explicit arg wins, then auto-discover
-    resolved: Optional[str] = path
-    if not resolved:
-        candidates = [
-            "/etc/cnsl/config.json",
-            "/etc/cnsl/config.yaml",
-            "/etc/cnsl/config.yml",
-            os.path.join(os.getcwd(), "config.json"),
-        ]
-        for candidate in candidates:
-            if os.path.exists(candidate):
-                resolved = candidate
-                break
+    resolved: Optional[str] = resolve_config_path(path)
 
     if not resolved:
         return cfg  # pure defaults

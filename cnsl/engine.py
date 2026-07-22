@@ -133,7 +133,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.2")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.3")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -158,6 +158,12 @@ Examples:
                     help="Check if a newer version is available on PyPI")
     ap.add_argument("--validate-config",  action="store_true",
                     help="Validate config file and print all errors/warnings, then exit")
+    ap.add_argument("--backup",        default=None, metavar="PATH",
+                    help="Back up config + store DB + FIM baseline to PATH (tar.gz), then exit")
+    ap.add_argument("--restore",       default=None, metavar="PATH",
+                    help="Restore config + store DB + FIM baseline from a backup PATH, then exit")
+    ap.add_argument("--force",         action="store_true",
+                    help="With --restore, overwrite existing files without prompting")
     return ap
 
 
@@ -661,6 +667,39 @@ def main() -> None:
     if getattr(args, 'validate_config', False):
         ok = validate_and_print(cfg)
         raise SystemExit(0 if ok else 1)
+
+    # Backup (--backup PATH)
+    if getattr(args, 'backup', None):
+        from .backup import create_backup
+        from .config import resolve_config_path
+        config_path = resolve_config_path(args.config)
+        result = create_backup(cfg, config_path, args.backup)
+        print(f"Backup written to: {result['path']}")
+        for item in result["included"]:
+            print(f"  included: {item}")
+        for item in result["skipped"]:
+            print(f"  skipped:  {item}")
+        return
+
+    # Restore (--restore PATH)
+    if getattr(args, 'restore', None):
+        from .backup import restore_backup
+
+        def _confirm(path: str) -> bool:
+            ans = input(f"Overwrite existing file {path}? [y/N] ").strip().lower()
+            return ans == "y"
+
+        result = restore_backup(args.restore, force=args.force,
+                                 confirm=None if args.force else _confirm)
+        m = result["manifest"]
+        print(f"Restored from backup created {m.get('created')} (CNSL {m.get('cnsl_version')})")
+        for item in result["restored"]:
+            print(f"  restored: {item}")
+        for item in result["skipped"]:
+            print(f"  skipped:  {item}")
+        if result["skipped"]:
+            print("\nSkipped files were left untouched. Re-run with --force to overwrite them.")
+        return
 
     # Update check
     if getattr(args, 'check_update', False):

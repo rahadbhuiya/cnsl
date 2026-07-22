@@ -4,6 +4,28 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.3 -- Backup/restore CLI + test suite reorganization
+
+**New module: `cnsl/backup.py`**
+- `create_backup(cfg, config_path, out_path)` -- bundles config file + main store DB + FIM baseline DB into a single tar.gz. SQLite DBs are captured via sqlite3's native `.backup()` API (a consistent point-in-time snapshot, safe even while CNSL is running and correct with WAL -- a plain file copy is not).
+- `restore_backup(backup_path, force=False, confirm=None)` -- restores each file to the path recorded in the backup's own `manifest.json`. Existing files are left untouched unless `force=True` or a `confirm()` callback approves the overwrite.
+- PostgreSQL-backed stores are not snapshotted (needs `pg_dump`/`pg_restore`); the manifest records the backend so restore never silently claims to have restored something it didn't.
+
+**`cnsl/config.py`**
+- Extracted `resolve_config_path()` out of `load_config()` so other code (backup) can find the active config file without loading it.
+
+**`cnsl/engine.py`**
+- New CLI flags: `--backup PATH`, `--restore PATH`, `--force` (skip restore's overwrite prompt).
+
+**Test suite reorganization**
+- `tests/test_cnsl.py` (5467 lines, 137 classes, 581 tests) split into 16 domain-focused files (`test_parsers.py`, `test_detector.py`, `test_config.py`, `test_store.py`, `test_audit.py`, `test_blocking.py`, `test_fim.py`, `test_ml.py`, `test_auth_cases.py`, `test_threat_feed.py`, `test_ueba_zerotrust.py`, `test_agent_infra.py`, `test_reporting.py`, `test_killchain.py`, `test_integrations.py`, `test_dashboard.py`) plus a shared `tests/helpers.py` for common fixtures (`make_cfg`, `make_detector`, `_run`, `_det`, `_make_cm`). No tests changed -- same 581 tests, same assertions, verified against the original file before removing it.
+- New tests: 7 covering `cnsl/backup.py` (round-trip, missing files, existing-file skip/force/confirm behavior, postgres-backend skip note, missing-backup error).
+
+**Tests**
+- 588 tests passing (581 existing + 7 new backup tests).
+
+---
+
 ### v3.4.2 -- Compliance audit trail
 
 **New module: `cnsl/audit.py`**

@@ -137,7 +137,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/test_cnsl.py   # runs 431 tests
+python -m pytest tests/               # runs 588 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.
