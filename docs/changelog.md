@@ -4,6 +4,32 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.4 -- PostgreSQL migration tool
+
+**New module: `cnsl/migrate.py`**
+- `migrate(sqlite_path, pg_dsn, ...)` -- copies `incidents` and `blocks` (the two tables the PostgreSQL backend has a schema for) from an existing SQLite DB into PostgreSQL, in configurable batches via `asyncpg.executemany()`.
+- `blocks` upserts on its `ip` primary key (`ON CONFLICT DO UPDATE`), so a re-run is safe/idempotent. `incidents` has no natural unique key across backends, so re-running appends by default -- pass `truncate_target=True` for a clean one-shot copy instead.
+- SQLite's `flag` column has no PostgreSQL counterpart and is intentionally not migrated (dropped by the existing PG schema, not a new gap). `dry_run` (SQLite INTEGER) is converted to a real `BOOLEAN` for the PostgreSQL column.
+- Case management, UEBA, kill-chain, pattern-learner, zero-trust, and audit-log data are **not** migrated -- the PostgreSQL backend has no schema for them yet. This is reported explicitly in the migration output (`skipped_tables`) rather than silently dropped.
+- `--migrate-dry-run` only reports source row counts and works without `asyncpg` installed (it never touches PostgreSQL); the actual write path requires `asyncpg`.
+
+**`cnsl/store.py`**
+- Extracted the inline PostgreSQL `CREATE TABLE` DDL out of `_init_postgresql()` into a shared `_PG_SCHEMA` constant, so `migrate.py` creates the exact same schema Store does instead of duplicating it.
+
+**`cnsl/engine.py`**
+- New CLI flags: `--migrate-db POSTGRES_DSN`, `--sqlite-path PATH` (override source), `--migrate-batch-size N`, `--migrate-dry-run`, `--migrate-truncate-target`.
+
+**Packaging**
+- New `postgres` extra (`pip install cnsl[postgres]`) pulling in `asyncpg>=0.29`; added to `requirements.txt` as an optional line.
+
+**Tests**
+- 12 new tests (`test_migrate.py`) using a minimal fake `asyncpg` module (no real PostgreSQL server needed) -- dry run, batched writes, upsert-on-conflict, truncate-target, dropped `flag` column, int-to-bool conversion, missing-file/empty-DSN/missing-asyncpg error paths, and dry-run working without asyncpg installed.
+
+**Tests**
+- 600 tests passing (588 existing + 12 new migration tests).
+
+---
+
 ### v3.4.3 -- Backup/restore CLI + test suite reorganization
 
 **New module: `cnsl/backup.py`**

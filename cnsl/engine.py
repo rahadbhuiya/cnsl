@@ -133,7 +133,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.3")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.4")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -164,6 +164,19 @@ Examples:
                     help="Restore config + store DB + FIM baseline from a backup PATH, then exit")
     ap.add_argument("--force",         action="store_true",
                     help="With --restore, overwrite existing files without prompting")
+    ap.add_argument("--migrate-db",    default=None, metavar="POSTGRES_DSN",
+                    help="Migrate incidents+blocks from the configured SQLite DB "
+                         "to this PostgreSQL DSN, then exit")
+    ap.add_argument("--sqlite-path",   default=None, metavar="PATH",
+                    help="With --migrate-db, override the source SQLite DB path "
+                         "(default: store.db_path from config)")
+    ap.add_argument("--migrate-batch-size", type=int, default=500, metavar="N",
+                    help="With --migrate-db, rows per batch (default: 500)")
+    ap.add_argument("--migrate-dry-run", action="store_true",
+                    help="With --migrate-db, only report row counts -- write nothing")
+    ap.add_argument("--migrate-truncate-target", action="store_true",
+                    help="With --migrate-db, TRUNCATE the target tables first "
+                         "for a clean one-shot copy (default: append/upsert)")
     return ap
 
 
@@ -699,6 +712,38 @@ def main() -> None:
             print(f"  skipped:  {item}")
         if result["skipped"]:
             print("\nSkipped files were left untouched. Re-run with --force to overwrite them.")
+        return
+
+    # PostgreSQL migration (--migrate-db DSN)
+    if getattr(args, 'migrate_db', None):
+        from .migrate import migrate as run_migration
+
+        sqlite_path = args.sqlite_path or cfg.get("store", {}).get("db_path", "./cnsl_state.db")
+        try:
+            result = asyncio.run(run_migration(
+                sqlite_path=sqlite_path,
+                pg_dsn=args.migrate_db,
+                batch_size=args.migrate_batch_size,
+                dry_run=args.migrate_dry_run,
+                truncate_target=args.migrate_truncate_target,
+            ))
+        except (FileNotFoundError, ValueError, ImportError) as e:
+            print(f"Migration failed: {e}")
+            raise SystemExit(1)
+
+        if result["dry_run"]:
+            print("Dry run -- nothing written. Source row counts:")
+        else:
+            print("Migration complete:")
+        print(f"  incidents: {result['incidents']['source_count']} in source, "
+              f"{result['incidents']['migrated']} migrated")
+        print(f"  blocks:    {result['blocks']['source_count']} in source, "
+              f"{result['blocks']['migrated']} migrated")
+        print("\nNot migrated (no PostgreSQL schema yet):")
+        for item in result["skipped_tables"]:
+            print(f"  - {item}")
+        if not result["dry_run"]:
+            print("\nUpdate config.json's store.backend to \"postgresql\" to start using it.")
         return
 
     # Update check

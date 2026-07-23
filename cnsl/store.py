@@ -68,6 +68,38 @@ CREATE INDEX IF NOT EXISTS idx_incidents_sev ON incidents(severity);
 # Store
 
 
+# PostgreSQL-compatible schema (mirrors _SCHEMA above, minus PRAGMA
+# statements which don't apply to PG). Shared with cnsl/migrate.py so
+# the migration tool creates the exact same tables Store does.
+_PG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS incidents (
+    id          SERIAL PRIMARY KEY,
+    ts          DOUBLE PRECISION NOT NULL,
+    time        TEXT NOT NULL,
+    src_ip      TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    reasons     TEXT NOT NULL,
+    fail_count  INTEGER NOT NULL,
+    uniq_users  INTEGER NOT NULL,
+    country     TEXT,
+    city        TEXT,
+    isp         TEXT,
+    kind        TEXT DEFAULT 'SSH_FAIL'
+);
+CREATE INDEX IF NOT EXISTS idx_incidents_ip  ON incidents(src_ip);
+CREATE INDEX IF NOT EXISTS idx_incidents_ts  ON incidents(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_incidents_sev ON incidents(severity);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    ip          TEXT PRIMARY KEY,
+    blocked_at  DOUBLE PRECISION,
+    unblock_at  DOUBLE PRECISION,
+    reason      TEXT,
+    dry_run     BOOLEAN
+);
+"""
+
+
 class Store:
     """
     Async persistence store. Supports SQLite (default) and PostgreSQL.
@@ -165,33 +197,7 @@ class Store:
             )
             async with self._pg.acquire() as conn:
                 # Create tables -- PostgreSQL-compatible schema
-                await conn.execute("""
-                    CREATE TABLE IF NOT EXISTS incidents (
-                        id          SERIAL PRIMARY KEY,
-                        ts          DOUBLE PRECISION NOT NULL,
-                        time        TEXT NOT NULL,
-                        src_ip      TEXT NOT NULL,
-                        severity    TEXT NOT NULL,
-                        reasons     TEXT NOT NULL,
-                        fail_count  INTEGER NOT NULL,
-                        uniq_users  INTEGER NOT NULL,
-                        country     TEXT,
-                        city        TEXT,
-                        isp         TEXT,
-                        kind        TEXT DEFAULT 'SSH_FAIL'
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_incidents_ip  ON incidents(src_ip);
-                    CREATE INDEX IF NOT EXISTS idx_incidents_ts  ON incidents(ts DESC);
-                    CREATE INDEX IF NOT EXISTS idx_incidents_sev ON incidents(severity);
-
-                    CREATE TABLE IF NOT EXISTS blocks (
-                        ip          TEXT PRIMARY KEY,
-                        blocked_at  DOUBLE PRECISION,
-                        unblock_at  DOUBLE PRECISION,
-                        reason      TEXT,
-                        dry_run     BOOLEAN
-                    );
-                """)
+                await conn.execute(_PG_SCHEMA)
             self._available = True
             return True
         except ImportError:

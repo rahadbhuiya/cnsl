@@ -137,7 +137,22 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 588 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 600 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.
+
+## Operational CLI
+
+```bash
+cnsl --validate-config                # check config.json for errors/warnings, then exit
+cnsl --backup /path/backup.tar.gz     # snapshot config + store DB + FIM baseline
+cnsl --restore /path/backup.tar.gz    # restore from a backup (prompts before overwrite)
+cnsl --restore /path/backup.tar.gz --force   # restore, overwriting existing files
+
+cnsl --migrate-db postgresql://user:pass@host/db          # migrate SQLite -> PostgreSQL
+cnsl --migrate-db postgresql://...  --migrate-dry-run      # preview counts only
+cnsl --migrate-db postgresql://...  --migrate-truncate-target  # clean one-shot copy
+```
+
+`--migrate-db` requires the `postgres` extra (`pip install cnsl[postgres]`, or `pip install asyncpg`). It moves `incidents` and `blocks` -- the only tables the PostgreSQL backend currently has a schema for; case management, UEBA, kill-chain, pattern-learner, zero-trust, and the audit log stay SQLite-only for now and are listed as skipped in the migration output rather than silently dropped.
