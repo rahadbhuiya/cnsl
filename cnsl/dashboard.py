@@ -19,6 +19,11 @@ Routes:
   POST /api/block            Manual block
   POST /api/unblock          Manual unblock
   GET  /api/audit            Compliance audit trail (who did what, when)
+  GET  /api/correlation-rules              Cross-source correlation rules
+  PATCH /api/correlation-rules/{name}      Tune enabled/window/cooldown/confidence
+  POST /api/correlation-rules/{name}/enable
+  POST /api/correlation-rules/{name}/disable
+  POST /api/correlation-rules/{name}/reset
   GET  /ws                   WebSocket live feed + bidirectional actions
   GET  /ws/agent             WebSocket agent ingestion endpoint
   GET  /stream               SSE live event stream (backward compat)
@@ -108,6 +113,7 @@ async def start_dashboard(
     queue:           Any = None,
     redis_sync:      Any = None,
     audit_log:       Any = None,
+    correlator:      Any = None,
 ) -> None:
     from . import __version__
     try:
@@ -585,6 +591,13 @@ async def start_dashboard(
             return web.json_response({"error": err}, status=400)
         await logger.log("rule_reset", {"rule_id": rule_id, "by": payload["sub"]})
         return web.json_response({"ok": True, "rule": detector.rules.get(rule_id).to_dict()})
+
+    #  Correlation Rules API (cross-source rules, cnsl/correlator.py) --
+    #  routes registered in dashboard_correlation.py to keep this file
+    #  under its line-count budget.
+
+    from .dashboard_correlation import register_correlation_routes
+    register_correlation_routes(router, correlator, _require_auth, rbac, logger, _audit)
 
     #  Case Management API 
 

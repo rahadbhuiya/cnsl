@@ -307,6 +307,75 @@ class TestValidateConfigRules:
         errors = [e for e in validate_config(cfg) if e.level == "error"]
         assert not any("ssh.brute_force" in e.path for e in errors)
 
+
+class TestValidateConfigCorrelationRules:
+    """correlation_rules block override validation (cnsl/correlator.py)."""
+
+    def test_valid_override_no_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {
+            "enabled": False, "window_sec": 60, "cooldown_sec": 30, "confidence": 0.8,
+        }}}
+        errors = [e for e in validate_config(cfg) if e.level == "error"]
+        assert not any("correlation_rules" in e.path for e in errors)
+
+    def test_unknown_rule_name_is_warning_not_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"not_a_real_rule": {"enabled": False}}}
+        issues = validate_config(cfg)
+        errors = [e for e in issues if e.level == "error"]
+        warnings = [e for e in issues if e.level == "warning"]
+        assert not any("correlation_rules" in e.path for e in errors)
+        assert any("correlation_rules.not_a_real_rule" in e.path for e in warnings)
+
+    def test_negative_window_sec_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"window_sec": -5}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("window_sec" in p for p in paths)
+
+    def test_zero_window_sec_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"window_sec": 0}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("window_sec" in p for p in paths)
+
+    def test_negative_cooldown_sec_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"cooldown_sec": -1}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("cooldown_sec" in p for p in paths)
+
+    def test_confidence_above_one_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"confidence": 1.5}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("confidence" in p for p in paths)
+
+    def test_confidence_below_zero_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"confidence": -0.1}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("confidence" in p for p in paths)
+
+    def test_non_bool_enabled_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": {"enabled": "yes"}}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("enabled" in p for p in paths)
+
+    def test_non_dict_override_is_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"correlation_rules": {"web_auth_flood": "disabled"}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert any("correlation_rules.web_auth_flood" in p for p in paths)
+
+    def test_empty_correlation_rules_no_error(self):
+        from cnsl.validator import validate_config
+        errors = [e for e in validate_config({"correlation_rules": {}}) if e.level == "error"]
+        assert not any("correlation_rules" in e.path for e in errors)
+
+
 class TestValidateConfigDashboard:
     """dashboard host/port validation."""
 

@@ -133,7 +133,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.4")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.5")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -212,7 +212,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     notifier.start()  # start daily digest background task
     blocker.metrics = metrics  # wire in so dec_block() is called on unblock
 
-    correlator = Correlator()
+    correlator = Correlator(cfg=cfg)
     abuseipdb  = AbuseIPDB(cfg)
     baseline   = BehavioralBaseline(cfg)
 
@@ -469,7 +469,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             zero_trust=zero_trust,
                             queue=queue,
                             redis_sync=redis_sync,
-                            audit_log=audit_log),
+                            audit_log=audit_log,
+                            correlator=correlator),
             name="dashboard",
         ))
 

@@ -320,6 +320,37 @@ All fields are optional. Only supplied fields are updated.
 
 ---
 
+## Correlation Rules
+
+Cross-source rules (`cnsl/correlator.py`) that fire on combinations of events across multiple log sources -- e.g. web recon followed by SSH brute-force, or a honeypot-port hit followed by an SSH attempt. Distinct from the single-source detection rules above (`/api/rules`).
+
+```
+GET   /api/correlation-rules              All correlation rules with current overrides
+GET   /api/correlation-rules/{name}       Single rule detail
+PATCH /api/correlation-rules/{name}       Tune enabled/window_sec/cooldown_sec/confidence
+POST  /api/correlation-rules/{name}/enable
+POST  /api/correlation-rules/{name}/disable
+POST  /api/correlation-rules/{name}/reset  Reset to built-in defaults
+```
+
+Rule names: `multi_service_brute_force`, `web_recon_then_ssh`, `honeypot_then_ssh`, `web_auth_flood`, `privilege_escalation`, `persistent_recon`.
+
+**`PATCH /api/correlation-rules/{name}`** body:
+```json
+{"enabled": true, "window_sec": 300, "cooldown_sec": 120, "confidence": 0.8}
+```
+
+All fields are optional. `window_sec` must be positive, `cooldown_sec` non-negative, `confidence` between 0.0 and 1.0. Only the rule's tunable knobs (enable/disable, sliding window, alert cooldown, confidence score) are adjustable this way -- each rule's trigger logic (e.g. "3 SSH fails") stays in code. Same config.json override path as detection rules, under a separate `correlation_rules` block:
+
+```json
+"correlation_rules": {
+  "web_auth_flood": {"enabled": false},
+  "persistent_recon": {"window_sec": 900, "confidence": 0.6}
+}
+```
+
+---
+
 ## UEBA
 
 ```

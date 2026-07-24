@@ -183,6 +183,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Each entry can have: enabled (bool), threshold (int), severity (str), window_sec (int)
     # Example: "ssh.brute_force": { "enabled": true, "threshold": 5, "severity": "HIGH" }
     "rules": {},
+    "correlation_rules": {},
 
     #  Allowlist — never blocked 
     "allowlist": [

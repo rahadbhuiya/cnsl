@@ -4,6 +4,32 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.5 -- Correlation rule tuning
+
+Previously, the 6 cross-source correlation rules (`cnsl/correlator.py`) were entirely hardcoded -- no way to disable a noisy one, widen its window, or adjust its confidence without editing code and restarting.
+
+**`cnsl/correlator.py`**
+- `CorrelationRule` gained `enabled`, and overridable `window_sec` / `cooldown_sec` / `confidence` (via `effective_window_sec` / `effective_cooldown_sec` / `effective_confidence` properties -- mirrors the existing `Rule`/`RuleEngine` override pattern in `cnsl/rules.py`). Each rule's own trigger logic (e.g. "3 SSH fails + 2 DB fails") is unchanged -- only these four common knobs are tunable, not each rule's internal counts.
+- `Correlator` gained `all_rules()`, `get_rule()`, `enable()`, `disable()`, `update()`, `reset()`, and now accepts `Correlator(cfg=cfg)` to apply a new `correlation_rules` config.json block at startup. `ingest()` now skips disabled rules.
+- Each `Correlator()` instance gets its own fresh rule objects (previously all instances shared the same module-level rule singletons) so overrides on one Correlator/test never leak into another.
+
+**New module: `cnsl/dashboard_correlation.py`**
+- `GET/PATCH /api/correlation-rules[/{name}]` + `/enable`, `/disable`, `/reset` -- same RBAC gates as the existing `/api/rules` (analyst+ to tune, admin to reset). Extracted into its own file (mirroring the earlier `dashboard_html.py` split) to keep `dashboard.py` under its enforced 2000-line test budget.
+
+**`cnsl/validator.py` / `cnsl/config.py`**
+- New `_validate_correlation_rules()`: validates `window_sec` (positive int), `cooldown_sec` (non-negative int), `confidence` (0.0-1.0), `enabled` (bool); unknown rule names warn rather than error. `correlation_rules: {}` added to `DEFAULT_CONFIG`.
+
+**`cnsl/engine.py`**
+- `Correlator(cfg=cfg)` (previously `Correlator()`), wired into `start_dashboard()`.
+
+**Tests**
+- 45 new tests: `test_correlation.py` (35 -- rule listing, enable/disable/update/reset, config-driven init, cross-instance isolation, dashboard signature/route wiring) + `test_config.py::TestValidateConfigCorrelationRules` (10).
+
+**Tests**
+- 645 tests passing (600 existing + 45 new).
+
+---
+
 ### v3.4.4 -- PostgreSQL migration tool
 
 **New module: `cnsl/migrate.py`**

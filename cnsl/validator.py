@@ -107,6 +107,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Rules block (per-rule overrides)
     _validate_rules(cfg.get("rules", {}), issues)
 
+    # Correlation rules block (cross-source rule overrides)
+    _validate_correlation_rules(cfg.get("correlation_rules", {}), issues)
+
     # Runtime permission check (only error, not warning)
     ac = cfg.get("actions", {})
     if isinstance(ac, dict) and not ac.get("dry_run", True):
@@ -570,6 +573,55 @@ def _validate_rules(rules: Any, issues: List) -> None:
                     f"rules.{rule_id}.window_sec",
                     f"must be a non-negative integer (got {window!r})",
                 ))
+
+
+_KNOWN_CORRELATION_RULES = {
+    "multi_service_brute_force", "web_recon_then_ssh", "honeypot_then_ssh",
+    "web_auth_flood", "privilege_escalation", "persistent_recon",
+}
+
+
+def _validate_correlation_rules(rules: Any, issues: List) -> None:
+    """Validate config.json's "correlation_rules" block (cnsl/correlator.py
+    per-rule overrides: enabled, window_sec, cooldown_sec, confidence)."""
+    if not rules or not isinstance(rules, dict):
+        return
+    for name, overrides in rules.items():
+        if not isinstance(overrides, dict):
+            issues.append(ValidationError(
+                f"correlation_rules.{name}", "must be a dict"))
+            continue
+        if name not in _KNOWN_CORRELATION_RULES:
+            issues.append(ValidationError(
+                f"correlation_rules.{name}",
+                f"unknown correlation rule (known: {sorted(_KNOWN_CORRELATION_RULES)})",
+                level="warning",
+            ))
+        window = overrides.get("window_sec")
+        if window is not None and (not isinstance(window, int) or window < 1):
+            issues.append(ValidationError(
+                f"correlation_rules.{name}.window_sec",
+                f"must be a positive integer (got {window!r})",
+            ))
+        cooldown = overrides.get("cooldown_sec")
+        if cooldown is not None and (not isinstance(cooldown, int) or cooldown < 0):
+            issues.append(ValidationError(
+                f"correlation_rules.{name}.cooldown_sec",
+                f"must be a non-negative integer (got {cooldown!r})",
+            ))
+        confidence = overrides.get("confidence")
+        if confidence is not None:
+            if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+                issues.append(ValidationError(
+                    f"correlation_rules.{name}.confidence",
+                    f"must be a number between 0.0 and 1.0 (got {confidence!r})",
+                ))
+        enabled = overrides.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            issues.append(ValidationError(
+                f"correlation_rules.{name}.enabled",
+                f"must be true or false (got {enabled!r})",
+            ))
 
 
 
