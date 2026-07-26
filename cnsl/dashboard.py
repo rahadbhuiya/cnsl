@@ -20,11 +20,8 @@ Routes:
   POST /api/block            Manual block
   POST /api/unblock          Manual unblock
   GET  /api/audit            Compliance audit trail (who did what, when)
-  GET  /api/correlation-rules              Cross-source correlation rules
-  PATCH /api/correlation-rules/{name}      Tune enabled/window/cooldown/confidence
-  POST /api/correlation-rules/{name}/enable
-  POST /api/correlation-rules/{name}/disable
-  POST /api/correlation-rules/{name}/reset
+  GET/PATCH /api/correlation-rules[/{name}]  Cross-source rule tuning (+enable/disable/reset)
+  GET  /api/federation/hub   Multi-node health + cross-node attacker view
   GET  /ws                   WebSocket live feed + bidirectional actions
   GET  /ws/agent             WebSocket agent ingestion endpoint
   GET  /stream               SSE live event stream (backward compat)
@@ -1147,6 +1144,9 @@ async def start_dashboard(
         if record is None:
             return web.json_response({"error": f"No federation record for {ip}"}, status=404)
         return web.json_response(record.to_dict())
+
+    from .dashboard_hub import register_hub_routes
+    register_hub_routes(router, redis_sync, federation, _require_auth, _rate_check)
 
     #  SIEM Connector API
 

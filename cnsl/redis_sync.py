@@ -27,7 +27,10 @@ Config example:
 Redis key layout:
   cnsl:blocks           HASH  { ip -> json(reason, ts, node_id) }
   cnsl:events           PUBSUB channel for real-time sync
-  cnsl:node:<id>        STRING heartbeat (TTL 30s)
+  cnsl:node:<id>        STRING heartbeat -- JSON {ts, stats} (TTL 30s).
+                         `stats` is populated when heartbeat_loop() is
+                         given a stats_provider callback (see engine.py);
+                         used by the multi-node hub view (cnsl/hub.py).
 """
 
 from __future__ import annotations
@@ -296,12 +299,28 @@ class RedisSync:
 
     #  Heartbeat 
 
-    async def heartbeat_loop(self) -> None:
-        """Announce this node's presence every 15 seconds."""
+    async def heartbeat_loop(self, stats_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> None:
+        """
+        Announce this node's presence every 15 seconds.
+
+        If `stats_provider` is given, it's called (sync, no args) each
+        tick and its return value is stored alongside the timestamp, so
+        other nodes' hub views can show this node's health at a glance
+        (see cnsl/hub.py). Any exception from stats_provider is caught
+        and swallowed -- a stats bug must never stop the heartbeat, since
+        peers use heartbeat absence to decide a node is down.
+        """
         while True:
             try:
                 if self._connected:
-                    await self._redis.setex(self._node_key(), 30, iso_time())
+                    stats: Dict[str, Any] = {}
+                    if stats_provider is not None:
+                        try:
+                            stats = stats_provider() or {}
+                        except Exception:
+                            stats = {}
+                    payload = json.dumps({"ts": iso_time(), "stats": stats})
+                    await self._redis.setex(self._node_key(), 30, payload)
             except Exception:
                 pass
             await asyncio.sleep(15)
@@ -316,6 +335,42 @@ class RedisSync:
             return [k.split(":")[-1] for k in keys]
         except Exception:
             return [self.node_id]
+
+    async def get_cluster_nodes(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Return every active node's heartbeat as {node_id: {ts, stats}}.
+
+        Tolerates peers running an older CNSL version that stored a
+        plain ISO timestamp string instead of JSON -- those show up
+        with stats={} rather than being dropped or raising.
+        """
+        if not self._connected:
+            return {self.node_id: {"ts": iso_time(), "stats": {}}}
+        try:
+            pattern = f"{self.prefix}:node:*"
+            keys    = await self._redis.keys(pattern)
+            if not keys:
+                return {}
+            values = await self._redis.mget(keys)
+            result: Dict[str, Dict[str, Any]] = {}
+            for key, raw in zip(keys, values):
+                if raw is None:
+                    continue
+                node_id = key.split(":")[-1]
+                try:
+                    parsed = json.loads(raw)
+                    if not isinstance(parsed, dict):
+                        raise ValueError
+                    result[node_id] = {
+                        "ts":    parsed.get("ts", raw),
+                        "stats": parsed.get("stats", {}),
+                    }
+                except (ValueError, TypeError):
+                    # Older node: raw value is just the ISO timestamp string.
+                    result[node_id] = {"ts": raw, "stats": {}}
+            return result
+        except Exception:
+            return {self.node_id: {"ts": iso_time(), "stats": {}}}
 
     # Cleanup 
     

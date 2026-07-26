@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import time
 from typing import Any, Dict, List
 
 from .assets          import AssetInventory
@@ -133,7 +134,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.5")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.7")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -417,7 +418,20 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # Redis distributed sync
     if redis_sync.connected:
         tasks.append(asyncio.create_task(redis_sync.subscribe_loop(), name="redis_sub"))
-        tasks.append(asyncio.create_task(redis_sync.heartbeat_loop(), name="redis_hb"))
+
+        def _node_stats() -> dict:
+            """Compact per-node health snapshot published in this node's
+            Redis heartbeat, read back by every peer's hub view (cnsl/hub.py)."""
+            return {
+                "uptime_sec":      round(time.time() - metrics._start, 1),
+                "incidents_total": dict(metrics.incidents_total),
+                "blocks_active":   metrics.blocks_active,
+                "blocks_total":    metrics.blocks_total,
+                "events_processed":metrics.events_processed,
+            }
+
+        tasks.append(asyncio.create_task(
+            redis_sync.heartbeat_loop(stats_provider=_node_stats), name="redis_hb"))
         await federation.start()
 
     # Cloud identity polling (if any connector is enabled)

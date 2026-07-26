@@ -293,9 +293,29 @@ GET  /api/federation/status      This node's federation health and stats
 GET  /api/federation/nodes       All peer nodes with last-seen timestamp
 GET  /api/federation/cross-node  IPs seen by 2+ distinct nodes
 GET  /api/federation/ip/{ip}     Combined per-node view for one IP
+GET  /api/federation/hub         Multi-node health/stats + cross-node view, one call
 ```
 
 **`GET /api/federation/cross-node`** query params: `limit` (default 50).
+
+**`GET /api/federation/hub`** -- the multi-node "hub" view: every known node's health (uptime, incidents, active blocks -- via each node's Redis heartbeat) plus this node's federation cross-node IP data, in one response. Requires Redis (`redis.enabled: true`); returns 400 if Redis isn't connected, since a hub view is meaningless for a single unclustered node. Query params: `limit` (default 50, passed through to the cross-node-IPs portion).
+
+```json
+{
+  "this_node": "a1b2c3d4",
+  "node_count": 3,
+  "nodes": [
+    {"node_id": "a1b2c3d4", "is_self": true, "last_seen": "2026-07-24T10:00:00Z",
+     "stats": {"uptime_sec": 86400, "incidents_total": {"HIGH": 12, "MEDIUM": 40, "LOW": 8},
+               "blocks_active": 5, "blocks_total": 91, "events_processed": 48213}},
+    {"node_id": "e5f6a7b8", "is_self": false, "last_seen": "2026-07-24T10:00:03Z", "stats": {...}}
+  ],
+  "cross_node_ips": [{"ip": "45.33.32.1", "node_count": 2, "nodes": {...}}],
+  "federation": {"enabled": true, "connected": true, "signals_sent": 340, ...}
+}
+```
+
+A node running an older CNSL version that hasn't been upgraded shows up with `stats: {}` rather than being dropped from the list.
 
 ---
 

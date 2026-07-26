@@ -4,6 +4,31 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.7 -- Multi-node hub view
+
+Federation already let nodes share detection signals via Redis, and RedisSync already gave every node a heartbeat key -- but there was no single place to see every node's health side by side. Each node's dashboard only showed a bare list of peer IDs with last-seen timestamps, no stats.
+
+**`cnsl/redis_sync.py`**
+- `heartbeat_loop()` now accepts an optional `stats_provider` callback; when given, its return value is stored as JSON alongside the timestamp in the existing `cnsl:node:<id>` heartbeat key (previously just a plain ISO-timestamp string). A `stats_provider` exception is caught and swallowed -- a stats bug must never stop the heartbeat, since peers use its absence to decide a node is down.
+- New `get_cluster_nodes()`: reads every `cnsl:node:*` key and returns `{node_id: {ts, stats}}`. Tolerates peers still running an older CNSL version that stored a plain timestamp string (shown with `stats: {}}` rather than dropped or crashing the whole read).
+
+**New module: `cnsl/hub.py`**
+- `get_hub_view(redis_sync, federation_bus)` combines per-node heartbeat stats with `FederationBus`'s cross-node attacker data into one aggregated response: every node's health, which one is "self", and IPs seen by 2+ nodes. Degrades to a single-node view if Redis is down or federation isn't enabled -- never raises.
+
+**New module: `cnsl/dashboard_hub.py`**
+- `GET /api/federation/hub` -- one call for the full multi-node picture. Returns 400 if Redis isn't connected (a hub view is meaningless for an unclustered node). Extracted into its own file (same pattern as `dashboard_correlation.py`/`dashboard_ml.py`) to keep `dashboard.py` under its enforced 2000-line test budget.
+
+**`cnsl/engine.py`**
+- `heartbeat_loop()` is now given a `_node_stats()` closure built from the existing `Metrics` object (uptime, incidents by severity, active/total blocks, events processed), so this node's own hub entry carries real numbers.
+
+**Tests**
+- 20 new tests (`test_hub.py`): hub-view aggregation (multi-node, self-first ordering, single-node, federation data merge, Redis/federation failure degradation), `RedisSync.get_cluster_nodes()`/`heartbeat_loop()` (JSON parsing, legacy plain-timestamp tolerance, expired-key skipping, stats_provider exception safety), and dashboard route wiring.
+
+**Tests**
+- 679 tests passing (659 existing + 20 new).
+
+---
+
 ### v3.4.6 -- ML false-positive feedback loop
 
 Previously, marking an ML anomaly alert as a false positive had no effect -- the operator's judgment never made it back into the model, so the same pattern kept getting flagged on every retrain.
