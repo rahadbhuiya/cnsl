@@ -14,6 +14,7 @@ Routes:
   GET  /api/blocks           Active blocks
   GET  /api/metrics          Prometheus text metrics
   GET  /api/ml               ML detector status + training progress
+  POST /api/ml/alerts/{id}/false-positive  Mark ML alert as false positive
   GET  /api/fim              FIM recent alerts
   GET  /api/honeypot         Honeypot status + recent sessions
   POST /api/block            Manual block
@@ -1409,6 +1410,9 @@ async def start_dashboard(
         if ml_detector is None:
             return web.json_response({})
         return web.json_response(ml_detector.feature_stats())
+
+    from .dashboard_ml import register_ml_feedback_routes
+    register_ml_feedback_routes(router, ml_detector, _require_auth, rbac, logger, _audit, _rate_check)
 
     @router.get("/api/honeypot")
     async def api_honeypot_status(req: web.Request) -> web.Response:

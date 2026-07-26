@@ -94,6 +94,117 @@ class TestMLDetectorRecentAlerts:
         det = self._make_detector()
         assert det.feature_stats() == {}
 
+
+class TestMLFalsePositiveFeedback:
+    """MLDetector.mark_false_positive() -- operator feedback loop that
+    folds a wrongly-flagged alert's feature vector back into training
+    data, so similar patterns are treated as normal on the next retrain."""
+
+    def _make_detector(self, fp_reinforce_weight=None):
+        from cnsl.ml_detector import MLDetector
+        from cnsl.logger import JsonLogger
+        cfg = {"ml": {"enabled": True, "min_samples": 1}}
+        if fp_reinforce_weight is not None:
+            cfg["ml"]["fp_reinforce_weight"] = fp_reinforce_weight
+        return MLDetector(cfg, JsonLogger("/dev/null", verbose=False))
+
+    def _add_alert(self, det, ip="9.9.9.9", ssh_fail_count=50):
+        import uuid
+        from cnsl.ml_detector import MLAlert, FeatureWindow
+        fw = FeatureWindow(ip=ip, ts=2000.0, ssh_fail_count=ssh_fail_count)
+        alert = MLAlert(id=uuid.uuid4().hex[:12], ip=ip, anomaly_score=-0.5,
+                         features=fw, top_reasons=["ssh_fails: test"], ts=2000.0)
+        det._recent_alerts.append(alert)
+        return alert
+
+    def test_mark_false_positive_succeeds_for_known_alert(self):
+        det = self._make_detector()
+        alert = self._add_alert(det)
+        err = det.mark_false_positive(alert.id)
+        assert err is None
+        assert alert.false_positive is True
+
+    def test_mark_false_positive_unknown_id_returns_error(self):
+        det = self._make_detector()
+        err = det.mark_false_positive("nonexistent-id")
+        assert err is not None
+        assert "nonexistent-id" in err
+
+    def test_mark_false_positive_is_idempotent(self):
+        det = self._make_detector()
+        alert = self._add_alert(det)
+        assert det.mark_false_positive(alert.id) is None
+        samples_after_first = det.training_samples
+        assert det.mark_false_positive(alert.id) is None  # no error second time
+        assert det.training_samples == samples_after_first  # not reinforced twice
+
+    def test_mark_false_positive_reinforces_training_data(self):
+        det = self._make_detector(fp_reinforce_weight=5)
+        alert = self._add_alert(det)
+        before = det.training_samples
+        det.mark_false_positive(alert.id)
+        assert det.training_samples == before + 5
+
+    def test_reinforce_weight_configurable(self):
+        det = self._make_detector(fp_reinforce_weight=10)
+        alert = self._add_alert(det)
+        before = det.training_samples
+        det.mark_false_positive(alert.id)
+        assert det.training_samples == before + 10
+
+    def test_false_positive_count_increments(self):
+        det = self._make_detector()
+        a1 = self._add_alert(det, ip="1.1.1.1")
+        a2 = self._add_alert(det, ip="2.2.2.2")
+        assert det.false_positive_count == 0
+        det.mark_false_positive(a1.id)
+        assert det.false_positive_count == 1
+        det.mark_false_positive(a2.id)
+        assert det.false_positive_count == 2
+
+    def test_false_positive_count_not_double_counted_on_idempotent_remark(self):
+        det = self._make_detector()
+        alert = self._add_alert(det)
+        det.mark_false_positive(alert.id)
+        det.mark_false_positive(alert.id)
+        assert det.false_positive_count == 1
+
+    def test_status_reports_false_positive_fields(self):
+        det = self._make_detector(fp_reinforce_weight=7)
+        alert = self._add_alert(det)
+        det.mark_false_positive(alert.id)
+        status = det.status()
+        assert status["false_positives_marked"] == 1
+        assert status["fp_reinforce_weight"] == 7
+
+    def test_recent_alerts_list_reflects_false_positive_flag(self):
+        det = self._make_detector()
+        alert = self._add_alert(det)
+        det.mark_false_positive(alert.id)
+        rendered = det.recent_alerts_list()
+        assert rendered[-1]["id"] == alert.id
+        assert rendered[-1]["false_positive"] is True
+
+    def test_unmarked_alert_shows_false_positive_false(self):
+        det = self._make_detector()
+        self._add_alert(det)
+        rendered = det.recent_alerts_list()
+        assert rendered[-1]["false_positive"] is False
+
+    def test_training_data_capped_after_reinforcement(self):
+        det = self._make_detector(fp_reinforce_weight=5)
+        det._training_data = [[0.0] * 11] * 49998  # near the 50000 cap
+        alert = self._add_alert(det)
+        det.mark_false_positive(alert.id)
+        assert det.training_samples <= 50000
+
+    def test_alert_id_is_unique_per_alert(self):
+        det = self._make_detector()
+        a1 = self._add_alert(det, ip="1.1.1.1")
+        a2 = self._add_alert(det, ip="2.2.2.2")
+        assert a1.id != a2.id
+
+
 class TestMLDetectorUpdateParams:
     """update_params() applies valid changes and clamps values."""
 
@@ -223,10 +334,13 @@ class TestMLAPIRoutes:
     def _src(self):
         from pathlib import Path
         root = Path(__file__).parent.parent / "cnsl"
-        # Routes are in dashboard.py; JS functions moved with HTML to dashboard_html.py
+        # Routes are in dashboard.py; JS functions moved with HTML to
+        # dashboard_html.py; ML false-positive feedback route lives in
+        # dashboard_ml.py (extracted to keep dashboard.py under budget).
         return (
             (root / "dashboard.py").read_text(encoding="utf-8") +
-            (root / "dashboard_html.py").read_text(encoding="utf-8")
+            (root / "dashboard_html.py").read_text(encoding="utf-8") +
+            (root / "dashboard_ml.py").read_text(encoding="utf-8")
         )
 
     def test_params_patch_route(self):
@@ -240,6 +354,13 @@ class TestMLAPIRoutes:
 
     def test_feature_stats_route(self):
         assert '"/api/ml/feature-stats"' in self._src()
+
+    def test_false_positive_route(self):
+        assert "/api/ml/alerts/{alert_id}/false-positive" in self._src()
+
+    def test_register_ml_feedback_routes_importable(self):
+        from cnsl.dashboard_ml import register_ml_feedback_routes
+        assert callable(register_ml_feedback_routes)
 
     def test_ml_save_params_js(self):
         assert "async function mlSaveParams()" in self._src()

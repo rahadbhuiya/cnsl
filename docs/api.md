@@ -184,6 +184,7 @@ PATCH /api/ml/params          Live-update parameters (no restart needed)
 POST  /api/ml/retrain         Force immediate retrain
 GET   /api/ml/alerts          Recent ML anomaly alerts
 GET   /api/ml/feature-stats   Feature importance counts from recent alerts
+POST  /api/ml/alerts/{id}/false-positive   Mark an alert as a false positive
 ```
 
 **`PATCH /api/ml/params`** body (all fields optional):
@@ -198,12 +199,18 @@ GET   /api/ml/feature-stats   Feature importance counts from recent alerts
 
 Constraints: `contamination` clamped to [0.001, 0.5]; `min_samples` minimum 10; `retrain_interval_sec` minimum 60.
 
-**`GET /api/ml/alerts`** query params: `limit` (default 50).
+**`GET /api/ml/alerts`** query params: `limit` (default 50). Each alert now includes `id` and `false_positive`.
 
 **`POST /api/ml/retrain`** response:
 ```json
 {"ok": true,  "samples": 142}          // retrain scheduled
 {"ok": false, "reason": "Not enough samples (42 < 100)"}
+```
+
+**`POST /api/ml/alerts/{id}/false-positive`** -- requires analyst+ role (`block:write`). The IsolationForest model is unsupervised, so there's no label to flip; instead, the alert's own feature vector is folded back into training data with extra weight (`ml.fp_reinforce_weight`, default 5 copies) so the next retrain treats that pattern -- and statistically similar ones -- as normal rather than an outlier. Idempotent: marking an already-marked alert returns success without double-reinforcing. Only alerts still in the last 200 (`recent_alert_count`) can be marked; older ones return 404.
+
+```json
+{"ok": true, "status": {"...": "...", "false_positives_marked": 3, "fp_reinforce_weight": 5}}
 ```
 
 ---

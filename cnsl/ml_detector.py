@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -174,12 +175,16 @@ class MLAlert:
     features:      FeatureWindow
     top_reasons:   List[str]
     ts:            float
+    id:            str  = ""
+    false_positive: bool = False
 
     def to_dict(self) -> Dict:
         return {
+            "id":            self.id,
             "ip":            self.ip,
             "anomaly_score": round(self.anomaly_score, 4),
             "top_reasons":   self.top_reasons,
+            "false_positive": self.false_positive,
             "features":      {
                 name: val
                 for name, val in zip(
@@ -210,6 +215,10 @@ class MLDetector:
         self.retrain_sec  = int(ml_cfg.get("retrain_interval_sec", 3600))
         self.contamination= float(ml_cfg.get("contamination", 0.05))
         self.threshold    = float(ml_cfg.get("anomaly_score_threshold", -0.1))
+        # How many extra copies of a false-positive's feature vector to
+        # fold back into training data, so the model treats similar
+        # patterns as normal going forward (see mark_false_positive()).
+        self.fp_reinforce_weight = int(ml_cfg.get("fp_reinforce_weight", 5))
 
         self.logger       = logger
         self._accumulators: Dict[str, _IPAccumulator] = defaultdict(_IPAccumulator)
@@ -223,8 +232,11 @@ class MLDetector:
         self._last_alert: Dict[str, float] = {}
         self._alert_cooldown = 300  # 5 minutes
 
-        # Recent alert history for dashboard display (max 200)
+        # Recent alert history for dashboard display (max 200). Stored as
+        # MLAlert objects (not pre-rendered dicts) so mark_false_positive()
+        # can find and mutate one after the fact -- see recent_alerts_list().
         self._recent_alerts: deque = deque(maxlen=200)
+        self._false_positive_count = 0
 
     async def ingest(self, ev: Event) -> Optional[MLAlert]:
         """Process one event. Returns MLAlert if anomaly detected."""
@@ -267,12 +279,13 @@ class MLDetector:
         reasons = self._explain(features, score)
 
         alert = MLAlert(
+            id=uuid.uuid4().hex[:12],
             ip=ip, anomaly_score=score,
             features=features, top_reasons=reasons,
             ts=now(),
         )
         await self.logger.log("ml_anomaly", alert.to_dict())
-        self._recent_alerts.append(alert.to_dict())
+        self._recent_alerts.append(alert)
         return alert
 
     async def _retrain(self) -> None:
@@ -380,6 +393,8 @@ class MLDetector:
             "threshold":        self.threshold,
             "retrain_interval_sec": self.retrain_sec,
             "recent_alert_count":   len(self._recent_alerts),
+            "false_positives_marked": self._false_positive_count,
+            "fp_reinforce_weight":  self.fp_reinforce_weight,
         }
 
     def update_params(
@@ -428,7 +443,7 @@ class MLDetector:
 
     def recent_alerts_list(self, limit: int = 50) -> List[Dict]:
         """Return recent ML alerts for the dashboard."""
-        return list(self._recent_alerts)[-limit:]
+        return [a.to_dict() for a in list(self._recent_alerts)[-limit:]]
 
     def feature_stats(self) -> Dict:
         """
@@ -437,8 +452,45 @@ class MLDetector:
         """
         counts: Dict[str, int] = {}
         for alert in self._recent_alerts:
-            for reason in alert.get("top_reasons", []):
+            for reason in alert.top_reasons:
                 key = reason.split(":")[0].strip()
                 counts[key] = counts.get(key, 0) + 1
         # Sort by count descending
         return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+
+    #  False-positive feedback loop 
+
+    def mark_false_positive(self, alert_id: str) -> Optional[str]:
+        """
+        Mark a recent ML alert as a false positive.
+
+        IsolationForest is unsupervised -- there's no "correct label" to
+        flip. Instead, the alert's own feature vector (the exact pattern
+        that got flagged) is folded back into the training data with
+        extra weight (fp_reinforce_weight copies, default 5), so the
+        next retrain treats that pattern -- and ones statistically close
+        to it -- as normal rather than an outlier.
+
+        Returns None on success, or an error string if the alert id
+        isn't found in recent history (older alerts age out of the
+        200-entry window and can no longer be marked).
+        """
+        alert = next((a for a in self._recent_alerts if a.id == alert_id), None)
+        if alert is None:
+            return f"ML alert '{alert_id}' not found in recent history."
+        if alert.false_positive:
+            return None  # already marked -- idempotent, not an error
+
+        alert.false_positive = True
+        self._false_positive_count += 1
+
+        vector = alert.features.to_vector()
+        self._training_data.extend([vector] * max(1, self.fp_reinforce_weight))
+        if len(self._training_data) > 50000:
+            self._training_data = self._training_data[-25000:]
+
+        return None
+
+    @property
+    def false_positive_count(self) -> int:
+        return self._false_positive_count

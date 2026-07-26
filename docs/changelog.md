@@ -4,6 +4,26 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.6 -- ML false-positive feedback loop
+
+Previously, marking an ML anomaly alert as a false positive had no effect -- the operator's judgment never made it back into the model, so the same pattern kept getting flagged on every retrain.
+
+**`cnsl/ml_detector.py`**
+- `MLAlert` gained `id` (unique per alert) and `false_positive` fields; `_recent_alerts` now stores the `MLAlert` objects themselves (previously pre-rendered dicts), so an alert can be found and mutated after the fact.
+- New `MLDetector.mark_false_positive(alert_id)`: since IsolationForest is unsupervised (no label to flip), the alert's own feature vector is folded back into `_training_data` with extra weight (`ml.fp_reinforce_weight` config, default 5 copies), so the next retrain treats that pattern -- and statistically similar ones -- as normal rather than an outlier. Idempotent (marking twice doesn't double-reinforce or double-count). Returns an error for unknown/aged-out alert ids (only the last 200 alerts are markable).
+- New `false_positive_count` property and `false_positives_marked` / `fp_reinforce_weight` fields in `status()`.
+
+**New module: `cnsl/dashboard_ml.py`**
+- `POST /api/ml/alerts/{id}/false-positive` (analyst+, `block:write`) -- extracted into its own file (same pattern as `dashboard_correlation.py`) to keep `dashboard.py` under its enforced 2000-line test budget.
+
+**Tests**
+- 14 new tests: `test_ml.py::TestMLFalsePositiveFeedback` (12 -- mark/idempotent/unknown-id, reinforcement weight, counters, status fields, recent_alerts_list reflecting the flag, training-data cap) + 2 in `TestMLAPIRoutes` (route presence, module importability).
+
+**Tests**
+- 659 tests passing (645 existing + 14 new).
+
+---
+
 ### v3.4.5 -- Correlation rule tuning
 
 Previously, the 6 cross-source correlation rules (`cnsl/correlator.py`) were entirely hardcoded -- no way to disable a noisy one, widen its window, or adjust its confidence without editing code and restarting.
