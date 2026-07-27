@@ -13,7 +13,7 @@ Routes:
   GET  /api/timeline         Incident counts per hour (last 24h)
   GET  /api/blocks           Active blocks
   GET  /api/metrics          Prometheus text metrics
-  GET  /api/ml               ML detector status + training progress
+  GET  /api/ml               ML detector status + training progress (+alerts/params/retrain/feature-stats)
   POST /api/ml/alerts/{id}/false-positive  Mark ML alert as false positive
   GET  /api/fim              FIM recent alerts
   GET  /api/honeypot         Honeypot status + recent sessions
@@ -22,6 +22,7 @@ Routes:
   GET  /api/audit            Compliance audit trail (who did what, when)
   GET/PATCH /api/correlation-rules[/{name}]  Cross-source rule tuning (+enable/disable/reset)
   GET  /api/federation/hub   Multi-node health + cross-node attacker view
+  GET  /api/export/stix, /taxii2/...  STIX 2.1 bundle + minimal TAXII 2.1 server (cnsl/taxii.py)
   GET  /ws                   WebSocket live feed + bidirectional actions
   GET  /ws/agent             WebSocket agent ingestion endpoint
   GET  /stream               SSE live event stream (backward compat)
@@ -46,9 +47,7 @@ if TYPE_CHECKING:
     from .ml_detector import MLDetector
     from .store       import Store
 
-
 # SVG icon helpers 
-
 
 def _svg(path_d: str, w: int = 16, h: int = 16) -> str:
     return (f'<svg width="{w}" height="{h}" viewBox="0 0 24 24" fill="none" '
@@ -71,11 +70,9 @@ _I = {
     "logout":   _svg('<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>', 14, 14),
 }
 
-
 # Login page HTML
 
 from .dashboard_html import _LOGIN_HTML, _HTML  # noqa: F401
-
 
 async def start_dashboard(
     host:           str,
@@ -830,7 +827,6 @@ async def start_dashboard(
                 for ip, exp in blocker.active_blocks.items()
             ]
         return web.json_response(rows)
-
 
     @router.get("/api/events")
     async def api_events(req: web.Request) -> web.Response:
@@ -1676,6 +1672,10 @@ async def start_dashboard(
             content_type = "text/plain",
             headers      = {"Content-Disposition": "attachment; filename=cnsl-events.cef"},
         )
+
+    from .taxii import register_stix_export_route, register_taxii_routes
+    register_stix_export_route(router, store, _require_auth, _rate_check)
+    register_taxii_routes(router, store, _require_auth, _rate_check)
 
     @router.get("/api/metrics")
     async def api_metrics(req: web.Request) -> web.Response:

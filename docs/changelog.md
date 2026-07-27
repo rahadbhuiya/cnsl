@@ -4,6 +4,31 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.8 -- STIX 2.1 export + minimal TAXII 2.1 server
+
+CNSL could ingest external threat feeds (cnsl/threat_feed.py) but had no way to share its own detections in a standard format -- other security tools couldn't consume CNSL's IOCs automatically.
+
+**New module: `cnsl/stix_export.py`**
+- `build_stix_bundle(attackers)` turns `store.top_attackers()` rows into a STIX 2.1 bundle: one `indicator` object per attacker IP (IPv4/IPv6 auto-detected) plus one `identity` object for CNSL as the producer.
+- Deterministic indicator IDs (derived from the IP itself, via a stable hash) so re-exporting the same IP always yields the same STIX object id -- consumers can update rather than accumulate duplicates across repeated pulls.
+- Confidence score derived from CNSL's severity (HIGH/MEDIUM/LOW -> 85/60/35); bad rows (missing/unparseable IP) are skipped rather than failing the whole export.
+
+**New module: `cnsl/taxii.py`**
+- `GET /api/export/stix` -- downloadable STIX 2.1 bundle file.
+- A minimal read-only TAXII 2.1 server: `GET /taxii2/` (discovery), `/taxii2/cnsl/` (API root), `/taxii2/cnsl/collections/` (list), `/taxii2/cnsl/collections/attacker-ips/` (detail), and `/taxii2/cnsl/collections/attacker-ips/objects/` (the STIX objects) -- so SOAR/TIP tools can pull CNSL's IOCs automatically rather than a human downloading a file. One collection, always read-only (no ingestion path). Reuses the dashboard's existing Bearer/JWT auth.
+- Extracted into its own file (same pattern as `dashboard_correlation.py`/`dashboard_ml.py`/`dashboard_hub.py`) to keep `dashboard.py` under its enforced 2000-line test budget.
+
+**`cnsl/store.py`**
+- `top_attackers()` gained `first_seen` (`MIN(ts)`) alongside the existing `last_seen`, needed for STIX's `valid_from`/`created` fields.
+
+**Tests**
+- 47 new tests (`test_stix_taxii.py`): bundle building (IPv4/IPv6, bad-row skipping, deterministic ids, confidence mapping), all TAXII routes end-to-end (discovery through objects, 404s for unknown collections, limit params, store-unavailable degradation), and dashboard wiring/line-budget checks.
+
+**Tests**
+- 726 tests passing (679 existing + 47 new).
+
+---
+
 ### v3.4.7 -- Multi-node hub view
 
 Federation already let nodes share detection signals via Redis, and RedisSync already gave every node a heartbeat key -- but there was no single place to see every node's health side by side. Each node's dashboard only showed a bare list of peer IDs with last-seen timestamps, no stats.

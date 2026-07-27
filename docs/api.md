@@ -485,9 +485,30 @@ GET  /api/search/status  Search engine availability and index stats
 GET  /api/incidents/export   Export incidents (format=ndjson or format=cef)
 GET  /api/export/cef         CEF export for ArcSight/Splunk
 GET  /api/export/ecs         ECS JSON export for Elasticsearch
+GET  /api/export/stix        STIX 2.1 bundle of detected attacker IPs (downloadable file)
 POST /api/es-push/status     Elasticsearch push status
 POST /api/es-push/push       Trigger manual Elasticsearch push
 ```
+
+**`GET /api/export/stix`** query params: `limit` (default 200, max 1000). Returns a STIX 2.1 bundle: one `indicator` object per attacker IP (from `store.top_attackers()`, so already deduplicated) plus a `identity` object for CNSL as the producer. Downloads as `cnsl-iocs.stix2.json`.
+
+---
+
+## TAXII 2.1 Server
+
+A minimal, read-only TAXII 2.1 server exposing the same data as `/api/export/stix`, so SOAR platforms, threat intel platforms (TIPs), and other SIEMs can pull CNSL's detected attacker IPs automatically instead of a human downloading a file. One API root (`cnsl`), one collection (`attacker-ips`) -- always read-only, there is no ingestion path.
+
+```
+GET /taxii2/                                        Discovery
+GET /taxii2/cnsl/                                    API root info
+GET /taxii2/cnsl/collections/                        List collections
+GET /taxii2/cnsl/collections/attacker-ips/           Collection detail
+GET /taxii2/cnsl/collections/attacker-ips/objects/   The STIX objects (query param: limit)
+```
+
+Auth: same Bearer/JWT token as the rest of the REST API (`POST /api/login`), not HTTP Basic Auth as some TAXII clients default to -- most TAXII client libraries let you configure a bearer token instead.
+
+This is intentionally minimal: no `added_after` cursoring beyond a simple `limit`, and no write/ingestion endpoints. Fine for a single self-hosted node's outbound feed; if you need full TAXII pagination semantics, treat this as a starting point.
 
 ---
 

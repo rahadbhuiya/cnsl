@@ -275,6 +275,7 @@ class Store:
             """SELECT src_ip, flag, country, city, isp,
                       COUNT(*) as incident_count,
                       MAX(severity) as max_severity,
+                      MIN(ts) as first_seen,
                       MAX(ts) as last_seen
                FROM incidents
                GROUP BY src_ip
