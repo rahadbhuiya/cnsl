@@ -97,8 +97,12 @@ _OT_KINDS: Set[str] = {
     "OT_UNAUTHORIZED_CMD",
 }
 
+# Wazuh/OSSEC HIDS integration
+_WAZUH_KINDS: Set[str] = {"WAZUH_ALERT"}
+
 _ALL_HANDLED: Set[str] = (
     _SSH_KINDS | _WEB_KINDS | _DB_KINDS | _FW_KINDS | _SYS_KINDS | _CLOUD_KINDS | _OT_KINDS
+    | _WAZUH_KINDS
 )
 
 
@@ -344,6 +348,9 @@ class Detector:
 
         elif ev.kind in _OT_KINDS:
             await self._on_ot_event(ip, ev, st, t)
+
+        elif ev.kind in _WAZUH_KINDS:
+            await self._on_wazuh_event(ip, ev, st, t)
 
         #  Correlator (cross-source, Phase 2) 
         if self.correlator:
@@ -873,6 +880,44 @@ class Detector:
         if sev is not None:
             await self._maybe_fire(ip, st, t, sev, reasons, trigger="ot",
                                    fail_count=len(st.fails), uniq_users=0)
+
+    async def _on_wazuh_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
+        """
+        Handle alerts relayed from Wazuh/OSSEC (cnsl/wazuh.py).
+
+        Wazuh has already done its own rule evaluation and assigned a
+        severity (rule.level, mapped to CNSL's HIGH/MEDIUM/LOW by the
+        parser) -- CNSL's job here is to fold that vetted alert into
+        its own kill-chain tracking, correlation, and blocking, not to
+        re-run its own threshold logic on top. Every Wazuh alert that
+        clears the "wazuh.alert" rule's enabled flag fires immediately
+        (threshold=1, no window), same as cloud.risky_signin.
+        """
+        meta     = ev.meta or {}
+        sev      = None
+        reasons: List[str] = []
+
+        r = self.rules.get("wazuh.alert")
+        if r and r.enabled:
+            sev = meta.get("severity", "LOW")
+            reasons.append(
+                f"wazuh: {meta.get('rule_description', 'alert')} "
+                f"(rule {meta.get('rule_id', '?')}, level {meta.get('rule_level', '?')}, "
+                f"agent {meta.get('agent_name') or meta.get('agent_id') or 'unknown'})"
+            )
+
+        geo = self.geoip.get_cached(ip) if self.geoip else None
+        self._kc_update(ip, "WAZUH_ALERT", geo=geo, severity=sev or "LOW")
+
+        # Wazuh alerts always logged regardless of whether the rule fires
+        await self.logger.log("wazuh_event", {
+            "ip": ip, "meta": meta, "source": ev.source,
+        })
+
+        if sev is not None:
+            await self._maybe_fire(ip, st, t, sev, reasons, trigger="wazuh",
+                                   fail_count=len(st.fails), uniq_users=0,
+                                   user=ev.user)
 
     #  Correlation alert handler (Phase 2) 
 

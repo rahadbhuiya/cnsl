@@ -60,6 +60,7 @@
 | Intelligence | AbuseIPDB threat score lookup |
 | Intelligence | Community threat feeds (6 feeds, CIDR matching) |
 | Ingestion | Remote syslog receiver -- UDP/TCP 514 or 5514 (RFC 3164 / RFC 5424) |
+| Ingestion | Wazuh/OSSEC integration -- alerts.json file tailing or syslog forwarding |
 | Ingestion | Kafka consumer for high-volume log ingestion |
 | Ingestion | Agent log forwarder (WebSocket) |
 | Normalization | ECS-compatible event schema, CEF export for ArcSight/Splunk |
@@ -137,7 +138,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 726 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 771 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

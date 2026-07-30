@@ -4,6 +4,33 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.9 -- Wazuh/OSSEC integration (+ fixed a dead syslog receiver)
+
+While wiring Wazuh, found that `cnsl/syslog_receiver.py` -- a complete, already-documented UDP+TCP RFC 3164/5424 syslog receiver -- was imported in `engine.py` but never actually instantiated or started. It had zero effect and zero test coverage despite `docs/features.md` listing it as a working capability. Fixed as part of this change rather than duplicating a second listener just for Wazuh.
+
+**New module: `cnsl/wazuh.py`**
+- `parse_wazuh_alert(line)` parses a Wazuh alert (JSON) from either a raw `alerts.json` line or a syslog message body, mapping `rule.level` (0-16) to CNSL's HIGH/MEDIUM/LOW severity and extracting the attacker IP from `data.srcip` (and common decoder-specific variants). Malformed/IP-less alerts are skipped, not fatal.
+
+**`cnsl/detector.py`**
+- New `_on_wazuh_event()` handler routes `WAZUH_ALERT` events into kill-chain tracking and `_maybe_fire()`. Wazuh has already done its own rule evaluation, so CNSL doesn't re-threshold -- every alert that clears the `wazuh.alert` rule's enabled flag fires immediately using the severity Wazuh itself assigned.
+
+**`cnsl/rules.py`**
+- New `wazuh.alert` rule (tags: `wazuh`, `ossec`, `hids`, `siem-integration`) -- tunable/disableable from the dashboard's existing `/api/rules` like any other rule.
+
+**`cnsl/engine.py`** -- the actual fix
+- `SyslogReceiver` is now instantiated and started (previously dead-imported). Given a parser list covering auth/nginx/mysql/ufw/syslog *and* `parse_wazuh_alert`, so both CNSL's own remote syslog ingestion and Wazuh's syslog-forwarding output work through the same listener. Stopped cleanly on shutdown.
+
+**`cnsl/log_sources.py`**
+- `"wazuh": parse_wazuh_alert` registered for file-tailing (`log_sources.wazuh` -> Wazuh's local `alerts.json`), alongside the existing nginx/apache/mysql/ufw/syslog sources.
+
+**Tests**
+- 45 tests (`test_wazuh.py`): alert parsing (severity mapping, missing fields, syslog-wrapped input), routing through the real `SyslogReceiver` end-to-end (actual UDP round-trip), detector routing, rule registration, file-tailing wiring, and guards against the `SyslogReceiver`-never-started regression recurring.
+
+**Tests**
+- 771 tests passing (726 existing + 45 new).
+
+---
+
 ### v3.4.8 -- STIX 2.1 export + minimal TAXII 2.1 server
 
 CNSL could ingest external threat feeds (cnsl/threat_feed.py) but had no way to share its own detections in a standard format -- other security tools couldn't consume CNSL's IOCs automatically.

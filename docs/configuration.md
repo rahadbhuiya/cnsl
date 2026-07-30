@@ -105,11 +105,17 @@ even if their country is blocked (useful for trusted partners in those countries
   "apache": "/var/log/apache2/access.log",
   "mysql":  "/var/log/mysql/error.log",
   "ufw":    "/var/log/ufw.log",
-  "syslog": "/var/log/syslog"
+  "syslog": "/var/log/syslog",
+  "wazuh":  "/var/ossec/logs/alerts/alerts.json"
 }
 ```
 
 Set any value to `null` to disable that source.
+
+`wazuh` tails the Wazuh manager's default JSON alert log -- one JSON object
+per line. For a Wazuh manager configured to forward alerts to a remote
+syslog destination instead, enable `syslog_receiver` below (Wazuh's alert
+JSON is parsed automatically alongside auth/web/mysql/ufw logs).
 
 ---
 
@@ -288,6 +294,18 @@ systemctl restart rsyslog
 
 # Cisco IOS
 logging host CNSL_IP transport udp port 5514
+```
+
+Every message received here is tried against CNSL's own parsers (auth, nginx,
+mysql, ufw, generic syslog) *and* the Wazuh alert parser, so a Wazuh manager
+forwarding its alerts to CNSL over syslog works without extra configuration --
+in Wazuh's `ossec.conf`:
+```xml
+<syslog_output>
+  <server>CNSL_IP</server>
+  <port>5514</port>
+  <format>json</format>
+</syslog_output>
 ```
 
 ---

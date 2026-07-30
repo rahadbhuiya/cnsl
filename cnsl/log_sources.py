@@ -26,6 +26,7 @@ from typing import Optional
 
 from .models import Event, now
 from .parsers import _clean_ip
+from .wazuh import parse_wazuh_alert
 
 
 
@@ -378,6 +379,7 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
         "mysql":  parse_mysql,
         "ufw":    parse_ufw,
         "syslog": parse_syslog,
+        "wazuh":  parse_wazuh_alert,
     }
 
     for name, path in sources.items():
@@ -430,5 +432,9 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
                     name=f"ot_{protocol}",
                 )
             )
+
+    # Wazuh/OSSEC syslog forwarding is handled by the generic
+    # syslog_receiver (see engine.py), not here -- parse_wazuh_alert is
+    # registered as one of its parsers alongside auth/web/mysql/ufw.
 
     return tasks

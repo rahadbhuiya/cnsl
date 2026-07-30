@@ -253,6 +253,16 @@ _BUILTIN_RULES: List[Rule] = [
         window_sec  = 0,
         tags        = ["ot", "scada", "dnp3", "ics", "high-priority"],
     ),
+    # Wazuh/OSSEC integration
+    Rule(
+        id          = "wazuh.alert",
+        name        = "Wazuh/OSSEC Relayed Alert",
+        description = "Fires on alerts relayed from Wazuh/OSSEC (already vetted by Wazuh's own rule engine).",
+        severity    = "MEDIUM",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["wazuh", "ossec", "hids", "siem-integration"],
+    ),
 ]
 
 # Quick lookup by id

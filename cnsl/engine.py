@@ -18,7 +18,7 @@ from .fim             import FIMEngine
 from .ml_detector     import MLDetector
 from .reporter        import Reporter
 from .correlator      import Correlator
-from .log_sources     import get_log_tasks
+from .log_sources     import get_log_tasks, parse_web_access, parse_mysql, parse_ufw, parse_syslog
 from .redis_sync      import RedisSync
 from .threat_intel    import AbuseIPDB, BehavioralBaseline
 from .blocker         import Blocker, ensure_ipset
@@ -134,7 +134,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.8")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.9")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -415,6 +415,27 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # Multi-log sources (nginx, apache, mysql, ufw, syslog)
     tasks.extend(get_log_tasks(cfg, queue, logger))
 
+    # Generic network syslog receiver (UDP+TCP, RFC 3164/5424) -- lets
+    # remote devices, and Wazuh/OSSEC managers configured for syslog
+    # forwarding, ship logs directly without a file agent. Tries each
+    # of these parsers in order against every message it receives.
+    from .parsers import parse_auth_event
+    from .wazuh   import parse_wazuh_alert
+    syslog_receiver = SyslogReceiver(
+        cfg, queue,
+        parsers=[
+            parse_auth_event,
+            lambda line: parse_web_access(line, "nginx"),
+            parse_mysql,
+            parse_ufw,
+            parse_wazuh_alert,
+            parse_syslog,
+        ],
+        logger=logger,
+    )
+    if syslog_receiver.enabled:
+        await syslog_receiver.start()
+
     # Redis distributed sync
     if redis_sync.connected:
         tasks.append(asyncio.create_task(redis_sync.subscribe_loop(), name="redis_sub"))
@@ -546,6 +567,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await stop.wait()
     await logger.log("shutdown", {"msg": "Stopping CNSL"})
     fim_engine.close()
+    syslog_receiver.stop()
     await redis_sync.close()
     await federation.stop()
     await cloud_identity.stop()
