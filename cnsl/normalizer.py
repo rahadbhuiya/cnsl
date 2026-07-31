@@ -106,6 +106,20 @@ class NormalizedEvent:
     # Internal — unix timestamp in ms for CEF rt= field (not serialized)
     _ts_ms: float = field(default_factory=lambda: time.time() * 1000)
 
+    def __post_init__(self) -> None:
+        # Every _normalize_* constructor below passes cnsl_meta=ev.meta
+        # (or a `meta = ev.meta or {}` alias) directly -- the SAME dict
+        # object as the original Event's .meta, not a copy. Engine.py's
+        # main loop then does `ev.meta["_ecs"] = norm.to_dict()`, and
+        # to_dict() embeds self.cnsl_meta (== ev.meta) back into that
+        # same dict -- creating a genuine reference cycle
+        # (ev.meta["_ecs"][...]["meta"] is ev.meta) that sends
+        # dataclasses.asdict(ev) (used by Event.to_dict()) into infinite
+        # recursion on every single event. Copying here, once, at
+        # construction time closes the cycle for every call site instead
+        # of requiring each of them to remember to copy.
+        self.cnsl_meta = dict(self.cnsl_meta)
+
     def to_dict(self) -> Dict[str, Any]:
         """Return ECS-structured nested dict."""
         d: Dict[str, Any] = {

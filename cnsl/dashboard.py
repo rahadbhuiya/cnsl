@@ -1,31 +1,13 @@
 """
 cnsl/dashboard.py -- Live web dashboard with JWT auth, WebSocket, SSE, REST API.
 
-Routes:
-  GET  /                     HTML dashboard (requires auth if enabled)
-  GET  /login                Login page
-  POST /api/login            Get JWT token (2FA-aware)
-  POST /api/logout           Revoke token
-  GET  /api/health           Health check (no auth required; for load balancers/k8s)
-  GET  /api/stats            Engine summary + uptime + ssh_fails
-  GET  /api/incidents        Recent incidents
-  GET  /api/top-attackers    Top attacker IPs
-  GET  /api/timeline         Incident counts per hour (last 24h)
-  GET  /api/blocks           Active blocks
-  GET  /api/metrics          Prometheus text metrics
-  GET  /api/ml               ML detector status + training progress (+alerts/params/retrain/feature-stats)
-  POST /api/ml/alerts/{id}/false-positive  Mark ML alert as false positive
-  GET  /api/fim              FIM recent alerts
-  GET  /api/honeypot         Honeypot status + recent sessions
-  POST /api/block            Manual block
-  POST /api/unblock          Manual unblock
-  GET  /api/audit            Compliance audit trail (who did what, when)
-  GET/PATCH /api/correlation-rules[/{name}]  Cross-source rule tuning (+enable/disable/reset)
-  GET  /api/federation/hub   Multi-node health + cross-node attacker view
-  GET  /api/export/stix, /taxii2/...  STIX 2.1 bundle + minimal TAXII 2.1 server (cnsl/taxii.py)
-  GET  /ws                   WebSocket live feed + bidirectional actions
-  GET  /ws/agent             WebSocket agent ingestion endpoint
-  GET  /stream               SSE live event stream (backward compat)
+Routes: / (dashboard), /login, /api/login, /api/logout, /api/health (no auth,
+for load balancers/k8s), /api/stats, /api/incidents, /api/top-attackers,
+/api/timeline, /api/blocks, /api/metrics, /api/ml(+alerts/params/retrain/
+feature-stats/false-positive), /api/fim, /api/honeypot, /api/block,
+/api/unblock, /api/audit, /api/correlation-rules[/{name}] (+enable/disable/
+reset), /api/federation/hub, /api/export/stix, /taxii2/... (cnsl/taxii.py),
+/ws, /ws/agent, /stream (SSE, backward compat).
 """
 
 from __future__ import annotations
@@ -73,6 +55,25 @@ _I = {
 # Login page HTML
 
 from .dashboard_html import _LOGIN_HTML, _HTML  # noqa: F401
+
+class _RateLimiter:
+    """In-memory sliding-window limiter for individual endpoints (SSE/API
+    below) -- distinct from cnsl.rate_limiter.RateLimiter used elsewhere."""
+
+    def __init__(self, max_calls: int, window_sec: int):
+        self._max    = max_calls
+        self._window = window_sec
+        self._calls: Dict[str, list] = {}
+
+    def is_limited(self, key: str) -> bool:
+        now    = time.time()
+        cutoff = now - self._window
+        calls  = [t for t in self._calls.get(key, []) if t > cutoff]
+        self._calls[key] = calls
+        if len(calls) >= self._max:
+            return True
+        calls.append(now)
+        return False
 
 async def start_dashboard(
     host:           str,
@@ -1484,7 +1485,7 @@ async def start_dashboard(
                 overall = "degraded"
 
         # -- Redis check --
-        if redis_sync.connected:
+        if redis_sync is not None and redis_sync.connected:
             t0 = _t.monotonic()
             try:
                 await redis_sync._redis.ping()

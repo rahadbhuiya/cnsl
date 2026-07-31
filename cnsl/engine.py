@@ -134,7 +134,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.10")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.11")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -235,8 +235,6 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     # Zero-trust engine -- per-entity trust scoring
     zero_trust = ZeroTrustEngine(cfg)
-    if store.available:
-        await zero_trust.load_all(store)
 
     # Handle --agent-mode shortcut (before anything else)
     if getattr(args, "agent_mode", False):
@@ -285,6 +283,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         await asyncio.gather(
             kill_chain_tracker.load_all(store),
             pattern_learner.load_all(store),
+            zero_trust.load_all(store),
         )
 
     # SIEM/SOAR connectors

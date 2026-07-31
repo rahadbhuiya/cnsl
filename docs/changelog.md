@@ -4,6 +4,32 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.11 -- Three critical startup/runtime bug fixes
+
+Found while actually starting CNSL end-to-end (config → dashboard → real detection) for the first time in this series of changes, rather than only running the unit test suite. All three were invisible to the existing 825-test suite because nothing in it called `start_dashboard()` for real or replayed the engine's exact normalize-then-reserialize event sequence.
+
+**`cnsl/engine.py` -- startup crash, every run**
+`zero_trust.load_all(store)` referenced `store` 16 lines before `store = Store(cfg)` created it, raising `UnboundLocalError` on every single startup. Moved the call into the existing `asyncio.gather()` alongside `kill_chain_tracker.load_all()` and `pattern_learner.load_all()`, which already correctly run after `store.init()`.
+
+**`cnsl/dashboard.py` / `cnsl/dashboard_html.py` -- dashboard crash, every run**
+`start_dashboard()` referenced `_RateLimiter` without importing it. The class existed, but orphaned in `dashboard_html.py` (a module meant only for HTML/JS string constants) -- and was itself broken there, using `time`/`Dict` without either being imported in that file. `start_dashboard()` raised `NameError` on literally its first executable line. Moved `_RateLimiter` into `dashboard.py` (its actual call site, where `time`/`Dict` are already imported) and removed the broken orphaned copy.
+
+**`GET /api/health` -- 500 whenever Redis is disabled (the default/common case)**
+Called `redis_sync.connected` unguarded; `redis_sync` defaults to `None`. Guarded with `if redis_sync is not None and redis_sync.connected`.
+
+**`cnsl/normalizer.py` -- the real one, silently swallowing every detection**
+Every `_normalize_*` constructor passed `cnsl_meta=ev.meta` (or `meta = ev.meta or {}`) -- the *same* dict object as the source Event's own `.meta`, not a copy, at 8 separate call sites. `engine.py`'s main loop then does `ev.meta["_ecs"] = norm.to_dict()`, and `to_dict()` embeds `self.cnsl_meta` (== `ev.meta`) back into that same dict -- creating a genuine reference cycle (`ev.meta["_ecs"][...]["meta"] is ev.meta`). Any later `dataclasses.asdict(ev)` (used by `Event.to_dict()`, called on every processed event via `detector.py`'s own logging) recursed until `RecursionError`. This silently killed detection processing for *every real event* that reached the engine's main loop -- caught by the loop's broad exception handler and logged as `engine_error`, so CNSL kept running but never actually recorded an incident. Fixed at a single choke point: `NormalizedEvent.__post_init__` now always shallow-copies `cnsl_meta`, closing the cycle for all 8 call sites (and any future ones) at once.
+
+**Verified end-to-end** (not just unit tests): started CNSL for real, logged in, wrote a simulated SSH brute-force attack into a tailed `auth.log`, and confirmed CNSL correctly recorded the incident (`"brute_force: 5 fails in 60s"`, MEDIUM severity) via `/api/incidents`, `/api/stats`, and `/api/top-attackers`, with `/api/health` reporting healthy throughout.
+
+**Tests**
+- 20 new regression tests: `test_dashboard_startup.py` (10 -- actually starts a real dashboard on a real port and makes a real HTTP request, rather than only checking `start_dashboard`'s signature) and `test_normalizer_meta_cycle.py` (10 -- reproduces engine.py's exact normalize-then-reserialize sequence for every event kind with its own normalizer).
+
+**Tests**
+- 845 tests passing (825 existing + 20 new).
+
+---
+
 ### v3.4.10 -- Kubernetes / Helm chart
 
 New `helm/cnsl/` chart for deploying CNSL to Kubernetes, plus `docs/kubernetes.md` covering the concepts behind it.

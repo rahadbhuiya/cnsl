@@ -447,7 +447,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="hdr-title">CNSL</span>
-    <span class="badge">v3.4.10</span>
+    <span class="badge">v3.4.11</span>
   </div>
   <div class="live-dot" title="Live"></div>
   <button class="hdr-btn" id="pdf-btn" onclick="exportPDF()" title="Export PDF report">
@@ -2698,31 +2698,3 @@ else{refresh();connectSSE();setInterval(refresh,10000);}
 </script>
 </body>
 </html>"""
-
-
-
-
-
-
-# Rate limiter for API endpoints
-
-
-class _RateLimiter:
-    def __init__(self, max_calls: int, window_sec: int):
-        self._max    = max_calls
-        self._window = window_sec
-        self._calls: Dict[str, list] = {}
-
-    def is_limited(self, key: str) -> bool:
-        now    = time.time()
-        cutoff = now - self._window
-        calls  = [t for t in self._calls.get(key, []) if t > cutoff]
-        self._calls[key] = calls
-        if len(calls) >= self._max:
-            return True
-        calls.append(now)
-        return False
-
-
-
-# Dashboard server
