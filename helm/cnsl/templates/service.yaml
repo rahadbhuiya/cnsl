@@ -1,0 +1,17 @@
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cnsl.fullname" . }}
+  labels:
+    {{- include "cnsl.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: dashboard
+      protocol: TCP
+      name: dashboard
+  selector:
+    {{- include "cnsl.selectorLabels" . | nindent 4 }}
+{{- end }}

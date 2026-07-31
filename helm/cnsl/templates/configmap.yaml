@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cnsl.fullname" . }}-config
+  labels:
+    {{- include "cnsl.labels" . | nindent 4 }}
+data:
+  config.json: |
+{{ tpl .Values.config . | indent 4 }}

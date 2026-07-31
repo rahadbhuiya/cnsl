@@ -62,6 +62,8 @@
 | Ingestion | Remote syslog receiver -- UDP/TCP 514 or 5514 (RFC 3164 / RFC 5424) |
 | Ingestion | Wazuh/OSSEC integration -- alerts.json file tailing or syslog forwarding |
 | Ingestion | Kafka consumer for high-volume log ingestion |
+| Deployment | Docker / docker-compose |
+| Deployment | Kubernetes -- Helm chart (`helm/cnsl/`), DaemonSet (per-node) or Deployment mode; see [`docs/kubernetes.md`](kubernetes.md) |
 | Ingestion | Agent log forwarder (WebSocket) |
 | Normalization | ECS-compatible event schema, CEF export for ArcSight/Splunk |
 | Search | KQL-like full-text search, time-range filters, aggregations |
@@ -138,7 +140,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 771 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 825 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

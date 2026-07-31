@@ -1,0 +1,26 @@
+apiVersion: v2
+name: cnsl
+description: >-
+  CNSL (Correlated Network Security Layer) -- a self-hosted SIEM for Linux:
+  correlation, ML anomaly detection, honeypot, kill-chain tracking, OT/ICS
+  support, and full-text search. This chart deploys CNSL as a per-node
+  DaemonSet (default) or a single Deployment, with optional bundled Redis
+  for distributed blocklist sync and multi-node federation.
+type: application
+version: 1.0.0
+appVersion: "3.4.10"
+kubeVersion: ">=1.23.0-0"
+home: https://github.com/rahadbhuiya/cnsl
+sources:
+  - https://github.com/rahadbhuiya/cnsl
+keywords:
+  - security
+  - siem
+  - ids
+  - ips
+  - intrusion-detection
+  - honeypot
+  - threat-detection
+maintainers:
+  - name: Rahad Bhuiya
+    email: rahadbhuiya2021@gmail.com

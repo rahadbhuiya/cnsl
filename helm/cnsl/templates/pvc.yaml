@@ -1,0 +1,17 @@
+{{- if and (eq .Values.deploymentMode "deployment") .Values.persistence.enabled (not .Values.persistence.hostPath) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cnsl.fullname" . }}-data
+  labels:
+    {{- include "cnsl.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

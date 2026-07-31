@@ -1,0 +1,143 @@
+{{- if eq .Values.deploymentMode "daemonset" }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "cnsl.fullname" . }}
+  labels:
+    {{- include "cnsl.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cnsl.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cnsl.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "cnsl.serviceAccountName" . }}
+      hostNetwork: {{ .Values.hostNetwork }}
+      {{- if .Values.hostNetwork }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: cnsl
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/cnsl/config.json
+            {{- if .Values.dashboard.enabled }}
+            - --dashboard
+            {{- end }}
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: CNSL_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cnsl.secretName" . }}
+                  key: jwt-secret
+            - name: CNSL_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cnsl.secretName" . }}
+                  key: api-secret
+            - name: CNSL_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          {{- if .Values.dashboard.enabled }}
+          ports:
+            - name: dashboard
+              containerPort: {{ .Values.dashboard.port }}
+              {{- if .Values.hostNetwork }}
+              hostPort: {{ .Values.dashboard.port }}
+              {{- end }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cnsl
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/cnsl
+            {{- if .Values.hostLogs.enabled }}
+            - name: host-logs
+              mountPath: /var/log
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "cnsl.fullname" . }}-config
+        {{- if and .Values.persistence.enabled .Values.persistence.hostPath }}
+        - name: data
+          hostPath:
+            path: {{ .Values.persistence.hostPath }}
+            type: DirectoryOrCreate
+        {{- else }}
+        - name: data
+          emptyDir: {}
+          {{- if .Values.persistence.enabled }}
+          # NOTE: persistence.enabled=true with no hostPath set has no
+          # effect in daemonset mode -- a single ReadWriteOnce PVC can't
+          # be shared by pods on different nodes. Set
+          # persistence.hostPath (recommended, matches bare-metal CNSL's
+          # own per-host state) or switch deploymentMode to "deployment"
+          # to use a real PVC.
+          {{- end }}
+        {{- end }}
+        {{- if .Values.hostLogs.enabled }}
+        - name: host-logs
+          hostPath:
+            path: {{ .Values.hostLogs.path }}
+            type: Directory
+        {{- end }}
+{{- end }}

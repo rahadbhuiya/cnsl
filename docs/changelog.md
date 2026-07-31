@@ -4,6 +4,27 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.10 -- Kubernetes / Helm chart
+
+New `helm/cnsl/` chart for deploying CNSL to Kubernetes, plus `docs/kubernetes.md` covering the concepts behind it.
+
+**Deployment model**
+- Defaults to a **DaemonSet** (one CNSL pod per node) rather than a Deployment -- CNSL protects the host it runs on (tcpdump, local log tailing, that host's own iptables/ipset rules), so a single-replica Deployment would only ever cover one node. `deploymentMode: deployment` is available as an explicit opt-in for single-node setups (e.g. a bastion host).
+- `hostNetwork: true` + `NET_ADMIN`/`NET_RAW` capabilities by default, mirroring the project's own `docker-compose.yml`.
+- Per-node state (`persistence.hostPath`, default `/var/lib/cnsl`) -- deliberately *not* a shared PVC in DaemonSet mode, since a single ReadWriteOnce volume can't be mounted by pods on different nodes. A real PVC is only offered in `deployment` mode.
+- Bundled, optional Redis (`redis.enabled`, off by default) for cross-node blocklist sync and federation -- ties into the multi-node hub view (`GET /api/federation/hub`, v3.4.7) once enabled.
+- Liveness/readiness probes hit the existing unauthenticated `/api/health` endpoint (v3.0.0's health check).
+- Secrets (JWT/API) auto-generate on first install and stay stable across upgrades via Helm's `lookup` function, rather than re-randomizing (which would invalidate every session) on every `helm upgrade`.
+- Default config ships with `actions.dry_run: true` -- safety-first, matching CNSL's own CLI default.
+
+**Tests**
+- 54 new tests (`test_helm_chart.py`): Chart.yaml/values.yaml structure, template brace/block balance, the embedded default `config.json` validated as real JSON *and* run through CNSL's own `validate_config()` with zero errors, DaemonSet-never-uses-a-PVC regression guard, probe/Service/Secret wiring checks. A test also asserts `Chart.yaml`'s `appVersion` stays in sync with `cnsl.__version__` going forward.
+
+**Tests**
+- 825 tests passing (771 existing + 54 new).
+
+---
+
 ### v3.4.9 -- Wazuh/OSSEC integration (+ fixed a dead syslog receiver)
 
 While wiring Wazuh, found that `cnsl/syslog_receiver.py` -- a complete, already-documented UDP+TCP RFC 3164/5424 syslog receiver -- was imported in `engine.py` but never actually instantiated or started. It had zero effect and zero test coverage despite `docs/features.md` listing it as a working capability. Fixed as part of this change rather than duplicating a second listener just for Wazuh.

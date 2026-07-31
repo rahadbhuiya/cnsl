@@ -1,0 +1,141 @@
+{{- if eq .Values.deploymentMode "deployment" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cnsl.fullname" . }}
+  labels:
+    {{- include "cnsl.labels" . | nindent 4 }}
+spec:
+  # NOTE: CNSL keeps local state (SQLite incidents/blocks DB, FIM
+  # baseline) and manages the host's own iptables/ipset rules, so
+  # running more than 1 replica of a single Deployment does NOT give
+  # you redundancy -- it gives you two instances fighting over the
+  # same node's iptables rules and diverging local state. Scale by
+  # switching to deploymentMode: daemonset (one pod per node, each
+  # independent) instead of raising replicaCount here.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cnsl.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cnsl.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "cnsl.serviceAccountName" . }}
+      hostNetwork: {{ .Values.hostNetwork }}
+      {{- if .Values.hostNetwork }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: cnsl
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config
+            - /etc/cnsl/config.json
+            {{- if .Values.dashboard.enabled }}
+            - --dashboard
+            {{- end }}
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: CNSL_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cnsl.secretName" . }}
+                  key: jwt-secret
+            - name: CNSL_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cnsl.secretName" . }}
+                  key: api-secret
+          {{- if .Values.dashboard.enabled }}
+          ports:
+            - name: dashboard
+              containerPort: {{ .Values.dashboard.port }}
+              {{- if .Values.hostNetwork }}
+              hostPort: {{ .Values.dashboard.port }}
+              {{- end }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cnsl
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/cnsl
+            {{- if .Values.hostLogs.enabled }}
+            - name: host-logs
+              mountPath: /var/log
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "cnsl.fullname" . }}-config
+        - name: data
+          {{- if not .Values.persistence.enabled }}
+          emptyDir: {}
+          {{- else if .Values.persistence.hostPath }}
+          hostPath:
+            path: {{ .Values.persistence.hostPath }}
+            type: DirectoryOrCreate
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ include "cnsl.fullname" . }}-data
+          {{- end }}
+        {{- if .Values.hostLogs.enabled }}
+        - name: host-logs
+          hostPath:
+            path: {{ .Values.hostLogs.path }}
+            type: Directory
+        {{- end }}
+{{- end }}

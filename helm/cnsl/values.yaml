@@ -1,0 +1,173 @@
+# -- Default values for the cnsl chart.
+# See docs/kubernetes.md in the CNSL repo for a full deployment walkthrough.
+
+image:
+  repository: ghcr.io/rahadbhuiya/cnsl
+  tag: "3.4.10"       # -- defaults to Chart.yaml's appVersion if left as ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# -- "daemonset" (default, recommended): one CNSL pod per node, each
+#    watching that node's own traffic/logs and managing that node's own
+#    iptables/ipset rules. Pair with redis.enabled=true and federation
+#    (in .Values.config) to tie all nodes together into one hub view.
+# -- "deployment": a single CNSL instance (e.g. for a bastion/jump host,
+#    or a small single-node setup). Ignores nodeSelector-per-node semantics.
+deploymentMode: daemonset
+
+replicaCount: 1   # only used when deploymentMode: deployment
+
+# CNSL needs to see real host traffic (tcpdump) and manage the host's own
+# iptables/ipset rules, so it runs with hostNetwork + NET_ADMIN/NET_RAW by
+# default -- mirroring docker-compose.yml's `network_mode: host` and
+# `cap_add: [NET_ADMIN, NET_RAW]`. Setting hostNetwork to false only makes
+# sense if you're running CNSL to watch mounted/forwarded logs rather than
+# the node's own live traffic (e.g. a log-only deployment).
+hostNetwork: true
+dnsPolicy: ClusterFirstWithHostNet   # required when hostNetwork is true
+
+securityContext:
+  capabilities:
+    add: ["NET_ADMIN", "NET_RAW"]
+
+podSecurityContext: {}
+
+# -- CNSL's dry_run default is safety-first: unless .Values.config
+# explicitly sets actions.dry_run to false, CNSL logs what it *would*
+# block without ever touching iptables. Flip it once you've reviewed
+# detections in your environment.
+dashboard:
+  enabled: true
+  port: 8765
+
+# -- Full CNSL config.json as a raw string, rendered verbatim into the
+# ConfigMap. This is the one true source of CNSL's own configuration --
+# see docs/configuration.md in the CNSL repo for every available key.
+# A minimal, safe (dry_run) default is provided; override this entirely
+# for anything beyond a quick start.
+#
+# This string is passed through Helm's `tpl` function before being
+# written to the ConfigMap, so it CAN contain Helm template expressions
+# (e.g. the default below uses {{ include "cnsl.redis.fullname" . }} to
+# reference the bundled Redis Service by its actual release-scoped name).
+# Plain JSON with no template syntax works fine too if you don't need that.
+config: |
+  {
+    "authlog_path": "/var/log/auth.log",
+    "iface": "any",
+    "tcpdump_enabled": true,
+    "actions": {
+      "dry_run": true,
+      "block_duration_sec": 900,
+      "block_backend": "iptables",
+      "ipset_name": "cnsl_blocklist",
+      "chain": "INPUT"
+    },
+    "store": {
+      "backend": "sqlite",
+      "db_path": "/var/lib/cnsl/cnsl_state.db"
+    },
+    "dashboard": {
+      "enabled": true,
+      "host": "0.0.0.0",
+      "port": 8765
+    },
+    "redis": {
+      "enabled": false,
+      "host": "{{ include \"cnsl.redis.fullname\" . }}",
+      "port": 6379
+    }
+  }
+
+# -- JWT signing secret and dashboard API secret. Leave blank to have the
+# chart generate random values on install (stored in a Secret, stable
+# across upgrades via lookup -- see templates/secret.yaml). Set explicitly
+# to pin them (e.g. if you manage secrets externally via Vault/SealedSecrets
+# and want this chart's Secret to be a placeholder only).
+secrets:
+  jwtSecret: ""
+  apiSecret: ""
+  # -- If true, do not create a Secret at all -- you're expected to
+  # provide one named "<release>-cnsl-secrets" with keys jwt-secret and
+  # api-secret yourself (e.g. via SealedSecrets/ExternalSecrets).
+  existingSecret: false
+
+persistence:
+  enabled: true
+  # -- When deploymentMode is daemonset, hostPath is the natural choice
+  # (each node keeps its own local state -- incidents, blocks, FIM
+  # baseline -- exactly as it would running directly on bare metal).
+  # Set to "" to use a PVC (via storageClassName/size below) instead,
+  # e.g. for deploymentMode: deployment on a single node.
+  hostPath: /var/lib/cnsl
+  storageClassName: ""
+  size: 2Gi
+  accessMode: ReadWriteOnce
+
+# -- Mount the node's own log directory read-only, so CNSL can tail
+# nginx/apache/mysql/ufw/syslog logs living on the host.
+hostLogs:
+  enabled: true
+  path: /var/log
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations:
+  # -- DaemonSets commonly need to run on control-plane/master nodes too,
+  # since those need protecting like any other node.
+  - key: node-role.kubernetes.io/control-plane
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    effect: NoSchedule
+affinity: {}
+
+service:
+  # -- A ClusterIP Service load-balances across all DaemonSet pods' dashboard
+  # ports. Since /api/federation/hub aggregates every node's data via Redis
+  # (see docs/api.md), hitting this Service gives the full multi-node picture
+  # regardless of which pod answers -- no need to target a specific node.
+  enabled: true
+  type: ClusterIP
+  port: 8765
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# -- Bundled Redis for distributed blocklist sync + federation across
+# DaemonSet nodes (cnsl/redis_sync.py, cnsl/federation.py). Disable and
+# point .Values.config's "redis" block at your own Redis if you already
+# run one in-cluster.
+#
+# NOTE: this only deploys the Redis pod/service -- CNSL itself won't use
+# it until .Values.config's own "redis.enabled" is ALSO set to true (the
+# default config above already points redis.host at the right service
+# name via tpl, but leaves redis.enabled: false so a plain `helm install`
+# never silently starts talking to a Redis pod you didn't ask CNSL to use).
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: "7-alpine"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  persistence:
+    enabled: true
+    storageClassName: ""
+    size: 1Gi

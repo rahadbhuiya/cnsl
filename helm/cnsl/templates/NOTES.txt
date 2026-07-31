@@ -1,0 +1,54 @@
+CNSL {{ .Chart.AppVersion }} has been deployed as a {{ .Values.deploymentMode }}.
+
+{{- if eq .Values.deploymentMode "daemonset" }}
+
+One CNSL pod is running (or starting) on every schedulable node
+{{- if .Values.tolerations }} (including control-plane/master nodes, via the
+configured tolerations){{- end }}.
+{{- else }}
+
+A single CNSL instance is running.
+{{- end }}
+
+{{- if .Values.dashboard.enabled }}
+
+Dashboard / API:
+{{- if .Values.service.enabled }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "cnsl.fullname" . }} 8765:{{ .Values.service.port }}
+  Then open http://localhost:8765
+{{- else }}
+  .Values.service.enabled is false -- reach the dashboard directly via a
+  pod's hostPort ({{ .Values.dashboard.port }}) or your own Ingress/Service.
+{{- end }}
+{{- end }}
+
+Check pod status:
+  kubectl -n {{ .Release.Namespace }} get pods -l {{ include "cnsl.selectorLabels" . }}
+
+{{- if eq .Values.deploymentMode "daemonset" }}
+
+Multi-node hub view (aggregates every node's health + cross-node attacker
+data in one call -- see docs/api.md's "Federation" section):
+  GET /api/federation/hub
+(requires .Values.redis.enabled: true, .Values.config's redis.enabled: true,
+and federation configured in .Values.config -- see docs/kubernetes.md)
+{{- end }}
+
+{{- if not .Values.redis.enabled }}
+
+NOTE: redis.enabled is false. Without Redis, each DaemonSet pod tracks its
+own node independently with no cross-node blocklist sync or federation.
+Set --set redis.enabled=true (and .Values.config's redis.enabled: true) to
+tie every node together.
+{{- end }}
+
+{{- $cfg := .Values.config }}
+{{- if not (contains "\"dry_run\": false" $cfg) }}
+
+NOTE: actions.dry_run appears to still be true (or unset) in your config --
+CNSL is logging what it *would* block without touching iptables. This is
+the safe default; flip it once you've reviewed detections in your
+environment. See docs/configuration.md.
+{{- end }}
+
+Full deployment guide: docs/kubernetes.md in the CNSL repository.
