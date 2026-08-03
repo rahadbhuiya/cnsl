@@ -7,7 +7,8 @@ for load balancers/k8s), /api/stats, /api/incidents, /api/top-attackers,
 feature-stats/false-positive), /api/fim, /api/honeypot, /api/block,
 /api/unblock, /api/audit, /api/correlation-rules[/{name}] (+enable/disable/
 reset), /api/federation/hub, /api/export/stix, /taxii2/... (cnsl/taxii.py),
-/ws, /ws/agent, /stream (SSE, backward compat).
+/api/fingerprint/clusters+similar/{ip} (cnsl/fingerprint.py), /ws, /ws/agent,
+/stream (SSE, backward compat).
 """
 
 from __future__ import annotations
@@ -146,9 +147,7 @@ async def start_dashboard(
     logger.log = _patched_log
 
     router = web.RouteTableDef()
-
     #  Auth helpers 
-
     def _get_client_ip(req: web.Request) -> str:
         return req.headers.get("X-Forwarded-For", req.remote or "unknown").split(",")[0].strip()
 
@@ -588,9 +587,7 @@ async def start_dashboard(
         await logger.log("rule_reset", {"rule_id": rule_id, "by": payload["sub"]})
         return web.json_response({"ok": True, "rule": detector.rules.get(rule_id).to_dict()})
 
-    #  Correlation Rules API (cross-source rules, cnsl/correlator.py) --
-    #  routes registered in dashboard_correlation.py to keep this file
-    #  under its line-count budget.
+    #  Correlation Rules API (routes in dashboard_correlation.py, budget) 
 
     from .dashboard_correlation import register_correlation_routes
     register_correlation_routes(router, correlator, _require_auth, rbac, logger, _audit)
@@ -1144,6 +1141,9 @@ async def start_dashboard(
 
     from .dashboard_hub import register_hub_routes
     register_hub_routes(router, redis_sync, federation, _require_auth, _rate_check)
+
+    from .dashboard_fingerprint import register_fingerprint_routes
+    register_fingerprint_routes(router, store, _require_auth, _rate_check)
 
     #  SIEM Connector API
 

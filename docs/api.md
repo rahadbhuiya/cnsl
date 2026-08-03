@@ -512,6 +512,46 @@ This is intentionally minimal: no `added_after` cursoring beyond a simple `limit
 
 ---
 
+## Attacker Fingerprinting
+
+Cross-IP actor clustering (`cnsl/fingerprint.py`): the same attacker often rotates through many IPs (VPN exits, botnet nodes, cloud churn) while their *behavior* stays recognizable -- the same mix of attack types, the same timing rhythm, the same TTP keywords in incident reasons. This builds a behavioral fingerprint per IP from its incident history and finds/clusters IPs whose fingerprints are similar enough to plausibly be the same actor. Not machine learning -- a similarity metric over hand-picked features, computed fresh each call; no training, no model file.
+
+```
+GET /api/fingerprint/clusters       Groups of IPs that look like the same actor
+GET /api/fingerprint/similar/{ip}   IPs similar to one given IP
+```
+
+Both require at least 3 incidents for an IP to be fingerprinted reliably (`MIN_INCIDENTS_FOR_FINGERPRINT`); IPs below that are simply excluded, not errored.
+
+**`GET /api/fingerprint/clusters`** query params: `threshold` (default 0.80, clamped 0.0-1.0), `incident_limit` (default 5000, max 20000 -- how many recent incidents to fingerprint over).
+
+```json
+{
+  "clusters": [
+    {"ips": ["45.33.32.1", "91.108.4.88"], "size": 2, "fingerprints": [...]}
+  ],
+  "total_clusters": 1,
+  "total_fingerprinted_ips": 14,
+  "threshold": 0.8
+}
+```
+
+**`GET /api/fingerprint/similar/{ip}`** query params: `threshold` (default 0.75), `limit` (default 20, max 200), `incident_limit` (as above). Returns 404 if `{ip}` doesn't have enough incident history to fingerprint.
+
+```json
+{
+  "ip": "45.33.32.1",
+  "fingerprint": {"kind_ratios": {...}, "mean_interval_sec": 30.0, "interval_cv": 0.0,
+                  "avg_severity": 0.6, "reason_keywords": ["brute_force"], ...},
+  "similar": [{"ip": "91.108.4.88", "score": 0.97, "fingerprint": {...}}],
+  "threshold": 0.75
+}
+```
+
+Similarity combines cosine similarity of attack-type mix (40%), timing rhythm closeness (25%), Jaccard similarity of TTP keywords (25%), and severity closeness (10%) -- see `cnsl/fingerprint.py`'s `similarity()` docstring for the exact formula.
+
+---
+
 ## System
 
 ```

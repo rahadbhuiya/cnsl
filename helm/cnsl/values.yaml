@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/rahadbhuiya/cnsl
-  tag: "3.4.11"       # -- defaults to Chart.yaml's appVersion if left as ""
+  tag: "3.4.12"       # -- defaults to Chart.yaml's appVersion if left as ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

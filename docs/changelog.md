@@ -4,6 +4,27 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.12 -- Attacker fingerprinting (cross-IP actor clustering)
+
+The same attacker frequently rotates through many IPs (VPN exits, botnet nodes, cloud-provider churn) while their behavior stays recognizable. This adds behavioral fingerprinting to spot that: "this attack from 45.33.32.1 looks like the same actor as last week's 91.108.4.88."
+
+**New module: `cnsl/fingerprint.py`**
+- `build_fingerprint(ip, incidents)` builds a compact behavioral signature per IP from its incident history: attack-type mix (`kind_ratios`), timing rhythm (`mean_interval_sec`, `interval_cv` -- low variance reads as automated/scripted), average severity, TTP keywords extracted from incident reasons, and average unique users touched (a credential-stuffing signal). Requires at least 3 incidents (`MIN_INCIDENTS_FOR_FINGERPRINT`) to fingerprint reliably.
+- `similarity(fp1, fp2)` combines cosine similarity of attack-type mix (40%), timing-rhythm closeness (25%), Jaccard similarity of TTP keywords (25%), and severity closeness (10%) into a single 0.0-1.0 score.
+- `find_similar(ip, fingerprints, threshold)` and `cluster_attackers(fingerprints, threshold)` (union-find over pairwise similarity, transitive -- A similar to B similar to C lands all three in one cluster even if A-C alone is borderline).
+- Deliberately not machine learning: no training, no model file, no sklearn dependency. A similarity metric over hand-picked features computed fresh each call -- every score traces back to features you can print and sanity-check.
+
+**New module: `cnsl/dashboard_fingerprint.py`**
+- `GET /api/fingerprint/clusters` and `GET /api/fingerprint/similar/{ip}`. Extracted into its own file (same pattern as the other dashboard_*.py splits) to keep `dashboard.py` under its enforced 2000-line test budget.
+
+**Tests**
+- 46 new tests (`test_fingerprint.py`): fingerprint building (ratios, timing stats, keyword extraction, edge cases), similarity (symmetry, identical/dissimilar behavior, empty-keyword handling), clustering (transitivity, multiple separate clusters, size ordering), and dashboard wiring end-to-end.
+
+**Tests**
+- 891 tests passing (845 existing + 46 new).
+
+---
+
 ### v3.4.11 -- Three critical startup/runtime bug fixes
 
 Found while actually starting CNSL end-to-end (config → dashboard → real detection) for the first time in this series of changes, rather than only running the unit test suite. All three were invisible to the existing 825-test suite because nothing in it called `start_dashboard()` for real or replayed the engine's exact normalize-then-reserialize event sequence.
