@@ -4,6 +4,30 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.13 -- Predictive blocking (kill-chain trajectory)
+
+Every other blocking decision in CNSL fires when ONE rule's own threshold is crossed (e.g. "5 SSH fails in 60s"). That's precise, but an attacker who spreads steps across *different* attack types -- recon, then a web exploit attempt, then credential stuffing, none of which individually reaches its own threshold -- can walk most of the way through the kill chain without ever tripping a single rule.
+
+**New module: `cnsl/predictive_blocking.py`**
+- `should_predictively_block(chain, cfg)` looks at an IP's kill-chain *trajectory* (its score and how many distinct stages it's touched) rather than any one rule's count, and returns a block reason once both `score_threshold` and `min_stages` are met -- score alone isn't enough, since a single very-late-stage high-severity event can spike score without a real multi-step pattern.
+- Opt-in, disabled by default (`predictive_blocking.enabled: false`) -- this deliberately trades some precision for reacting sooner, so it's not on by default.
+
+**`cnsl/detector.py`**
+- `_kc_update()` (the single hook point every kill-chain-relevant event already passes through, across all 17 call sites) is now `async` and calls `should_predictively_block()` after each kill-chain update; if it fires, calls the existing `Blocker.block_ip()` (already idempotent -- respects the allowlist, skips already-blocked IPs, honors dry_run, so this needed no new dedup state of its own).
+
+**`cnsl/config.py` / `cnsl/validator.py`**
+- New `predictive_blocking` config block (`enabled`, `score_threshold`, `min_stages`), validated; `min_stages: 1` while enabled warns (a single event could then trigger a block on score alone).
+
+**Verified end-to-end**: an IP with a `WEB_SCAN` (1 stage) stays unblocked; the same IP's next `SSH_FAIL` (2nd distinct stage, crossing the score threshold) triggers an immediate predictive block -- confirmed with `predictive_blocking` absent from config (stays fully disabled, matching CNSL's existing safe-by-default behavior).
+
+**Tests**
+- 26 new tests (`test_predictive_blocking.py`): decision-function edge cases (threshold/stage boundaries, disabled-by-default, config merging), detector wiring (the two-stage scenario end-to-end, idempotency, kill-chain-absent safety), and config validation.
+
+**Tests**
+- 917 tests passing (891 existing + 26 new).
+
+---
+
 ### v3.4.12 -- Attacker fingerprinting (cross-IP actor clustering)
 
 The same attacker frequently rotates through many IPs (VPN exits, botnet nodes, cloud-provider churn) while their behavior stays recognizable. This adds behavioral fingerprinting to spot that: "this attack from 45.33.32.1 looks like the same actor as last week's 91.108.4.88."

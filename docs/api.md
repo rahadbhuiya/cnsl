@@ -140,6 +140,20 @@ GET  /api/kill-chain/{ip}            Full chain detail for one IP
 }
 ```
 
+### Predictive blocking
+
+Config-only (no dedicated API endpoint) -- `cnsl/predictive_blocking.py` hooks into the same kill-chain update path every event already passes through. Every other block decision in CNSL fires when ONE rule's own threshold is crossed; predictive blocking instead looks at an IP's overall kill-chain *trajectory* -- its score and how many distinct stages it's touched -- and blocks early when that shape looks like a real attack in progress, even if the attacker spread their steps across different attack types (recon, then a web exploit attempt, then credential stuffing) none of which alone reached its own threshold. Opt-in and disabled by default, since it deliberately trades some precision for reacting sooner.
+
+```json
+"predictive_blocking": {
+  "enabled": false,
+  "score_threshold": 0.60,
+  "min_stages": 2
+}
+```
+
+Both `score_threshold` and `min_stages` must hold together, not score alone -- a single very-late-stage high-severity event can spike score without the IP having shown a real multi-step pattern. Manual blocks triggered this way appear in `/api/incidents`/logs with reason `"predictive: kill-chain score 0.XX across N stages (...)"`, and go through the same `Blocker.block_ip()` as every other block (respects the allowlist, is idempotent, honors dry_run).
+
 ---
 
 ## Attack Behavior Graph

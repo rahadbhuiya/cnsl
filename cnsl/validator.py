@@ -110,6 +110,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Correlation rules block (cross-source rule overrides)
     _validate_correlation_rules(cfg.get("correlation_rules", {}), issues)
 
+    # Predictive blocking
+    _validate_predictive_blocking(cfg.get("predictive_blocking", {}), issues)
+
     # Runtime permission check (only error, not warning)
     ac = cfg.get("actions", {})
     if isinstance(ac, dict) and not ac.get("dry_run", True):
@@ -622,6 +625,41 @@ def _validate_correlation_rules(rules: Any, issues: List) -> None:
                 f"correlation_rules.{name}.enabled",
                 f"must be true or false (got {enabled!r})",
             ))
+
+
+def _validate_predictive_blocking(pb: Any, issues: List) -> None:
+    """Validate config.json's "predictive_blocking" block
+    (cnsl/predictive_blocking.py)."""
+    if not pb or not isinstance(pb, dict):
+        return
+    enabled = pb.get("enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        issues.append(ValidationError(
+            "predictive_blocking.enabled",
+            f"must be true or false (got {enabled!r})",
+        ))
+    threshold = pb.get("score_threshold")
+    if threshold is not None:
+        if not isinstance(threshold, (int, float)) or not (0.0 <= threshold <= 1.0):
+            issues.append(ValidationError(
+                "predictive_blocking.score_threshold",
+                f"must be a number between 0.0 and 1.0 (got {threshold!r})",
+            ))
+    min_stages = pb.get("min_stages")
+    if min_stages is not None and (not isinstance(min_stages, int) or min_stages < 1):
+        issues.append(ValidationError(
+            "predictive_blocking.min_stages",
+            f"must be a positive integer (got {min_stages!r})",
+        ))
+    if pb.get("enabled") and isinstance(min_stages, int) and min_stages <= 1:
+        issues.append(ValidationError(
+            "predictive_blocking.min_stages",
+            "min_stages of 1 means a single event can trigger a block on "
+            "score alone -- consider 2+ so at least two distinct kill-chain "
+            "stages are required, reducing false positives from one-off "
+            "high-severity events",
+            level="warning",
+        ))
 
 
 

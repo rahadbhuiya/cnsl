@@ -52,6 +52,7 @@ from .blocker import Blocker
 from .config  import safe_int, get_thresholds, get_country_block_cfg
 from .logger  import JsonLogger
 from .models  import Detection, Event, EventKind, Severity, iso_time, now
+from .predictive_blocking import should_predictively_block
 from .rules   import RuleEngine
 
 if TYPE_CHECKING:
@@ -228,6 +229,7 @@ class Detector:
         self.blocker      = blocker
         self.geoip        = geoip
         self.store        = store
+        self.cfg          = cfg
         self.metrics      = metrics
         self.notifier     = notifier
         self.correlator   = correlator
@@ -262,17 +264,31 @@ class Detector:
                 pass
         return normal_threshold
 
-    def _kc_update(self, ip: str, kind: str, geo: Optional[Dict] = None,
+    async def _kc_update(self, ip: str, kind: str, geo: Optional[Dict] = None,
                   severity: str = "LOW") -> None:
         """
         Update local kill chain AND broadcast the signal to federated
         peer nodes (no-op if federation is disabled or unavailable).
         This is the single hook point for every kill-chain-relevant
         event so federation never falls out of sync with local tracking.
+
+        Also the single hook point for predictive blocking (see
+        cnsl/predictive_blocking.py): after the chain updates, checks
+        whether its trajectory (score + distinct stages touched) now
+        warrants blocking even though no single rule's own threshold
+        has fired yet.
         """
         if self.kill_chain:
             try:
-                self.kill_chain.update(ip, kind, geo=geo)
+                chain = self.kill_chain.update(ip, kind, geo=geo)
+                if chain is not None and self.blocker is not None:
+                    reason = should_predictively_block(chain, self.cfg)
+                    if reason:
+                        await self.blocker.block_ip(ip, reason=reason)
+                        await self.logger.log("predictive_block_triggered", {
+                            "ip": ip, "reason": reason, "score": chain.score,
+                            "stages": len(chain.stages),
+                        })
             except Exception:
                 pass
         if self.federation:
@@ -508,7 +524,7 @@ class Detector:
 
         # Kill chain: SSH fail = Delivery stage
         geo = self.geoip.get_cached(ip) if self.geoip else None
-        self._kc_update(ip, "SSH_FAIL", geo=geo, severity="MEDIUM")
+        await self._kc_update(ip, "SSH_FAIL", geo=geo, severity="MEDIUM")
 
         # Zero-trust: brute force fails degrade IP trust
         if self.zero_trust:
@@ -604,7 +620,7 @@ class Detector:
 
         # Kill chain: SSH success after failures = Exploitation stage
         geo = self.geoip.get_cached(ip) if self.geoip else None
-        self._kc_update(ip, "SSH_SUCCESS", geo=geo, severity="HIGH")
+        await self._kc_update(ip, "SSH_SUCCESS", geo=geo, severity="HIGH")
 
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="success",
                                fail_count=fail_count, uniq_users=_unique_users(st.users),
@@ -650,7 +666,7 @@ class Detector:
         if kc_kind:
             geo = self.geoip.get_cached(ip) if self.geoip else None
             kc_sev = "HIGH" if kc_kind == "WEB_EXPLOIT_ATTEMPT" else "LOW"
-            self._kc_update(ip, kc_kind, geo=geo, severity=kc_sev)
+            await self._kc_update(ip, kc_kind, geo=geo, severity=kc_sev)
 
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="web",
                                fail_count=scan_count + auth_count + expl_count,
@@ -673,7 +689,7 @@ class Detector:
 
         # Kill chain: DB auth fail = Delivery stage
         geo = self.geoip.get_cached(ip) if self.geoip else None
-        self._kc_update(ip, "DB_AUTH_FAIL", geo=geo, severity="MEDIUM")
+        await self._kc_update(ip, "DB_AUTH_FAIL", geo=geo, severity="MEDIUM")
 
         await self._maybe_fire(ip, st, t, sev, reasons, trigger="db",
                                fail_count=db_count, uniq_users=0)
@@ -687,20 +703,20 @@ class Detector:
             reasons = [f"honeypot_port: connection to port {port} (never legitimate)"]
             # Kill chain: honeypot hit = Reconnaissance stage
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "FW_HONEYPOT_PORT", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "FW_HONEYPOT_PORT", geo=geo, severity="HIGH")
             await self._maybe_fire(ip, st, t, r_hp.effective_severity, reasons,
                                    trigger="fw", fail_count=1, uniq_users=0)
         else:
             # Kill chain: FW block = Reconnaissance stage
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "FW_BLOCK", geo=geo, severity="LOW")
+            await self._kc_update(ip, "FW_BLOCK", geo=geo, severity="LOW")
             await self.logger.log("fw_block", {"ip": ip, "meta": ev.meta})
 
     async def _on_sys_event(self, ip: str, ev: Event, st: IPState, t: float) -> None:
         # Kill chain: sudo/su fail = Installation stage
         if ev.kind in ("SUDO_FAIL", "SU_FAIL"):
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, ev.kind, geo=geo, severity="HIGH")
+            await self._kc_update(ip, ev.kind, geo=geo, severity="HIGH")
         # sudo/su fail alone is LOW -- correlator will escalate if SSH login preceded it
         await self.logger.log("privilege_event", {
             "ip":   ip,
@@ -741,7 +757,7 @@ class Detector:
                 )
             # Kill chain: cloud sign-in fail = Delivery stage
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "CLOUD_SIGNIN_FAIL", geo=geo, severity="MEDIUM")
+            await self._kc_update(ip, "CLOUD_SIGNIN_FAIL", geo=geo, severity="MEDIUM")
 
         elif ev.kind == "CLOUD_MFA_FAIL":
             r_mfa = self.rules.get("cloud.mfa_failure")
@@ -751,7 +767,7 @@ class Detector:
                     f"cloud_mfa_failure ({provider}): MFA failed or bypassed (user={user})"
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "CLOUD_MFA_FAIL", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "CLOUD_MFA_FAIL", geo=geo, severity="HIGH")
             if self.zero_trust and ev.user:
                 from .zero_trust import TrustSignal
                 self.zero_trust.apply_signal(ev.user, "user", TrustSignal.MFA_FAILURE)
@@ -767,7 +783,7 @@ class Detector:
                     f"risk_state={risk_state} (user={user})"
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "CLOUD_RISKY_SIGNIN", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "CLOUD_RISKY_SIGNIN", geo=geo, severity="HIGH")
             if self.zero_trust and ev.user:
                 from .zero_trust import TrustSignal
                 self.zero_trust.apply_signal(ev.user, "user", TrustSignal.CLOUD_RISK_FLAG)
@@ -784,7 +800,7 @@ class Detector:
                         f"success after {st.total_fails} failures (user={user})"
                     )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "CLOUD_SIGNIN_SUCCESS", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "CLOUD_SIGNIN_SUCCESS", geo=geo, severity="HIGH")
 
         elif ev.kind == "CLOUD_IMPOSSIBLE_TRAVEL":
             r_it = self.rules.get("cloud.impossible_travel")
@@ -795,7 +811,7 @@ class Detector:
                     f"two sign-ins too far apart (user={user})"
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "CLOUD_IMPOSSIBLE_TRAVEL", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "CLOUD_IMPOSSIBLE_TRAVEL", geo=geo, severity="HIGH")
 
         if sev is not None:
             await self._maybe_fire(ip, st, t, sev, reasons, trigger="cloud",
@@ -828,7 +844,7 @@ class Detector:
                     f"{'trusted' if trusted else 'UNTRUSTED'} IP"
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "OT_MODBUS_WRITE", geo=geo, severity="HIGH")
+            await self._kc_update(ip, "OT_MODBUS_WRITE", geo=geo, severity="HIGH")
 
         elif ev.kind == "OT_MODBUS_SCAN":
             r = self.rules.get("ot.modbus_scan")
@@ -845,7 +861,7 @@ class Detector:
                         f"in {self.window_sec}s"
                     )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, "OT_MODBUS_SCAN", geo=geo, severity="MEDIUM")
+            await self._kc_update(ip, "OT_MODBUS_SCAN", geo=geo, severity="MEDIUM")
 
         elif ev.kind == "OT_MODBUS_EXCEPTION":
             r = self.rules.get("ot.modbus_write")
@@ -861,7 +877,7 @@ class Detector:
                     f"ot_dnp3: {ev.kind.lower()} from {ip or 'unknown'}"
                 )
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, ev.kind, geo=geo, severity=sev or "MEDIUM")
+            await self._kc_update(ip, ev.kind, geo=geo, severity=sev or "MEDIUM")
 
         elif ev.kind in ("OT_SCADA_ALARM", "OT_UNAUTHORIZED_CMD"):
             r = self.rules.get("ot.scada_alarm")
@@ -870,7 +886,7 @@ class Detector:
                 detail = meta.get("detail", ev.kind.lower())
                 reasons.append(f"ot_scada: {detail} ({proto})")
             geo = self.geoip.get_cached(ip) if self.geoip else None
-            self._kc_update(ip, ev.kind, geo=geo, severity="HIGH")
+            await self._kc_update(ip, ev.kind, geo=geo, severity="HIGH")
 
         # OT events always logged regardless of alert threshold
         await self.logger.log("ot_event", {
@@ -907,7 +923,7 @@ class Detector:
             )
 
         geo = self.geoip.get_cached(ip) if self.geoip else None
-        self._kc_update(ip, "WAZUH_ALERT", geo=geo, severity=sev or "LOW")
+        await self._kc_update(ip, "WAZUH_ALERT", geo=geo, severity=sev or "LOW")
 
         # Wazuh alerts always logged regardless of whether the rule fires
         await self.logger.log("wazuh_event", {

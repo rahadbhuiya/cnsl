@@ -184,6 +184,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Example: "ssh.brute_force": { "enabled": true, "threshold": 5, "severity": "HIGH" }
     "rules": {},
     "correlation_rules": {},
+    "predictive_blocking": {
+        "enabled": False,
+        "score_threshold": 0.60,
+        "min_stages": 2,
+    },
 
     #  Allowlist — never blocked 
     "allowlist": [

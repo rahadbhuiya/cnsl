@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnsl"
-version = "3.4.12"
+version = "3.4.13"
 description = "Correlated Network Security Layer — A self-hosted SIEM for Linux"
 readme = "README.md"
 license = "MIT"

@@ -372,12 +372,12 @@ class TestDetectorKillChainHelper:
         from cnsl.kill_chain import KillChainTracker
         kc  = KillChainTracker({"kill_chain": {"enabled": True}})
         det = self._make_detector(kill_chain=kc)
-        det._kc_update("1.2.3.4", "SSH_FAIL")
+        _run(det._kc_update("1.2.3.4", "SSH_FAIL"))
         assert kc.get_chain("1.2.3.4") is not None
 
     def test_kc_update_noop_when_kill_chain_none(self):
         det = self._make_detector(kill_chain=None)
-        det._kc_update("1.2.3.4", "SSH_FAIL")  # must not raise
+        _run(det._kc_update("1.2.3.4", "SSH_FAIL"))  # must not raise
 
     def test_kc_update_publishes_to_federation_when_present(self):
         from cnsl.federation import FederationBus
@@ -389,9 +389,9 @@ class TestDetectorKillChainHelper:
         fed  = FederationBus({}, stub, logger=None)
         det  = self._make_detector(federation=fed)
 
-        det._kc_update("1.2.3.4", "SSH_FAIL")
-        # publish() is scheduled via asyncio.ensure_future inside a sync
-        # method -- give the event loop one tick to run it.
+        _run(det._kc_update("1.2.3.4", "SSH_FAIL"))
+        # publish() is scheduled via asyncio.ensure_future inside _kc_update
+        # -- give the event loop one tick to run it.
         _run(asyncio.sleep(0.01))
         # Not connected, so publish() returns False quickly without raising
         # -- the important contract here is that calling _kc_update with a
@@ -402,7 +402,7 @@ class TestDetectorKillChainHelper:
             async def publish(self, ip, kind, severity):
                 raise RuntimeError("boom")
         det = self._make_detector(federation=_BadFederation())
-        det._kc_update("1.2.3.4", "SSH_FAIL")  # must not raise synchronously
+        _run(det._kc_update("1.2.3.4", "SSH_FAIL"))  # must not raise synchronously
 
 class TestDetectorZeroTrustWiring:
     """Detector stores zero_trust and calls _zt_threshold correctly."""
