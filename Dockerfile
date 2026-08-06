@@ -17,9 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY . .
 
-# Install with all optional deps
+# Install with all optional deps. asyncpg/PyYAML aren't in the "full" extra
+# (full = the batteries-included single-node default: sqlite + notify +
+# auth + 2fa + ml + reports) since they're only needed for optional
+# PostgreSQL backend/migration (--migrate-db) and YAML config files
+# respectively -- installed explicitly here so the image supports both
+# out of the box.
 RUN pip install --no-cache-dir -e ".[full]" && \
-    pip install --no-cache-dir aiohttp aiosqlite aiokafka pyotp bcrypt
+    pip install --no-cache-dir aiohttp aiosqlite aiokafka pyotp bcrypt asyncpg pyyaml
 
 # Data directories
 RUN mkdir -p /var/lib/cnsl /var/log/cnsl /etc/cnsl
@@ -30,9 +35,10 @@ VOLUME ["/var/log", "/etc/cnsl", "/var/lib/cnsl"]
 # Dashboard port
 EXPOSE 8765
 
-# Healthcheck
+# Healthcheck -- /api/health is unauthenticated by design, specifically
+# for load balancers/container orchestrators (see cnsl/dashboard.py).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:8765/api/stats || exit 1
+    CMD curl -sf http://localhost:8765/api/health || exit 1
 
 # Run in dry-run by default; pass --execute to enable real blocking.
 # Container needs: --cap-add NET_ADMIN --cap-add NET_RAW

@@ -48,7 +48,7 @@ services:
       - --dashboard
       - --execute
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8765/api/stats"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/api/health"]
       interval: 30s
       timeout:  5s
       retries:  3
