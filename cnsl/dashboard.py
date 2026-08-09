@@ -1,14 +1,12 @@
 """
 cnsl/dashboard.py -- Live web dashboard with JWT auth, WebSocket, SSE, REST API.
 
-Routes: / (dashboard), /login, /api/login, /api/logout, /api/health (no auth,
-for load balancers/k8s), /api/stats, /api/incidents, /api/top-attackers,
-/api/timeline, /api/blocks, /api/metrics, /api/ml(+alerts/params/retrain/
-feature-stats/false-positive), /api/fim, /api/honeypot, /api/block,
-/api/unblock, /api/audit, /api/correlation-rules[/{name}] (+enable/disable/
-reset), /api/federation/hub, /api/export/stix, /taxii2/... (cnsl/taxii.py),
-/api/fingerprint/clusters+similar/{ip} (cnsl/fingerprint.py), /ws, /ws/agent,
-/stream (SSE, backward compat).
+Core routes: /, /login, /api/login, /api/logout, /api/health (no auth),
+/api/stats, /api/incidents, /api/top-attackers, /api/timeline, /api/blocks,
+/api/metrics, /api/ml*, /api/fim, /api/honeypot, /api/block, /api/unblock,
+/api/audit, /api/correlation-rules*, /api/federation/hub, /api/export/stix,
+/taxii2/* (taxii.py), /api/fingerprint/* (fingerprint.py), /api/graph/*
+(graph_correlation.py), /ws, /ws/agent, /stream (SSE).
 """
 
 from __future__ import annotations
@@ -588,7 +586,6 @@ async def start_dashboard(
         return web.json_response({"ok": True, "rule": detector.rules.get(rule_id).to_dict()})
 
     #  Correlation Rules API (routes in dashboard_correlation.py, budget) 
-
     from .dashboard_correlation import register_correlation_routes
     register_correlation_routes(router, correlator, _require_auth, rbac, logger, _audit)
 
@@ -1144,6 +1141,9 @@ async def start_dashboard(
 
     from .dashboard_fingerprint import register_fingerprint_routes
     register_fingerprint_routes(router, store, _require_auth, _rate_check)
+
+    from .dashboard_graph_correlation import register_graph_correlation_routes
+    register_graph_correlation_routes(router, store, kill_chain, _require_auth, _rate_check)
 
     #  SIEM Connector API
 

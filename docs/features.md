@@ -65,6 +65,7 @@
 | Deployment | Docker / docker-compose |
 | Deployment | Kubernetes -- Helm chart (`helm/cnsl/`), DaemonSet (per-node) or Deployment mode; see [`docs/kubernetes.md`](kubernetes.md) |
 | Analysis | Attacker fingerprinting -- cross-IP behavioral clustering to spot the same actor rotating IPs |
+| Analysis | Graph-structured campaign detection -- transitive IP correlation through shared rules/kill-chain stages, no direct pairwise similarity needed |
 | Blocking | Predictive blocking (opt-in) -- blocks on kill-chain trajectory across multiple attack types before any single rule's own threshold fires |
 | Ingestion | Agent log forwarder (WebSocket) |
 | Normalization | ECS-compatible event schema, CEF export for ArcSight/Splunk |
@@ -142,7 +143,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 917 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 955 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

@@ -566,6 +566,41 @@ Similarity combines cosine similarity of attack-type mix (40%), timing rhythm cl
 
 ---
 
+## Graph Correlation
+
+While attacker fingerprinting (above) clusters IPs by *direct* pairwise behavioral similarity, `cnsl/graph_correlation.py` finds IPs correlated *transitively*, through the attack graph itself, even when no two of them look similar to each other. The graph is heterogeneous: `ip` nodes connect to `rule` nodes (the TTP keyword each incident's reason names) and `stage` nodes (kill-chain stages reached). Two IPs with nothing directly in common can still land in the same connected component -- e.g. IP A and IP C never interact, but both trigger `sql_injection` and both reach the `Delivery` stage, so the graph links them through those shared nodes. Classical connected-components, not a trained model -- no training, no model file.
+
+```
+GET /api/graph/campaigns             Groups of 3+ IPs transitively linked through the graph
+GET /api/graph/explain/{ip_a}/{ip_b} What two specific IPs directly have in common
+```
+
+A rule/stage node triggered by only one IP is a dead end, not correlation -- a node must be shared by at least `min_shared_degree` (default 2) distinct IPs before it's allowed to bridge them into a campaign.
+
+**`GET /api/graph/campaigns`** query params: `min_ips` (default 3, max 100), `min_shared_degree` (default 2, max 50), `incident_limit` (default 5000, max 20000).
+
+```json
+{
+  "campaigns": [
+    {"ips": ["1.1.1.1", "2.2.2.2", "3.3.3.3"], "size": 3,
+     "shared_nodes": [{"id": "rule:sql_injection", "type": "rule", "label": "sql_injection"}]}
+  ],
+  "total_campaigns": 1,
+  "graph_nodes": 4,
+  "graph_edges": 3
+}
+```
+
+**`GET /api/graph/explain/{ip_a}/{ip_b}`** -- only reports *direct* shared nodes; two IPs correlated transitively through a third IP (not directly) return `directly_connected: false` here even though they're in the same campaign in `/api/graph/campaigns`.
+
+```json
+{"ip_a": "1.1.1.1", "ip_b": "2.2.2.2",
+ "shared_nodes": [{"id": "rule:sql_injection", "type": "rule", "label": "sql_injection"}],
+ "directly_connected": true}
+```
+
+---
+
 ## System
 
 ```
