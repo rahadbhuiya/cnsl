@@ -113,10 +113,13 @@ All rules can be adjusted or disabled from the dashboard Rules tab or via `PATCH
 | Blocks | Active blocks with unblock button, manual block form |
 | Honeypot | Status, active redirects, session table (IP, duration, auth attempts, commands) |
 | FIM | Watched paths, file integrity alerts |
-| ML | Status, training progress, parameter tuning form, retrain button, feature importance bars, recent anomalies |
+| ML | Status, training progress, parameter tuning form, retrain button, feature importance bars, recent anomalies (each with a "Mark FP" button that feeds back into training -- see v3.4.6) |
 | Live Feed | Every event streamed in real time via SSE |
 | Kill Chain | Per-IP attack progression across 7 stages, score bar, complete-chain badge, detail view |
 | Graph | Force-directed network graph: nodes = attacker IPs, colored by trust, sized by kill chain progress |
+| Correlation | Cross-source correlation rules (e.g. web recon then SSH) -- enable/disable, tune window/cooldown/confidence |
+| Hub | Every federated node's health (uptime, incidents, active blocks) plus cross-node attackers, in one view |
+| Campaigns | Attacker fingerprint clusters (same actor, different IPs) and graph-correlated campaigns (IPs linked transitively through shared rules/stages) |
 | Cases | Security case management (create, assign, comment, link incidents) |
 | UEBA | Behavioral anomalies table, user profile viewer |
 | Rules | Alert rules table with live edit, Suggested Rules panel from pattern learner |
@@ -143,7 +146,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 955 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 996 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

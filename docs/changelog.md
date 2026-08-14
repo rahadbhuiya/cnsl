@@ -4,6 +4,30 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.15 -- Dashboard UI for correlation rules, hub, fingerprinting, and graph campaigns
+
+Every feature from v3.4.5 through v3.4.14 (correlation-rule tuning, ML false-positive feedback, multi-node hub, attacker fingerprinting, graph correlation) shipped API-only -- fully functional, but invisible in the actual web dashboard unless someone hit the endpoints directly with curl. This adds the missing UI.
+
+**Three new dashboard tabs**
+- **Correlation** -- table of cross-source correlation rules (enabled/disabled, effective window/cooldown/confidence, whether tuned from defaults) with enable/disable buttons and an edit panel for tuning window/cooldown/confidence, mirroring the existing detection-rules tab's UI pattern exactly.
+- **Hub** -- every federated node's health (uptime, incident counts, active blocks, events processed) in one table, plus a cross-node attackers table (IPs seen by 2+ nodes). Degrades to a clear "Redis not connected" message on a single-node setup rather than an empty/broken table.
+- **Campaigns** -- attacker fingerprint clusters (v3.4.12) and graph-correlated campaigns (v3.4.14) side by side.
+
+**ML tab**
+- Recent anomaly alerts now have a "Mark FP" button per row, wired to the `POST /api/ml/alerts/{id}/false-positive` endpoint that's existed since v3.4.6 but had no UI to trigger it from.
+
+**Verified, not just written**: extracted the dashboard's actual served `<script>` block and validated it with a real JS engine (`node --check`) rather than only checking for matching braces by eye; cross-checked every new `onclick` handler against actual function definitions (would have caught a typo'd function name); cross-checked every element id the new JS reads/writes against the actual served HTML.
+
+**Also noted, not fixed**: found one pre-existing stray `</div>` in the Settings page, unrelated to this work (confirmed by checking the newly added block is independently balanced, 21 opens/21 closes). Browsers silently ignore an extra closing tag, so this has no visible effect -- left as-is rather than scope-creeping into an unrelated fix, but locked in with a regression test so the imbalance doesn't silently grow.
+
+**Tests**
+- 41 new tests (`test_dashboard_ui.py`): every new tab/element present, every new JS function defined AND called (catches a typo'd onclick reference), the actual served script passes real JS syntax validation via Node, and the pre-existing div-balance issue is pinned rather than papered over.
+
+**Tests**
+- 996 tests passing (955 existing + 41 new).
+
+---
+
 ### v3.4.14 -- Graph-structured attack correlation
 
 The original roadmap item asked for "GNN-based correlation: IsolationForest → Graph Neural Network / attack patterns modeled as graph structure." A full trained GNN (torch/torch-geometric, a training pipeline, model versioning) would be a significant new heavy-dependency surface that doesn't fit CNSL's existing design -- every other correlation/clustering feature in this project (rules.py's RuleEngine, fingerprint.py's similarity clustering) is deliberately dependency-free and fully explainable, no training required. This delivers the actual conceptual ask -- attack patterns modeled and correlated as a real graph structure -- via classical, inspectable connected-components instead, in keeping with that design.

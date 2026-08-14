@@ -447,7 +447,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <span class="hdr-title">CNSL</span>
-    <span class="badge">v3.4.14</span>
+    <span class="badge">v3.4.15</span>
   </div>
   <div class="live-dot" title="Live"></div>
   <button class="hdr-btn" id="pdf-btn" onclick="exportPDF()" title="Export PDF report">
@@ -536,6 +536,15 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </svg>
     Rules
   </div>
+  <div class="tab" onclick="showTab('correlation')" id="tab-correlation">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="3" cy="3" r="1.6" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="11" cy="3" r="1.6" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="7" cy="11" r="1.6" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M4.4 4L6.3 9.5M9.6 4L7.7 9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+    </svg>
+    Correlation
+  </div>
   <div class="tab" onclick="showTab('ratelimit')" id="tab-ratelimit">
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
@@ -570,6 +579,27 @@ tr:hover td{background:rgba(255,255,255,.02);}
       <path d="M3.2 6.4L6.2 3M8 3L11 6.4M3.2 7.6L4.5 10M10.5 10L11 7.6M6.2 11h1.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
     </svg>
     Graph
+  </div>
+  <div class="tab" onclick="showTab('hub')" id="tab-hub">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/>
+      <circle cx="2" cy="2" r="1.3" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="12" cy="2" r="1.3" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="2" cy="12" r="1.3" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="12" cy="12" r="1.3" stroke="currentColor" stroke-width="1.1"/>
+      <path d="M5.5 5.5L2.8 2.8M8.5 5.5L11.2 2.8M5.5 8.5L2.8 11.2M8.5 8.5L11.2 11.2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    </svg>
+    Hub
+  </div>
+  <div class="tab" onclick="showTab('campaigns')" id="tab-campaigns">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M2 12l3.5-6L8 9l4-7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="2" cy="12" r="1.1" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="5.5" cy="6" r="1.1" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="8" cy="9" r="1.1" stroke="currentColor" stroke-width="1.1"/>
+      <circle cx="12" cy="2" r="1.1" stroke="currentColor" stroke-width="1.1"/>
+    </svg>
+    Campaigns
   </div>
 </nav>
 
@@ -913,8 +943,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head"><span class="tbl-head-title">Recent ML Anomalies</span></div>
     <table>
-      <thead><tr><th>Time</th><th>IP</th><th>Score</th><th>Top Reasons</th></tr></thead>
-      <tbody id="ml-alerts-tbody"><tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr></tbody>
+      <thead><tr><th>Time</th><th>IP</th><th>Score</th><th>Top Reasons</th><th>Actions</th></tr></thead>
+      <tbody id="ml-alerts-tbody"><tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr></tbody>
     </table>
   </div>
 
@@ -1039,6 +1069,76 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <table>
       <thead><tr><th>Pattern</th><th>Confidence</th><th>Occurrences</th><th>Severity</th><th>Threshold</th><th>Window</th><th>Example IPs</th><th>Last Seen</th><th>Actions</th></tr></thead>
       <tbody id="suggested-rules-tbody"><tr><td colspan="9" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CORRELATION RULES -->
+<div class="page" id="page-correlation">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Correlation Rules</span><span style="font-size:11px;color:var(--muted)">Cross-source rules (e.g. web recon then SSH) -- tune window/cooldown/confidence, or disable a noisy one</span></div>
+    <table>
+      <thead><tr><th>Rule</th><th>Status</th><th>Window (sec)</th><th>Cooldown (sec)</th><th>Confidence</th><th>Tuned?</th><th>Actions</th></tr></thead>
+      <tbody id="correlation-tbody"><tr><td colspan="7" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div id="correlation-edit-panel" style="display:none;margin-top:14px;padding:16px;background:var(--surface2);border:1px solid var(--bord);border-radius:6px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)" id="correlation-edit-title">Tune Rule</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Window (sec)</label>
+        <input id="correlation-edit-window" type="number" min="1" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Cooldown (sec)</label>
+        <input id="correlation-edit-cooldown" type="number" min="0" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Confidence (0-1)</label>
+        <input id="correlation-edit-confidence" type="number" min="0" max="1" step="0.05" style="width:100%;background:var(--surf);border:1px solid var(--bord);color:var(--text);padding:6px 10px;border-radius:4px;font-size:13px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green" onclick="saveCorrelationRule()">Save</button>
+      <button class="btn" onclick="resetCorrelationRule()" style="background:var(--surf);border:1px solid var(--bord)">Reset to Default</button>
+      <button class="btn" onclick="$('correlation-edit-panel').style.display='none'" style="background:var(--surf);border:1px solid var(--bord)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- HUB -->
+<div class="page" id="page-hub">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Multi-Node Hub</span><span style="font-size:11px;color:var(--muted)">Every federated node's health, aggregated via Redis heartbeats</span></div>
+    <div id="hub-summary" style="padding:8px 16px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)"></div>
+    <table>
+      <thead><tr><th>Node</th><th>Last Seen</th><th>Uptime</th><th>Incidents</th><th>Active Blocks</th><th>Events Processed</th></tr></thead>
+      <tbody id="hub-nodes-tbody"><tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="tbl-wrap">
+    <div class="tbl-head"><span class="tbl-head-title">Cross-Node Attackers</span><span style="font-size:11px;color:var(--muted)">IPs seen by 2+ distinct nodes</span></div>
+    <table>
+      <thead><tr><th>IP</th><th>Nodes</th></tr></thead>
+      <tbody id="hub-cross-tbody"><tr><td colspan="2" style="color:var(--muted);text-align:center;padding:20px">No data</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CAMPAIGNS -->
+<div class="page" id="page-campaigns">
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head"><span class="tbl-head-title">Attacker Fingerprint Clusters</span><span style="font-size:11px;color:var(--muted)">IPs whose behavior (attack mix, timing rhythm, TTP keywords) is similar enough to plausibly be the same actor rotating IPs</span></div>
+    <table>
+      <thead><tr><th>IPs</th><th>Size</th></tr></thead>
+      <tbody id="fp-clusters-tbody"><tr><td colspan="2" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
+    </table>
+  </div>
+  <div class="tbl-wrap">
+    <div class="tbl-head"><span class="tbl-head-title">Graph Campaigns</span><span style="font-size:11px;color:var(--muted)">IPs correlated transitively through shared rules/kill-chain stages -- catches groups with no direct pairwise similarity</span></div>
+    <table>
+      <thead><tr><th>IPs</th><th>Size</th><th>Shared</th></tr></thead>
+      <tbody id="graph-campaigns-tbody"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">Loading...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1264,10 +1364,13 @@ function showTab(name){
   if(name==='cases')     loadCases();
   if(name==='ueba')      loadUEBA();
   if(name==='rules')     { loadRules(); loadSuggestedRules(); }
+  if(name==='correlation') loadCorrelationRules();
   if(name==='ratelimit') loadRateLimit();
   if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); loadZeroTrust(); }
   if(name==='killchain') loadKillChain();
   if(name==='graph')     loadGraph();
+  if(name==='hub')       loadHub();
+  if(name==='campaigns') loadCampaigns();
 }
 
 //  Cases 
@@ -1402,6 +1505,108 @@ async function resetRule(){
   await apiFetch(`/api/rules/${_editingRuleId}/reset`,{method:'POST'});
   $('rule-edit-panel').style.display = 'none';
   loadRules();
+}
+
+//  Correlation Rules 
+let _editingCorrelationRule = null;
+
+async function loadCorrelationRules(){
+  const d = await apiFetch('/api/correlation-rules');
+  if(!d) return;
+  $('correlation-tbody').innerHTML = d.rules.map(r=>`
+    <tr>
+      <td style="font-size:12px">${escHtml(r.name)}<div style="font-size:10px;color:var(--muted)">${escHtml(r.description||'')}</div></td>
+      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">✎</span>':''}</td>
+      <td>${r.effective_window_sec}</td>
+      <td>${r.effective_cooldown_sec}</td>
+      <td>${r.effective_confidence}</td>
+      <td>${r.overridden?'Yes':'No'}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn ${r.enabled?'':'btn-green'}" onclick="${r.enabled?`disableCorrelationRule('${r.name}')`:`enableCorrelationRule('${r.name}')`}" style="font-size:11px;padding:2px 8px">
+          ${r.enabled?'Disable':'Enable'}
+        </button>
+        <button class="btn" onclick="openCorrelationEdit('${r.name}',${r.effective_window_sec},${r.effective_cooldown_sec},${r.effective_confidence})" style="font-size:11px;padding:2px 8px">Edit</button>
+      </td>
+    </tr>`).join('');
+}
+async function enableCorrelationRule(name){
+  await apiFetch(`/api/correlation-rules/${name}/enable`,{method:'POST'});
+  loadCorrelationRules();
+}
+async function disableCorrelationRule(name){
+  await apiFetch(`/api/correlation-rules/${name}/disable`,{method:'POST'});
+  loadCorrelationRules();
+}
+function openCorrelationEdit(name,window_sec,cooldown_sec,confidence){
+  _editingCorrelationRule = name;
+  $('correlation-edit-title').textContent = `Tune: ${name}`;
+  $('correlation-edit-window').value = window_sec;
+  $('correlation-edit-cooldown').value = cooldown_sec;
+  $('correlation-edit-confidence').value = confidence;
+  $('correlation-edit-panel').style.display = 'block';
+}
+async function saveCorrelationRule(){
+  if(!_editingCorrelationRule) return;
+  await apiFetch(`/api/correlation-rules/${_editingCorrelationRule}`,{
+    method:'PATCH',
+    body:JSON.stringify({
+      window_sec: parseInt($('correlation-edit-window').value),
+      cooldown_sec: parseInt($('correlation-edit-cooldown').value),
+      confidence: parseFloat($('correlation-edit-confidence').value),
+    })
+  });
+  $('correlation-edit-panel').style.display = 'none';
+  loadCorrelationRules();
+}
+async function resetCorrelationRule(){
+  if(!_editingCorrelationRule) return;
+  await apiFetch(`/api/correlation-rules/${_editingCorrelationRule}/reset`,{method:'POST'});
+  $('correlation-edit-panel').style.display = 'none';
+  loadCorrelationRules();
+}
+
+//  Hub 
+async function loadHub(){
+  const d = await apiFetch('/api/federation/hub');
+  if(!d || d.error){
+    $('hub-summary').innerHTML = `<span style="color:var(--muted)">${d?escHtml(d.error):'Hub unavailable'}</span>`;
+    $('hub-nodes-tbody').innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Redis not connected -- hub view requires a multi-node setup</td></tr>';
+    return;
+  }
+  $('hub-summary').innerHTML = `This node: <code>${escHtml(d.this_node)}</code> &nbsp;|&nbsp; ${d.node_count} node(s) known`;
+  $('hub-nodes-tbody').innerHTML = (d.nodes||[]).map(n=>{
+    const s = n.stats||{};
+    return `<tr>
+      <td><code>${escHtml(n.node_id)}</code>${n.is_self?' <span class="c-blue" style="font-size:10px">(this node)</span>':''}</td>
+      <td style="font-size:11px;color:var(--muted)">${escHtml(n.last_seen||'')}</td>
+      <td>${s.uptime_sec!=null?Math.round(s.uptime_sec/60)+'m':'-'}</td>
+      <td>${s.incidents_total?Object.values(s.incidents_total).reduce((a,b)=>a+b,0):'-'}</td>
+      <td>${s.blocks_active??'-'}</td>
+      <td>${s.events_processed??'-'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">No nodes</td></tr>';
+
+  $('hub-cross-tbody').innerHTML = (d.cross_node_ips||[]).map(c=>`
+    <tr><td><code>${escHtml(c.ip)}</code></td><td>${c.node_count??''}</td></tr>
+  `).join('') || '<tr><td colspan="2" style="color:var(--muted);text-align:center;padding:20px">No cross-node attackers seen</td></tr>';
+}
+
+//  Campaigns (fingerprint clusters + graph correlation) 
+async function loadCampaigns(){
+  const [fp, gc] = await Promise.all([
+    apiFetch('/api/fingerprint/clusters'),
+    apiFetch('/api/graph/campaigns'),
+  ]);
+  $('fp-clusters-tbody').innerHTML = (fp && fp.clusters || []).map(c=>`
+    <tr><td>${c.ips.map(ip=>`<code>${escHtml(ip)}</code>`).join(', ')}</td><td>${c.size}</td></tr>
+  `).join('') || '<tr><td colspan="2" style="color:var(--muted);text-align:center;padding:20px">No clusters found</td></tr>';
+
+  $('graph-campaigns-tbody').innerHTML = (gc && gc.campaigns || []).map(c=>`
+    <tr>
+      <td>${c.ips.map(ip=>`<code>${escHtml(ip)}</code>`).join(', ')}</td>
+      <td>${c.size}</td>
+      <td style="font-size:11px;color:var(--muted)">${(c.shared_nodes||[]).map(n=>escHtml(n.label)).join(', ')}</td>
+    </tr>`).join('') || '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">No campaigns found</td></tr>';
 }
 async function loadSuggestedRules(){
   const [d, stats] = await Promise.all([
@@ -2355,16 +2560,25 @@ async function fetchML(){
     $('ml-alerts-tbody').innerHTML = alerts.slice().reverse().map(a => {
       const scorePct = Math.round(Math.abs(a.anomaly_score || 0) * 100);
       const reasons  = (a.top_reasons || []).slice(0, 2).map(escHtml).join('; ');
+      const fpBtn = a.false_positive
+        ? `<span class="c-muted" style="font-size:11px">Marked FP</span>`
+        : `<button class="btn" onclick="mlMarkFalsePositive('${a.id}')" style="font-size:11px;padding:2px 8px">Mark FP</button>`;
       return `<tr>
         <td style="font-size:11px">${escHtml(a.ts || '')}</td>
         <td><code>${escHtml(a.ip || '')}</code></td>
         <td><span style="color:#f59e0b;font-weight:600">${scorePct}</span></td>
         <td style="font-size:11px;color:var(--muted)">${reasons}</td>
+        <td>${fpBtn}</td>
       </tr>`;
     }).join('');
   } else {
-    $('ml-alerts-tbody').innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr>';
+    $('ml-alerts-tbody').innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No ML anomalies detected yet</td></tr>';
   }
+}
+
+async function mlMarkFalsePositive(id){
+  await apiFetch(`/api/ml/alerts/${id}/false-positive`,{method:'POST'});
+  fetchML();
 }
 
 async function mlSaveParams(){

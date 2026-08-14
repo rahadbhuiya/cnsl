@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/rahadbhuiya/cnsl
-  tag: "3.4.14"       # -- defaults to Chart.yaml's appVersion if left as ""
+  tag: "3.4.15"       # -- defaults to Chart.yaml's appVersion if left as ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -74,7 +74,7 @@ config: |
     },
     "redis": {
       "enabled": false,
-      "host": "{{ include "cnsl.redis.fullname" . }}",
+      "host": "{{ include \"cnsl.redis.fullname\" . }}",
       "port": 6379
     }
   }
