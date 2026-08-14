@@ -74,7 +74,7 @@ config: |
     },
     "redis": {
       "enabled": false,
-      "host": "{{ include \"cnsl.redis.fullname\" . }}",
+      "host": "{{ include "cnsl.redis.fullname" . }}",
       "port": 6379
     }
   }
