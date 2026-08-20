@@ -3,7 +3,7 @@
 
 image:
   repository: ghcr.io/rahadbhuiya/cnsl
-  tag: "3.4.15"       # -- defaults to Chart.yaml's appVersion if left as ""
+  tag: "3.4.16"       # -- defaults to Chart.yaml's appVersion if left as ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -48,8 +48,13 @@ dashboard:
 #
 # This string is passed through Helm's `tpl` function before being
 # written to the ConfigMap, so it CAN contain Helm template expressions
-# (e.g. the default below uses {{ include "cnsl.redis.fullname" . }} to
+# (e.g. the default below uses {{ include `cnsl.redis.fullname` . }} to
 # reference the bundled Redis Service by its actual release-scoped name).
+# Note the backticks, not \"-escaped double quotes -- `tpl` parses this
+# whole string as a real Go template BEFORE it's valid JSON, and Go's
+# template action syntax doesn't accept backslash-escaped quotes as a
+# string-literal delimiter the way JSON does; backtick raw strings sidestep
+# the clash entirely since they don't need escaping either way.
 # Plain JSON with no template syntax works fine too if you don't need that.
 config: |
   {
@@ -74,7 +79,7 @@ config: |
     },
     "redis": {
       "enabled": false,
-      "host": "{{ include "cnsl.redis.fullname" . }}",
+      "host": "{{ include `cnsl.redis.fullname` . }}",
       "port": 6379
     }
   }

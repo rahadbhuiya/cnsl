@@ -4,6 +4,21 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.16 -- Fixed a real `helm lint` failure (Go template quote escaping)
+
+Running `helm lint helm/cnsl` for real (against the actual `helm` binary, which wasn't available in the environment this chart was developed in) caught a genuine template error the static analysis in v3.4.10 couldn't: `templates/configmap.yaml:9: executing ... at <tpl .Values.config .>: error calling tpl: cannot parse template ...: unexpected "\\" in operand`.
+
+**Root cause**: `.Values.config`'s default value embeds a Helm template expression to reference the bundled Redis service by its release-scoped name -- written as `{{ include \"cnsl.redis.fullname\" . }}`, using JSON-style backslash-escaped quotes since the whole thing sits inside a JSON string. But `tpl` parses that string as a *fresh Go template* before it's JSON at all, and Go's template action syntax doesn't accept a bare backslash as the start of a new token -- a backslash is only valid already inside a string literal opened with a real (non-escaped) quote. The JSON-style `\"` escaping that made sense for the *surrounding* JSON text was invalid *inside* the `{{ }}` action itself.
+
+**Fix**: use backtick raw-string literals instead -- `{{ include \`cnsl.redis.fullname\` . }}` -- which need no escaping and can't collide with the surrounding JSON's double quotes either way. Fixed in `values.yaml` and the matching example in the chart's `README.md`.
+
+**Also fixed a blind spot in the test suite**: `tests/test_helm_chart.py`'s `_rendered_config()` helper simulated `tpl` by blindly regex-substituting every `{{ ... }}` span with a dummy string -- which silently produced valid JSON regardless of whether the *original* action was valid Go template syntax, masking exactly this bug. 998 tests were green while the chart was actually broken. Added `test_no_backslash_escaped_quotes_inside_template_actions` (verified it fails against the pre-fix version) and a matching check on the README's example, so this class of error can't silently regress again without a real `helm lint` run.
+
+**Tests**
+- 2 new tests. 998 tests passing (996 existing + 2 new).
+
+---
+
 ### v3.4.15 -- Dashboard UI for correlation rules, hub, fingerprinting, and graph campaigns
 
 Every feature from v3.4.5 through v3.4.14 (correlation-rule tuning, ML false-positive feedback, multi-node hub, attacker fingerprinting, graph correlation) shipped API-only -- fully functional, but invisible in the actual web dashboard unless someone hit the endpoints directly with curl. This adds the missing UI.

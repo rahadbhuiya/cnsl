@@ -53,7 +53,7 @@ config: |
                 "block_backend": "iptables", "chain": "INPUT"},
     "store": {"backend": "sqlite", "db_path": "/var/lib/cnsl/cnsl_state.db"},
     "dashboard": {"enabled": true, "host": "0.0.0.0", "port": 8765},
-    "redis": {"enabled": true, "host": "{{ include \"cnsl.redis.fullname\" . }}", "port": 6379}
+    "redis": {"enabled": true, "host": "{{ include `cnsl.redis.fullname` . }}", "port": 6379}
   }
 redis:
   enabled: true

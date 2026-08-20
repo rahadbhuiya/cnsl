@@ -124,13 +124,43 @@ class TestEmbeddedConfigJson:
     """values.yaml's `config` key is CNSL's own config.json, embedded as a
     raw string. It must be valid JSON and pass CNSL's own validator."""
 
-    def _rendered_config(self) -> dict:
+    def _raw_config(self) -> str:
         values = yaml.safe_load(_read(CHART_DIR / "values.yaml"))
-        config_str = values["config"]
+        return values["config"]
+
+    def _rendered_config(self) -> dict:
+        config_str = self._raw_config()
         # Simulate Helm's `tpl` rendering of the one template expression
         # this default config contains (the bundled Redis service name).
         rendered = re.sub(r"\{\{.*?\}\}", "cnsl-redis-dummy", config_str)
         return json.loads(rendered)
+
+    def test_no_backslash_escaped_quotes_inside_template_actions(self):
+        """Regression test for a real `helm lint` failure: `tpl` parses
+        .Values.config as a fresh Go template BEFORE it's JSON, so a
+        {{ include \\"name\\" . }} written with JSON-style backslash-
+        escaped quotes is invalid Go template syntax (Go's template
+        lexer errors with "unexpected \\"\\\\\\"\\" in operand" -- a
+        backslash is only valid already inside an unescaped-quote-opened
+        string literal, not as the first character of a new token).
+        Every {{ }} action in the default config must use backtick
+        raw-string literals instead (e.g. {{ include `name` . }}), which
+        need no escaping and can't collide with the surrounding JSON
+        quotes. This is exactly the bug the old, overly-permissive
+        regex-substitution simulator in _rendered_config() silently
+        masked -- it blindly replaced {{ ... }} with a dummy string
+        without ever checking the action was valid Go template syntax
+        in the first place.
+        """
+        raw = self._raw_config()
+        for m in re.finditer(r"\{\{.*?\}\}", raw, re.DOTALL):
+            action = m.group(0)
+            assert '\\"' not in action, (
+                f"Found backslash-escaped quote inside a Helm template "
+                f"action: {action!r} -- use backtick raw strings instead "
+                f"(e.g. {{{{ include `name` . }}}}), or `helm lint` will "
+                f"fail with a Go template parse error."
+            )
 
     def test_config_is_valid_json(self):
         cfg = self._rendered_config()
@@ -279,3 +309,14 @@ class TestChartReadme:
     def test_readme_mentions_daemonset_rationale(self):
         text = _read(CHART_DIR / "README.md")
         assert "DaemonSet" in text
+
+    def test_readme_config_example_does_not_teach_broken_quote_escaping(self):
+        """The README's example config block mirrors values.yaml's --
+        it must not show the backslash-escaped-quote pattern that fails
+        real `helm lint` (see TestEmbeddedConfigJson's regression test)."""
+        text = _read(CHART_DIR / "README.md")
+        for m in re.finditer(r"\{\{.*?\}\}", text, re.DOTALL):
+            assert '\\"' not in m.group(0), (
+                f"README shows a broken Go-template quote-escaping example: "
+                f"{m.group(0)!r} -- use backticks instead."
+            )
