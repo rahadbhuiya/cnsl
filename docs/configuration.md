@@ -410,6 +410,46 @@ Import in Grafana: Dashboards -> Import -> Upload `cnsl_grafana_dashboard.json`
 
 ---
 
+## Predictive Blocking
+
+Opt-in, disabled by default -- blocks on an IP's overall kill-chain *trajectory* (score + how many distinct stages it's touched) rather than any single rule's own threshold. Catches an attacker who spreads steps across different attack types (recon, then a web exploit attempt, then credential stuffing) none of which individually reach their own threshold. See [`docs/api.md`](api.md#predictive-blocking) for the full rationale.
+
+```json
+{
+  "predictive_blocking": {
+    "enabled": false,
+    "score_threshold": 0.60,
+    "min_stages": 2
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `false` | Must be explicitly turned on |
+| `score_threshold` | `0.60` | Minimum kill-chain score (0.0-1.0) to trigger a block |
+| `min_stages` | `2` | Minimum distinct kill-chain stages the IP must have touched -- both this AND `score_threshold` must hold, since a single very-late-stage event can otherwise spike score without a real multi-step pattern |
+
+---
+
+## Detection & Correlation Rules
+
+Per-rule overrides for CNSL's built-in detection rules (`rules`) and cross-source correlation rules (`correlation_rules`, e.g. "web recon then SSH") -- both tunable from the dashboard too (see [`docs/api.md`](api.md#correlation-rules)). Full reference: [`docs/rules.md`](rules.md).
+
+```json
+{
+  "rules": {
+    "ssh.brute_force": {"threshold": 5, "window_sec": 60, "severity": "HIGH"}
+  },
+  "correlation_rules": {
+    "web_auth_flood": {"enabled": false},
+    "persistent_recon": {"window_sec": 900, "confidence": 0.6}
+  }
+}
+```
+
+---
+
 ## Automated Pattern Learning
 
 ```json

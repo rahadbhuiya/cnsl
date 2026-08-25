@@ -4,6 +4,28 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.17 -- README + docs consistency (documentation drift fix)
+
+`README.md` had gone untouched for this entire session's worth of major releases (v3.0.0 through v3.4.16) -- audit log, backup/restore, PostgreSQL migration, correlation-rule tuning, ML false-positive feedback, multi-node hub, STIX/TAXII, Wazuh/OSSEC, Kubernetes/Helm, attacker fingerprinting, predictive blocking, and graph correlation were all completely absent from it. `docs/kubernetes.md` (v3.4.10) wasn't linked from anywhere a reader would find it.
+
+**`README.md`**
+- Added a "beyond core detection" summary naming the major additions, so they're discoverable from the top level rather than only in `docs/changelog.md`.
+- Added a Kubernetes/Helm quick-start alongside the existing pip/source install options.
+- Dashboard tabs list updated to include Correlation, Hub, Campaigns (v3.4.15).
+- Documentation table rebuilt into a full, accurate index of all 27 files under `docs/` (was previously a partial list plus a stale "26 guides" catch-all count).
+
+**`docs/configuration.md`**
+- Added the missing `predictive_blocking` config reference (was only documented in `docs/api.md`, which covers the API surface, not config format).
+- Added a `correlation_rules` config reference section.
+
+**Tests**
+- 14 new tests (`test_docs.py`) that would have caught exactly this drift going forward: every `docs/*.md` link in the README must resolve to a real file, the stated guide count must match the actual file count in `docs/`, a handful of this session's standout features must be mentioned somewhere in the README (not just the changelog), and the newer dashboard tabs must appear in the tab list.
+
+**Tests**
+- 1012 tests passing (998 existing + 14 new).
+
+---
+
 ### v3.4.16 -- Fixed a real `helm lint` failure (Go template quote escaping)
 
 Running `helm lint helm/cnsl` for real (against the actual `helm` binary, which wasn't available in the environment this chart was developed in) caught a genuine template error the static analysis in v3.4.10 couldn't: `templates/configmap.yaml:9: executing ... at <tpl .Values.config .>: error calling tpl: cannot parse template ...: unexpected "\\" in operand`.

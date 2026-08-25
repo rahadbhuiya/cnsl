@@ -32,6 +32,8 @@ DB auth fail  from 45.33.32.1  --+
 
 It also tracks how far each attacker has progressed through the kill chain, learns new attack patterns automatically, and shares threat intelligence across multiple servers in real time.
 
+**Beyond core detection:** multi-node federation with a unified hub view, STIX 2.1 export and a built-in TAXII 2.1 server for sharing IOCs, Wazuh/OSSEC integration, PostgreSQL support with a migration tool, a Kubernetes Helm chart, attacker fingerprinting (spots the same actor rotating IPs), graph-based campaign correlation, and opt-in predictive blocking that reacts to an attack's trajectory before any single rule's threshold fires.
+
 ---
 
 ## Quick start
@@ -55,13 +57,21 @@ sudo venv/bin/python -m cnsl --dashboard --no-tcpdump
 
 > Start in dry-run mode (default) -- no real blocks until you add `--execute`.
 
+Or on Kubernetes (one DaemonSet pod per node, protecting every node in the cluster):
+
+```bash
+helm install cnsl ./helm/cnsl --namespace cnsl --create-namespace
+```
+
+See [`docs/kubernetes.md`](docs/kubernetes.md) and [`helm/cnsl/README.md`](helm/cnsl/README.md) for the full walkthrough (federation, the multi-node hub view, enabling real blocking).
+
 ---
 
 ## Dashboard
 
 Enable with `--dashboard`. Runs at `http://127.0.0.1:8765`.
 
-Tabs: Overview, Incidents, Blocks, Live Feed, Kill Chain, Graph, Cases, UEBA, ML, Honeypot, FIM, Rules, Rate Limit, Settings.
+Tabs: Overview, Incidents, Blocks, Live Feed, Kill Chain, Graph, Correlation, Hub, Campaigns, Cases, UEBA, ML, Honeypot, FIM, Rules, Rate Limit, Settings.
 
 For remote access use an SSH tunnel:
 ```bash
@@ -91,16 +101,30 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/configuration.md`](docs/configuration.md) | Every config option explained |
 | [`docs/features.md`](docs/features.md) | Complete feature list |
 | [`docs/architecture.md`](docs/architecture.md) | Module structure and design |
-| [`docs/kill-chain.md`](docs/kill-chain.md) | Kill chain tracker |
-| [`docs/federation.md`](docs/federation.md) | Multi-node setup |
+| [`docs/api.md`](docs/api.md) | Full REST API reference |
+| [`docs/kubernetes.md`](docs/kubernetes.md) | Helm chart deployment (DaemonSet, hub view, federation) |
+| [`docs/kill-chain.md`](docs/kill-chain.md) | Kill chain tracker (predictive blocking: see [`docs/api.md`](docs/api.md#predictive-blocking)) |
+| [`docs/federation.md`](docs/federation.md) | Multi-node setup and the hub view |
 | [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD integration |
 | [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
-| [`docs/api.md`](docs/api.md) | Full REST API reference |
+| [`docs/rules.md`](docs/rules.md) | Detection rule tuning (correlation-rule tuning: see [`docs/api.md`](docs/api.md#correlation-rules)) |
+| [`docs/ueba.md`](docs/ueba.md) | User/entity behavior analytics |
+| [`docs/cases.md`](docs/cases.md) | Case management |
+| [`docs/threat-feed.md`](docs/threat-feed.md) | External threat feed ingestion |
+| [`docs/2fa.md`](docs/2fa.md) | Two-factor auth for the dashboard |
+| [`docs/agent.md`](docs/agent.md) | Remote log-shipping agent |
+| [`docs/kafka.md`](docs/kafka.md) | Kafka log ingestion |
+| [`docs/zeek.md`](docs/zeek.md) | Zeek log integration |
 | [`docs/ot-iot.md`](docs/ot-iot.md) | OT/ICS protocol support (Modbus, DNP3, SCADA) |
+| [`docs/country-blocking.md`](docs/country-blocking.md) | Geo-based blocking |
+| [`docs/rate-limiting.md`](docs/rate-limiting.md) | API rate limiting |
+| [`docs/tenants.md`](docs/tenants.md) | Multi-tenant setup |
+| [`docs/huddle.md`](docs/huddle.md) | Incident huddle/collaboration |
+| [`docs/notifications.md`](docs/notifications.md) | Email/Slack/Telegram alerts |
 | [`docs/changelog.md`](docs/changelog.md) | Version history |
-| [`docs/`](docs/) | All documentation (26 guides) |
+| [`docs/`](docs/) | Browse all 27 guides |
 
 ---
 
