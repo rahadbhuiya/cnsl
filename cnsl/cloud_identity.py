@@ -6,7 +6,7 @@ feeds them into the same detection pipeline used for local Linux logs.
 This closes the cloud identity gap noted in the original CNSL research
 paper:
 
-    "CNSL: A Cognitive Network Security Layer for
+    "CNSL: A Correlated Network Security Layer for
      Intent-Based Incident Detection and Response"
 
     "Future work includes integration with cloud identity and access
@@ -78,14 +78,11 @@ next interval.
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import json
-import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from .models import Event, now
 

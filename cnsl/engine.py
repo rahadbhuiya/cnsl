@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 from .assets          import AssetInventory
 from .auth            import AuthManager
 from .grafana         import export_dashboard
-from .honeypot        import ActiveResponse, FakeSSHServer
-from .rbac            import RBAC, Perm
+from .honeypot        import ActiveResponse
+from .rbac            import RBAC
 from .fim             import FIMEngine
 from .ml_detector     import MLDetector
 from .reporter        import Reporter
@@ -28,7 +28,7 @@ from .geoip           import GeoIP
 from .validator       import validate_and_exit, validate_and_print
 from .logger          import JsonLogger
 from .metrics         import Metrics
-from .models          import Event, iso_time, now
+from .models          import Event, iso_time
 from .notify          import Notifier
 from .sources         import run_tcpdump, tail_authlog
 from .store           import Store
@@ -134,7 +134,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.17")
+    ap.add_argument("--version",     action="version", version="CNSL 3.4.18")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -398,7 +398,6 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
         # Wire FIM alerts to notifier
         async def _on_fim_alert(alert):
-            from .notify import _build_message
             from .models import Detection, Severity
             d = Detection(src_ip="localhost", severity=alert.severity if alert.severity != "CRITICAL" else Severity.HIGH,
                          reasons=[f"FIM {alert.change}: {alert.path}"],
@@ -581,7 +580,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
 def _run_init_wizard() -> None:
     """Interactive setup wizard — creates /etc/cnsl/config.json."""
-    import json, os, pathlib, secrets as _sec
+    import json, pathlib, secrets as _sec
     print("CNSL Setup Wizard")
     print("-" * 40)
     out_path  = input("Config path [/etc/cnsl/config.json]: ").strip() or "/etc/cnsl/config.json"
@@ -663,7 +662,6 @@ async def _show_status(cfg: Dict) -> None:
 
 async def _check_update() -> None:
     """Check PyPI for a newer CNSL version."""
-    import json as _json
     from cnsl import __version__
     try:
         import aiohttp
@@ -791,7 +789,6 @@ def main() -> None:
     if getattr(args, 'report', None):
         async def _report_only():
             from .store    import Store
-            from .fim      import FIMEngine
             from .reporter import Reporter
             s = Store(cfg)
             await s.init()

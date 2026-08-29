@@ -440,7 +440,7 @@ class RuleEngine:
             "web_threshold":     ("web.scan_flood",         "threshold"),
             "db_threshold":      ("db.brute_force",         "threshold"),
         }
-        for legacy_key, (rule_id, field) in _LEGACY_MAP.items():
+        for legacy_key, (rule_id, field_name) in _LEGACY_MAP.items():
             val = thresholds.get(legacy_key)
             if val is None:
                 continue

@@ -9,7 +9,6 @@ after a short backoff so the engine keeps running.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 from .logger import JsonLogger
 from .parsers import parse_auth_event, parse_tcpdump_hint

@@ -4,6 +4,30 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.18 -- Bug audit: a silent no-op, a live NameError, and a packaging leak
+
+An audit of the repo turned up four real problems, none of which were caught by the existing test suite.
+
+**`cnsl/detector.py` -- federation + SIEM/SOAR push were silently doing nothing**
+`Detector.handle()` calls `asyncio.ensure_future(...)` in two places (fire-and-forget publish to the federation bus, and push to enabled SIEM/SOAR connectors), but `asyncio` was never imported in this module. Both call sites are wrapped in a bare `except Exception: pass`, so the `NameError` was silently swallowed every time -- these two features have been no-ops whenever exercised, with nothing surfaced anywhere. No existing test drives `Detector.handle()` with `federation` or `siem_router` set, which is why it went unnoticed. Also added the missing `Any` import -- six constructor parameters were annotated `Optional[Any]` without `Any` ever being imported (harmless only because `from __future__ import annotations` defers evaluation).
+
+**`cnsl/dashboard.py` -- live `NameError` on `/api/siem/test/{name}`**
+`api_siem_test` called `now()` to timestamp its synthetic test event, but `now` was never imported -- every hit on that endpoint raised `NameError` and returned a 500. No test covered it.
+
+**Packaging -- `cnsl/test_graph_correlation.py` and `cnsl/test_hub.py`**
+Byte-identical copies of `tests/test_graph_correlation.py` and `tests/test_hub.py`, left behind by v3.4.17's "file was missing" commit, which correctly added them to `tests/` but never removed the originals from `cnsl/`. `pyproject.toml`'s `packages.find` only excludes `tests*`, not stray files inside `cnsl/`, so these 58 tests were shipping inside the built wheel and also being collected (and run) twice by any bare `pytest` invocation, inflating the reported count to 1070 instead of the real 1012.
+
+**Lint cleanup**
+Removed dead imports and unused locals (flagged by `pyflakes`) across 20 modules, plus a loop variable in `rules.py` that shadowed the imported `dataclasses.field`. `detector.py`, `migrate.py`, `notify.py`, `honeypot.py`, `store.py`, `zeek_parser.py`, `syslog_receiver.py`, `logger.py`, `siem_connectors.py`, `blocker.py`, `validator.py`, and `reporter.py` still carry pyflakes warnings of the same kind and are left for a follow-up pass.
+
+**Also**
+- Removed a stray unexpanded shell brace pattern (`{cnsl,tests,config,docs}`) from `.gitignore` that never matched anything.
+
+**Tests**
+- 1012 tests passing (no new tests added this round -- the fixes above should each get regression coverage in a follow-up).
+
+---
+
 ### v3.4.17 -- README + docs consistency (documentation drift fix)
 
 `README.md` had gone untouched for this entire session's worth of major releases (v3.0.0 through v3.4.16) -- audit log, backup/restore, PostgreSQL migration, correlation-rule tuning, ML false-positive feedback, multi-node hub, STIX/TAXII, Wazuh/OSSEC, Kubernetes/Helm, attacker fingerprinting, predictive blocking, and graph correlation were all completely absent from it. `docs/kubernetes.md` (v3.4.10) wasn't linked from anywhere a reader would find it.

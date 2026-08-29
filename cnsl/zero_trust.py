@@ -10,7 +10,7 @@ alert.
 This implements the zero-trust architecture support gap from the CNSL
 research paper:
 
-    "CNSL: A Cognitive Network Security Layer for
+    "CNSL: A Correlated Network Security Layer for
      Intent-Based Incident Detection and Response"
 
     "Future work includes zero-trust architecture support: identity-based
@@ -82,9 +82,7 @@ API endpoints (added in dashboard.py):
 
 from __future__ import annotations
 
-import asyncio
 import math
-import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 

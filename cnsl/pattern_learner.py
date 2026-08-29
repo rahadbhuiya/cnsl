@@ -10,7 +10,7 @@ one click from the dashboard.
 This implements the "automated pattern discovery" goal from the original
 CNSL research paper:
 
-    "CNSL: A Cognitive Network Security Layer for
+    "CNSL: A Correlated Network Security Layer for
      Intent-Based Incident Detection and Response"
 
     "The system should be capable of automated discovery of new intent
@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional, Tuple

@@ -45,6 +45,3 @@ config.json
 # OS
 .DS_Store
 Thumbs.db
-
-# Misc
-{cnsl,tests,config,docs}

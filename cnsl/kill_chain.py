@@ -5,7 +5,7 @@ Tracks the progression of each attacker IP through distinct attack
 stages and builds a per-IP kill chain graph. This is the intent
 graph described in the original CNSL research paper:
 
-    "CNSL: A Cognitive Network Security Layer for
+    "CNSL: A Correlated Network Security Layer for
      Intent-Based Incident Detection and Response"
 
 How it works:
@@ -54,7 +54,7 @@ import json
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .models import iso_time, now
 

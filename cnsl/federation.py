@@ -7,7 +7,7 @@ not just blocklist entries.
 
 This closes the federation gap noted in the original CNSL research paper:
 
-    "CNSL: A Cognitive Network Security Layer for
+    "CNSL: A Correlated Network Security Layer for
      Intent-Based Incident Detection and Response"
 
     "Future work includes multi-node federation, allowing CNSL instances
@@ -79,10 +79,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Deque, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .models import iso_time, now
 

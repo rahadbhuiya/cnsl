@@ -19,7 +19,6 @@ Each rule:
 
 from __future__ import annotations
 
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -238,7 +237,7 @@ class HoneypotPortThenSSH(CorrelationRule):
                 src_ip      = ip,
                 confidence  = self.effective_confidence,
                 severity    = "HIGH",
-                description = f"Automated scanner: hit honeypot port(s) then tried SSH",
+                description = "Automated scanner: hit honeypot port(s) then tried SSH",
                 evidence    = [
                     {"kind": "FW_HONEYPOT_PORT", "count": honeypot},
                     {"kind": "SSH_FAIL",          "count": ssh_fail},

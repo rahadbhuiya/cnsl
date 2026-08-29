@@ -23,7 +23,6 @@ Why passive:
 from __future__ import annotations
 
 import re
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Set

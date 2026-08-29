@@ -41,7 +41,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .logger import JsonLogger
 from .models import Event, EventKind, iso_time, now
@@ -123,7 +123,7 @@ class _IPAccumulator:
     def _prune(self, t: float) -> None:
         cutoff = t - self.WINDOW_SEC
         while self._events and self._events[0][0] < cutoff:
-            old = self._events.popleft()
+            self._events.popleft()
             # Recalculate users from remaining events
         self._users = {u for _, _, _, u in self._events if u}
 

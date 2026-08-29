@@ -44,9 +44,11 @@ Detection rules:
 
 from __future__ import annotations
 
+import asyncio
+
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from .blocker import Blocker
 from .config  import safe_int, get_thresholds, get_country_block_cfg

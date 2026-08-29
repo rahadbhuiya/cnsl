@@ -39,10 +39,10 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .models import Event, EventKind, now, iso_time
+from .models import Event, EventKind, iso_time
 
 
 

@@ -17,15 +17,14 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .config import safe_int
+from .models import now
 
 if TYPE_CHECKING:
     from .auth        import AuthManager
     from .blocker     import Blocker
     from .detector    import Detector
-    from .fim         import FIMEngine
     from .logger      import JsonLogger
     from .metrics     import Metrics
-    from .ml_detector import MLDetector
     from .store       import Store
 
 # SVG icon helpers 
@@ -114,8 +113,6 @@ async def start_dashboard(
     try:
         from aiohttp import web
         import aiohttp
-        import json as _json_mod
-        json = _json_mod
     except ImportError:
         await logger.log("dashboard_error", {"error": "aiohttp not installed. Run: pip install aiohttp"})
         return

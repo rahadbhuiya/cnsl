@@ -38,7 +38,6 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-import time
 from typing import Any, Callable, Dict, List, Optional
 
 from .logger import JsonLogger
@@ -241,8 +240,6 @@ class RedisSync:
 
         while True:
             try:
-                import redis.asyncio as aioredis
-
                 pubsub = self._redis.pubsub()
                 await pubsub.subscribe(self._events_channel)
 
