@@ -84,6 +84,91 @@ async def _start_and_probe(port: int, **extra_kwargs):
         await store.close()
 
 
+async def _start_and_post(port: int, path: str, **extra_kwargs):
+    """Same as _start_and_probe, but POSTs to an arbitrary path once the
+    dashboard is reachable, instead of GETting /api/health."""
+    import aiohttp
+    from cnsl.dashboard import start_dashboard
+    from cnsl.detector import Detector
+    from cnsl.blocker import Blocker
+    from cnsl.store import Store
+    from cnsl.metrics import Metrics
+    from cnsl.logger import JsonLogger
+    from cnsl.auth import AuthManager
+
+    logger = JsonLogger("/dev/null", verbose=False)
+    blocker = Blocker(dry_run=True, backend="iptables", chain="INPUT",
+                       ipset_name="x", block_duration_sec=900,
+                       allowlist=set(), logger=logger)
+    cfg = {"auth": {"enabled": False}}
+    store = Store(":memory:")
+    await store.init()
+    metrics = Metrics()
+    auth = AuthManager(cfg)
+    detector = Detector(cfg, blocker, logger)
+
+    task = asyncio.ensure_future(
+        start_dashboard("127.0.0.1", port, detector, blocker, store,
+                         metrics, logger, auth=auth, **extra_kwargs)
+    )
+    try:
+        for _ in range(50):
+            if task.done():
+                task.result()
+            await asyncio.sleep(0.05)
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"http://127.0.0.1:{port}{path}",
+                        timeout=aiohttp.ClientTimeout(total=1),
+                    ) as resp:
+                        body = await resp.json()
+                        return resp.status, body
+            except aiohttp.ClientConnectorError:
+                continue
+        raise TimeoutError(f"dashboard never became reachable on port {port}")
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await store.close()
+
+
+class TestSiemTestEndpointDoesNotCrash:
+    """Regression guard for the v3.4.18 fix: api_siem_test() called
+    now() to timestamp its synthetic test event, but `now` was never
+    imported in dashboard.py -- every POST to
+    /api/siem/test/{name} raised NameError and returned a 500."""
+
+    class _FakeConnector:
+        def __init__(self, enabled: bool):
+            self.enabled = enabled
+            self.calls = []
+
+        async def push(self, event):
+            self.calls.append(event)
+            return True
+
+    class _FakeSiemRouter:
+        def __init__(self):
+            self.splunk   = TestSiemTestEndpointDoesNotCrash._FakeConnector(False)
+            self.sentinel = TestSiemTestEndpointDoesNotCrash._FakeConnector(False)
+            self.webhook  = TestSiemTestEndpointDoesNotCrash._FakeConnector(True)
+
+    def test_siem_test_webhook_returns_200_not_500(self):
+        siem_router = self._FakeSiemRouter()
+        status, body = _run(_start_and_post(
+            18907, "/api/siem/test/webhook", siem_router=siem_router,
+        ))
+        assert status == 200, f"expected 200, got {status}: {body}"
+        assert body["ok"] is True
+        assert body["connector"] == "webhook"
+        assert len(siem_router.webhook.calls) == 1
+        assert "ts" in siem_router.webhook.calls[0]
+
+
 class TestDashboardActuallyStarts:
     """Regression guard for the _RateLimiter NameError: start_dashboard()
     must not raise on startup with only its required arguments."""

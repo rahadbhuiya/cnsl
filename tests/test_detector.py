@@ -837,4 +837,57 @@ class TestCloudEventDetection:
             _run(det.handle(self._make_cloud_event("CLOUD_SIGNIN_FAIL", ip=ip)))
         assert det._state[ip].total_incidents == 0
 
+
+class TestFederationAndSiemPush:
+    """
+    Regression tests for the v3.4.18 fix: `asyncio` was never imported in
+    detector.py, so `asyncio.ensure_future(...)` for federation publish and
+    SIEM/SOAR push raised NameError every time -- silently swallowed by the
+    surrounding `except Exception: pass`. These tests fail loudly (via the
+    mock assertions) if that import ever regresses, instead of passing
+    despite the underlying call never having happened.
+    """
+
+    def _make_detector(self, **kwargs):
+        cfg = make_cfg(fails_threshold=3, fails_window_sec=60)
+        logger = AsyncMock()
+        logger.log = AsyncMock()
+        blocker = AsyncMock()
+        blocker.is_blocked = MagicMock(return_value=False)
+        blocker.block_ip = AsyncMock(return_value=True)
+        return Detector(cfg, logger, blocker, **kwargs)
+
+    def test_federation_publish_called_on_event(self):
+        federation = AsyncMock()
+        federation.publish = AsyncMock()
+        det = self._make_detector(federation=federation)
+
+        async def _go():
+            ev = Event(ts=now(), source="auth", kind=EventKind.SSH_FAIL,
+                       src_ip="1.2.3.4", user="root")
+            await det.handle(ev)
+            # let the fire-and-forget asyncio.ensure_future task run
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        _run(_go())
+        federation.publish.assert_awaited()
+
+    def test_siem_router_push_called_on_detection(self):
+        siem_router = AsyncMock()
+        siem_router.push = AsyncMock()
+        det = self._make_detector(siem_router=siem_router)
+
+        async def _go():
+            ip = "5.6.7.8"
+            for _ in range(3):
+                ev = Event(ts=now(), source="auth", kind=EventKind.SSH_FAIL,
+                           src_ip=ip, user="root")
+                await det.handle(ev)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        _run(_go())
+        siem_router.push.assert_awaited()
+
 # v2.7.0 -- zero-trust engine

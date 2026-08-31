@@ -58,13 +58,16 @@ from .predictive_blocking import should_predictively_block
 from .rules   import RuleEngine
 
 if TYPE_CHECKING:
+    from .cases          import CaseManager
     from .correlator    import Correlator, CorrelationAlert
     from .geoip         import GeoIP
     from .metrics       import Metrics
     from .notify        import Notifier
     from .redis_sync    import RedisSync
     from .store         import Store
+    from .threat_feed   import ThreatFeed
     from .threat_intel  import AbuseIPDB, BehavioralBaseline
+    from .ueba           import UEBAEngine
 
 
 
@@ -606,7 +609,6 @@ class Detector:
                     # Zero-trust: normal login from known IP improves trust
                     if self.zero_trust and ev.user:
                         from .zero_trust import TrustSignal
-                        from .ueba import UserProfile
                         profile = self.ueba.get_profile(ev.user)
                         signal  = (TrustSignal.KNOWN_IP_LOGIN
                                    if (profile and ip in (profile.get("known_ips") or {}))
