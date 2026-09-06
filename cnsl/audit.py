@@ -99,6 +99,9 @@ class AuditLog:
             await self._db.commit()
             return cur.lastrowid
         except Exception:
+            # Swallow rather than raise -- see docstring: whatever action
+            # triggered this (e.g. a manual block) must still succeed
+            # even if the audit write itself fails.
             return None
 
     async def list(
@@ -113,7 +116,7 @@ class AuditLog:
         """Return audit entries newest-first, optionally filtered."""
         if not self.available or self._db is None:
             return []
-        limit = max(1, min(limit, 1000))
+        limit = max(1, min(limit, 1000))  # clamp caller-supplied limit so the API can't force a huge scan
 
         clauses, params = [], []
         if actor:

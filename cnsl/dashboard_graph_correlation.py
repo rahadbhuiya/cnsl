@@ -35,6 +35,10 @@ def register_graph_correlation_routes(
     from .graph_correlation import build_attack_graph, find_campaigns, explain_connection
 
     def _parse_int(req: web.Request, name: str, default: int, cap: int) -> int:
+        # Shared by both routes below for every query-string int param --
+        # bad/missing input falls back to `default` instead of erroring,
+        # and the result is always clamped to [1, cap] so a caller can't
+        # force an unbounded incident scan via the URL.
         try:
             v = int(req.rel_url.query.get(name, default))
         except (ValueError, TypeError):
@@ -46,6 +50,8 @@ def register_graph_correlation_routes(
             return {"nodes": [], "edges": []}
         limit = _parse_int(req, "incident_limit", 5000, 20000)
         incidents = await store.recent_incidents(limit=limit)
+        # kill_chain_tracker.get_all() has no query-param override -- 10000
+        # is just a fixed upper bound on how much chain history feeds the graph.
         chains = kill_chain_tracker.get_all(limit=10000) if kill_chain_tracker else None
         return build_attack_graph(incidents, kill_chains=chains)
 

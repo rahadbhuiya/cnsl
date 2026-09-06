@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from .models import iso_time
 
-_IDENTITY_ID = "identity--b3b5c9c0-0a58-4f2e-9b1a-9c0e2f3a4b5c"
+_IDENTITY_ID = "identity--b3b5c9c0-0a58-4f2e-9b1a-9c0e2f3a4b5c"  # fixed UUID so every export references the same Identity object, not a new one each run
 
 
 def _severity_to_confidence(severity: Optional[str]) -> int:
@@ -63,8 +63,8 @@ def cnsl_identity_object() -> Dict[str, Any]:
         "type":          "identity",
         "spec_version":  "2.1",
         "id":            _IDENTITY_ID,
-        "created":       "2026-01-01T00:00:00.000Z",
-        "modified":      "2026-01-01T00:00:00.000Z",
+        "created":       "2026-01-01T00:00:00.000Z",  # fixed, matching _IDENTITY_ID being fixed --
+        "modified":      "2026-01-01T00:00:00.000Z",  # this object doesn't change between exports
         "name":          "CNSL",
         "identity_class":"system",
         "description":   "Correlated Network Security Layer -- self-hosted SIEM",

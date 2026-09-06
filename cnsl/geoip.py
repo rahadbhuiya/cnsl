@@ -29,8 +29,8 @@ _PRIVATE_NETS = [
 ]
 
 _API_URL     = "https://ip-api.com/json/{ip}?fields=status,country,countryCode,city,isp,org,as,proxy,hosting"
-_CACHE_TTL   = 3600 * 6
-_REQUEST_GAP = 1.4
+_CACHE_TTL   = 3600 * 6   # 6h -- geo data rarely changes; keeps repeat lookups off the free API
+_REQUEST_GAP = 1.4        # ip-api.com's free tier is ~45 req/min; 1.4s spacing stays under that
 
 
 def _is_private(ip: str) -> bool:
@@ -77,6 +77,8 @@ class GeoIP:
 
     async def lookup(self, ip: str) -> Dict[str, Any]:
         if _is_private(ip):
+            # RFC1918/loopback/link-local -- never worth a DB lookup or an
+            # outbound API call, and would just report "Unknown" anyway.
             return {
                 "country": "Local/Private", "countryCode": "LO",
                 "city": "", "isp": "Local network",
@@ -84,11 +86,13 @@ class GeoIP:
                 "backend": "local",
             }
 
-        async with self._lock:
+        async with self._lock:  # cache is shared across concurrent event handlers
             cached = self._cache.get(ip)
             if cached and (time.time() - cached.get("_ts", 0)) < _CACHE_TTL:
                 return cached
 
+        # MaxMind is a local file read (no rate limit); ip-api is throttled
+        # by _lookup_ipapi's own _REQUEST_GAP pacing.
         result = self._lookup_maxmind(ip) if self._reader else await self._lookup_ipapi(ip)
         result["_ts"] = time.time()
 

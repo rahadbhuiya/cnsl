@@ -36,13 +36,15 @@ def register_hub_routes(
     @router.get("/api/federation/hub")
     async def api_federation_hub(req: web.Request) -> web.Response:
         """Aggregated multi-node health + cross-node attacker view."""
-        if (r := _rate_check(req)): return r
+        if (r := _rate_check(req)): return r  # 429 short-circuit if over the per-IP rate limit
         _, err = _require_auth(req)
-        if err: return err
+        if err: return err  # 401/403 short-circuit from the auth check
         if redis_sync is None or not getattr(redis_sync, "connected", False):
+            # No Redis pub/sub -> no other nodes to aggregate, so fail
+            # fast with a clear reason instead of returning an empty/misleading view.
             return web.json_response({
                 "error": "Redis not connected -- hub view requires multi-node setup.",
             }, status=400)
-        limit = int(req.rel_url.query.get("limit", 50))
+        limit = int(req.rel_url.query.get("limit", 50))  # cap how many cross-node attackers are returned
         view = await get_hub_view(redis_sync, federation, cross_node_limit=limit)
         return web.json_response(view)
