@@ -1,8 +1,8 @@
 # Cloud Identity Log Connectors
 
-CNSL polls AWS CloudTrail and Azure AD for sign-in and authentication
-events and feeds them into the same detection pipeline used for local
-Linux logs.
+CNSL polls AWS CloudTrail, Azure AD, and GCP Cloud Logging for sign-in and
+authentication events and feeds them into the same detection pipeline used
+for local Linux logs.
 
 This closes the cloud identity gap from the original CNSL research paper:
 
@@ -39,17 +39,18 @@ detection pipeline as first-class events.
    rule evaluation -> alert / block.
 
 5. A per-event cursor (EventId for CloudTrail, createdDateTime for
-   Azure AD) prevents the same event from being re-ingested.
+   Azure AD, insertId/timestamp for GCP Cloud Logging) prevents the same
+   event from being re-ingested.
 
 
 ## Event kinds
 
 | Kind | Source | What it means |
 |:---|:---|:---|
-| `CLOUD_SIGNIN_FAIL` | Both | Sign-in / console login failed |
-| `CLOUD_SIGNIN_SUCCESS` | Both | Sign-in succeeded (tracked for breach detection) |
-| `CLOUD_MFA_FAIL` | Both | MFA challenge failed or was bypassed |
-| `CLOUD_RISKY_SIGNIN` | Azure AD | Provider's risk engine flagged the sign-in |
+| `CLOUD_SIGNIN_FAIL` | All | Sign-in / console login failed |
+| `CLOUD_SIGNIN_SUCCESS` | All | Sign-in succeeded (tracked for breach detection) |
+| `CLOUD_MFA_FAIL` | All | MFA / 2-Step-Verification challenge failed or was bypassed |
+| `CLOUD_RISKY_SIGNIN` | Azure AD, GCP | Provider's risk engine flagged the sign-in, or GCP reported a suspicious login |
 | `CLOUD_IMPOSSIBLE_TRAVEL` | Azure AD | Two sign-ins too far apart geographically |
 
 
@@ -173,6 +174,68 @@ Note: `AuditLog.Read.All` gives read access to all audit logs in the
 tenant. Use a dedicated app registration with no other permissions.
 
 
+## GCP Cloud Identity
+
+Polls Cloud Logging for Google Workspace login-audit entries that are
+already being exported there. Authenticates using a service-account
+JWT-bearer grant (RS256-signed via PyJWT's `crypto` extra) rather than
+a hand-rolled signer -- see the connector's docstring in
+`cnsl/cloud_identity.py` for why RSA signing isn't implemented from
+scratch the way AWS's HMAC signing is.
+
+**Prerequisite**: Workspace login-audit events must already reach Cloud
+Logging. In the Admin console, go to Reporting > Audit and investigation
+> Login audit log, and confirm a log sink (or the project's `_Default`
+sink) is capturing them. This connector only reads that log -- it does
+not configure the export.
+
+### What is detected
+
+- `login_success` -> `CLOUD_SIGNIN_SUCCESS`
+- `login_failure` -> `CLOUD_SIGNIN_FAIL`
+- `suspicious_login`, `suspicious_login_less_secure_app`,
+  `suspicious_programmatic_login`, `account_disabled_hijacked` ->
+  `CLOUD_RISKY_SIGNIN`
+- `login_verification`, `2sv_verification_switch` -> `CLOUD_MFA_FAIL`
+
+### Config
+
+```json
+{
+  "cloud_identity": {
+    "gcp": {
+      "enabled":               true,
+      "project_id":            "my-gcp-project",
+      "service_account_email": "cnsl-reader@my-gcp-project.iam.gserviceaccount.com",
+      "private_key":           "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+      "lookback_sec":          300
+    }
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `false` | Enable GCP Cloud Logging polling |
+| `project_id` | | GCP project that holds the exported login-audit log |
+| `service_account_email` | | The service account's `client_email` (from its JSON key) |
+| `private_key` | | The service account's `private_key` (from its JSON key) |
+| `lookback_sec` | `300` | How far back to look on the first poll |
+
+### Required setup
+
+1. IAM & Admin > Service Accounts > Create service account
+2. Grant it `roles/logging.viewer` on the project
+3. Keys > Add key > Create new key (JSON) -- download it
+4. Copy `client_email` into `service_account_email` and `private_key`
+   into `private_key` above (keep the `\n` line breaks intact)
+5. Install the RS256 signing dependency: `pip install "pyjwt[crypto]"`
+   (bare PyJWT can verify HS256 tokens but cannot sign RS256 ones)
+
+Use a dedicated service account with only `roles/logging.viewer` --
+never a project-owner or editor account.
+
+
 ## REST API
 
 ### Connector status
@@ -202,6 +265,14 @@ GET /api/cloud-identity/status
       "last_error":  null,
       "healthy":     true,
       "token_valid": true
+    },
+    "gcp_identity": {
+      "enabled":     true,
+      "poll_count":  47,
+      "error_count": 0,
+      "last_error":  null,
+      "healthy":     true,
+      "token_valid": true
     }
   }
 }
@@ -214,8 +285,10 @@ The Cloud Identity Connectors panel appears in the Settings tab, above
 the SIEM / SOAR Connectors section.
 
 Each connector card shows: status (Healthy / Error / Disabled), poll
-count, error count, token validity (Azure AD only), and the last error
-message if any.
+count, error count, token validity (Azure AD and GCP only), and the
+last error message if any -- for GCP, a missing `pyjwt[crypto]`
+dependency or a malformed private key both surface here as a plain
+`last_error` string rather than a crash.
 
 The panel refreshes automatically when the Settings tab is opened.
 
@@ -246,7 +319,9 @@ If a connector's credentials are invalid or the API is unreachable:
 - Local detection is never affected
 
 If `aiohttp` is not installed, connectors gracefully return empty lists.
-The rest of the detection pipeline is unaffected.
+If GCP is enabled but `pyjwt[crypto]` isn't installed, the GCP connector
+reports a clear `last_error` and skips polling rather than raising.
+The rest of the detection pipeline is unaffected in either case.
 
 
 ## Origin

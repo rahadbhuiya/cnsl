@@ -550,6 +550,13 @@ Requires `redis.enabled: true`. All nodes must share the same Redis instance and
       "client_id":     "",
       "client_secret": "",
       "lookback_sec":  300
+    },
+    "gcp": {
+      "enabled":                false,
+      "project_id":             "",
+      "service_account_email":  "",
+      "private_key":            "",
+      "lookback_sec":           300
     }
   }
 }

@@ -488,6 +488,105 @@ class TestCloudConnectorConfig:
         assert c.enabled is True
         assert c.tenant_id == "tenant-xyz"
 
+    def test_gcp_disabled_by_default(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({})
+        assert c.enabled is False
+
+    def test_gcp_reads_config(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({"cloud_identity": {"gcp": {
+            "enabled": True, "project_id": "my-project",
+            "service_account_email": "sa@my-project.iam.gserviceaccount.com",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+        }}})
+        assert c.enabled is True
+        assert c.project_id == "my-project"
+        assert c.client_email == "sa@my-project.iam.gserviceaccount.com"
+
+    def test_gcp_poll_noop_when_disabled(self):
+        import asyncio
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({})
+        events = asyncio.run(c.poll())
+        assert events == []
+
+    def test_gcp_poll_noop_when_missing_credentials(self):
+        import asyncio
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({"cloud_identity": {"gcp": {
+            "enabled": True, "project_id": "my-project",
+        }}})  # no service_account_email / private_key
+        events = asyncio.run(c.poll())
+        assert events == []
+
+    def test_gcp_build_assertion_reports_signing_error_without_crashing(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({"cloud_identity": {"gcp": {
+            "enabled": True, "project_id": "my-project",
+            "service_account_email": "sa@my-project.iam.gserviceaccount.com",
+            "private_key": "not-a-real-private-key",
+        }}})
+        # A malformed key must degrade to None + last_error, never raise --
+        # same contract as a network failure in poll().
+        assertion = c._build_assertion()
+        assert assertion is None
+        assert c._last_error is not None
+
+    def test_gcp_status_shape(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({})
+        status = c.status()
+        assert set(status.keys()) == {
+            "enabled", "poll_count", "error_count",
+            "last_error", "healthy", "token_valid",
+        }
+
+    def test_gcp_parses_login_events_into_correct_kinds(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector, CloudEventKind
+        c = GCPCloudIdentityConnector({})
+        raw_entries = [
+            {
+                "insertId": "abc123",
+                "protoPayload": {
+                    "authenticationInfo": {"principalEmail": "alice@example.com"},
+                    "requestMetadata": {"callerIp": "203.0.113.5"},
+                    "event": [{"eventName": "login_failure"}],
+                },
+            },
+            {
+                "insertId": "def456",
+                "protoPayload": {
+                    "authenticationInfo": {"principalEmail": "bob@example.com"},
+                    "requestMetadata": {"callerIp": "203.0.113.6"},
+                    "event": [{"eventName": "login_success"}],
+                },
+            },
+            {
+                "insertId": "ghi789",
+                "protoPayload": {
+                    "authenticationInfo": {"principalEmail": "eve@example.com"},
+                    "requestMetadata": {"callerIp": "203.0.113.7"},
+                    "event": [{"eventName": "suspicious_login"}],
+                },
+            },
+        ]
+        events = c._parse_events(raw_entries)
+        assert len(events) == 3
+        kinds = {e.src_ip: e.kind for e in events}
+        assert kinds["203.0.113.5"] == CloudEventKind.SIGNIN_FAIL
+        assert kinds["203.0.113.6"] == CloudEventKind.SIGNIN_SUCCESS
+        assert kinds["203.0.113.7"] == CloudEventKind.RISKY_SIGNIN
+
+    def test_gcp_ignores_unknown_event_names(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        c = GCPCloudIdentityConnector({})
+        events = c._parse_events([{
+            "insertId": "x",
+            "protoPayload": {"event": [{"eventName": "some_unrelated_event"}]},
+        }])
+        assert events == []
+
     def test_poller_disabled_when_no_connector_enabled(self):
         from cnsl.cloud_identity import CloudIdentityPoller
         poller = CloudIdentityPoller({})
@@ -500,6 +599,17 @@ class TestCloudConnectorConfig:
         }})
         assert poller.any_enabled is True
 
+    def test_poller_enabled_when_gcp_enabled(self):
+        from cnsl.cloud_identity import CloudIdentityPoller
+        poller = CloudIdentityPoller({"cloud_identity": {
+            "gcp": {
+                "enabled": True, "project_id": "my-project",
+                "service_account_email": "sa@my-project.iam.gserviceaccount.com",
+                "private_key": "fake-key",
+            }
+        }})
+        assert poller.any_enabled is True
+
     def test_poller_status_reports_events_fed(self):
         from cnsl.cloud_identity import CloudIdentityPoller
         poller = CloudIdentityPoller({})
@@ -508,3 +618,4 @@ class TestCloudConnectorConfig:
         assert "connectors" in status
         assert "aws_cloudtrail" in status["connectors"]
         assert "azure_ad" in status["connectors"]
+        assert "gcp_identity" in status["connectors"]

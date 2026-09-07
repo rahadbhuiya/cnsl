@@ -1338,6 +1338,7 @@ async def start_dashboard(
             "cloud_identity_enabled":  getattr(cloud_identity, "enabled", False),
             "cloud_aws_enabled":       getattr(getattr(cloud_identity, "aws",      None), "enabled", False),
             "cloud_azure_enabled":     getattr(getattr(cloud_identity, "azure_ad", None), "enabled", False),
+            "cloud_gcp_enabled":       getattr(getattr(cloud_identity, "gcp",      None), "enabled", False),
             "zero_trust_wired":        zero_trust is not None,
             "zero_trust_enabled":      getattr(zero_trust, "enabled", False),
         })

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cnsl"
-version = "3.4.18"
+version = "3.4.19"
 description = "Correlated Network Security Layer — A self-hosted SIEM for Linux"
 readme = "README.md"
 license = "MIT"
@@ -39,6 +39,7 @@ postgres = ["asyncpg>=0.29"]
 yaml     = ["pyyaml>=6.0"]
 auth     = ["bcrypt>=4.0", "PyJWT>=2.8"]
 2fa      = ["pyotp>=2.9"]
+gcp      = ["PyJWT[crypto]>=2.8", "aiohttp>=3.9"]
 geoip    = ["geoip2>=4.7"]
 ml       = ["scikit-learn>=1.4", "numpy>=1.26"]
 reports  = ["reportlab>=4.0"]

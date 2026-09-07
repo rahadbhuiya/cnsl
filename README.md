@@ -105,7 +105,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/kubernetes.md`](docs/kubernetes.md) | Helm chart deployment (DaemonSet, hub view, federation) |
 | [`docs/kill-chain.md`](docs/kill-chain.md) | Kill chain tracker (predictive blocking: see [`docs/api.md`](docs/api.md#predictive-blocking)) |
 | [`docs/federation.md`](docs/federation.md) | Multi-node setup and the hub view |
-| [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD integration |
+| [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD + GCP integration |
 | [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |

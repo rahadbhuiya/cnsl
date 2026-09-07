@@ -411,6 +411,13 @@
       "client_id": "",
       "client_secret": "",
       "lookback_sec": 300
+    },
+    "gcp": {
+      "enabled": false,
+      "project_id": "",
+      "service_account_email": "",
+      "private_key": "",
+      "lookback_sec": 300
     }
   },
   "zero_trust": {

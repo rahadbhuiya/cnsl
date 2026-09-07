@@ -4,6 +4,29 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.19 -- GCP Cloud Identity connector (closes a gap this module's own docstring named)
+
+`cnsl/cloud_identity.py`'s module docstring has said "AWS CloudTrail, Azure AD, GCP IAM" since it was written, quoting the original research paper's future-work item -- but only `AWSCloudTrailConnector` and `AzureADConnector` were ever implemented. This adds the third.
+
+**New: `GCPCloudIdentityConnector`**
+- Polls Cloud Logging for Google Workspace login-audit entries (requires the org/project to already export them via a log sink -- this connector reads that log, it doesn't configure the export).
+- Maps `login_success` / `login_failure` / `suspicious_login*` / `account_disabled_hijacked` / `login_verification` / `2sv_verification_switch` onto the existing `CloudEventKind` set (`SIGNIN_SUCCESS`, `SIGNIN_FAIL`, `RISKY_SIGNIN`, `MFA_FAIL`) -- no new event kinds needed, these already cover the shape of a GCP sign-in.
+- Auth via a service-account JWT-bearer grant (RFC 7523), RS256-signed. Unlike AWS SigV4 (HMAC, hand-rolled above with stdlib `hmac`/`hashlib`) or Azure AD's client-credentials flow (a plain shared secret), RSA signing is not something to hand-roll -- this connector relies on PyJWT's `crypto` extra (`pip install "pyjwt[crypto]"`) and degrades to a clear `status().last_error` (not a crash) if it's missing or the configured key is malformed.
+- Wired into `CloudIdentityPoller` alongside the existing two connectors -- shared poll loop, same graceful-degradation contract (never blocks local detection).
+
+**Also updated**
+- `cnsl/__init__.py` docstring: "AWS/Azure" -> "AWS/Azure/GCP".
+- `cnsl/dashboard.py`: new `cloud_gcp_enabled` settings flag (mirrors `cloud_aws_enabled`/`cloud_azure_enabled`).
+- `cnsl/dashboard_html.py`: Cloud Identity Connectors panel now renders a GCP card (the renderer was already generic over `poll_count`/`token_valid`/`last_error`; only the label map needed the new entry).
+- `config/config.example.json`, `docs/configuration.md`, `docs/cloud-identity.md` (new GCP section: setup steps, required IAM role, config keys), `docs/features.md`, `README.md` docs table.
+- `requirements.txt` / `pyproject.toml`: new `gcp` extra (`PyJWT[crypto]`).
+
+**Tests**
+- 17 new tests across `tests/test_integrations.py` (config defaults, poll no-ops when disabled/misconfigured, JWT-signing failure handled without raising, `status()` shape) and `tests/test_parsers.py` (`TestGCPIdentityParser` -- every event-name mapping, multi-event entries, missing-field tolerance).
+- 1032 tests passing (1015 existing + 17 new).
+
+---
+
 ### v3.4.18 -- Bug audit: a silent no-op, a live NameError, and a packaging leak
 
 An audit of the repo turned up four real problems, none of which were caught by the existing test suite.

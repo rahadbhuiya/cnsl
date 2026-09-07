@@ -35,7 +35,16 @@ Supported connectors:
                               MFA failures. Uses OAuth2 client credentials
                               flow against Azure AD.
 
-  CloudIdentityPoller      -- Orchestrates both connectors on a shared
+  GCPCloudIdentityConnector -- Polls Cloud Logging for Google Workspace
+                              login-audit entries (login_success,
+                              login_failure, suspicious_login, 2SV
+                              challenges). Uses a service-account
+                              JWT-bearer grant, RS256-signed via PyJWT's
+                              crypto extra -- see the class docstring
+                              for why RSA signing isn't hand-rolled here
+                              the way AWS's HMAC signing is above.
+
+  CloudIdentityPoller      -- Orchestrates all three connectors on a shared
                               poll interval, tracks a per-connector
                               cursor so the same event is never re-
                               ingested, and feeds normalized Event
@@ -67,8 +76,23 @@ Config (config.json):
       "client_id":    "",
       "client_secret":"",
       "lookback_sec": 300
+    },
+    "gcp": {
+      "enabled":                false,
+      "project_id":             "",
+      "service_account_email":  "",
+      "private_key":            "",
+      "lookback_sec":           300
     }
   }
+
+GCP setup: create a service account with "Logs Viewer" (roles/logging.viewer)
+on the target project, generate a JSON key, and copy its "client_email" and
+"private_key" fields into the config above. Google Workspace login-audit
+events must already be reaching Cloud Logging (Admin console -> Reporting ->
+Audit and investigation -> Login audit log -> export to a log sink, or an
+org-level default sink) -- this connector reads that log, it doesn't set up
+the export.
 
 This module never blocks local detection: if a cloud provider is
 unreachable or misconfigured, polling logs the error and retries on the
@@ -476,7 +500,235 @@ class AzureADConnector:
 
 
 
-# Cloud Identity Poller -- orchestrates both connectors
+# GCP Cloud Identity Connector
+
+
+class GCPCloudIdentityConnector:
+    """
+    Polls GCP Cloud Logging for Google Workspace login-audit entries --
+    the GCP-side equivalent of AWSCloudTrailConnector's ConsoleLogin and
+    AzureADConnector's signIns (console/account sign-in monitoring).
+    This closes the "GCP IAM" gap named in this module's own docstring
+    but never previously implemented.
+
+    Prerequisite on the GCP side: the org/project must already export
+    Workspace login-audit events to Cloud Logging (Admin console ->
+    Reporting -> Audit and investigation -> Login audit log -> a log
+    sink, or an org-level `_Default` sink that already captures them).
+    This connector only reads what's already landing in Cloud Logging;
+    it does not configure the export itself.
+
+    Auth: service-account JWT-bearer grant (RFC 7523) against Google's
+    OAuth2 token endpoint -- the standard server-to-server auth flow
+    for Google APIs. Unlike AWS SigV4 (HMAC, hand-rolled above with
+    stdlib hmac/hashlib) or Azure AD's client-credentials flow (a plain
+    shared secret, no signing), this requires RSA-signing a JWT
+    (RS256) with the service account's private key. RSA signing is not
+    something to hand-roll -- correctness and side-channel safety
+    matter -- so this connector relies on PyJWT's "crypto" extra
+    (`pip install "pyjwt[crypto]"`) and degrades to disabled with a
+    clear status()/last_error instead of a hand-written implementation.
+
+    Google docs:
+      https://developers.google.com/identity/protocols/oauth2/service-account
+      https://cloud.google.com/logging/docs/reference/v2/rest/v2/entries/list
+      https://developers.google.com/admin-sdk/reports/v1/appendix/activity/login
+    """
+
+    NAME = "gcp_identity"
+
+    TOKEN_URL   = "https://oauth2.googleapis.com/token"
+    ENTRIES_URL = "https://logging.googleapis.com/v2/entries:list"
+    SCOPE       = "https://www.googleapis.com/auth/logging.read"
+
+    # Google Workspace login-audit event names this connector recognizes.
+    # https://developers.google.com/admin-sdk/reports/v1/appendix/activity/login
+    _MFA_EVENTS = {"login_verification", "2sv_verification_switch"}
+    _RISKY_EVENTS = {
+        "suspicious_login",
+        "suspicious_login_less_secure_app",
+        "suspicious_programmatic_login",
+        "account_disabled_hijacked",
+    }
+
+    def __init__(self, cfg: Dict[str, Any]) -> None:
+        gcp = cfg.get("cloud_identity", {}).get("gcp", {})
+        self.enabled      = bool(gcp.get("enabled", False))
+        self.project_id   = gcp.get("project_id", "")
+        self.client_email = gcp.get("service_account_email", "")
+        self.private_key  = gcp.get("private_key", "")
+        self.lookback_sec = int(gcp.get("lookback_sec", 300))
+
+        self._access_token: Optional[str] = None
+        self._token_expiry: float = 0.0
+        self._last_poll_time: float = 0.0
+        self._poll_count  = 0
+        self._error_count = 0
+        self._last_error: Optional[str] = None
+
+    async def poll(self) -> List[Event]:
+        """Poll Cloud Logging for new Workspace login-audit entries since the last poll."""
+        if not self.enabled or not self.project_id or not self.client_email or not self.private_key:
+            return []
+
+        session = await self._get_session()
+        if session is None:
+            return []
+
+        token = await self._ensure_token(session)
+        if not token:
+            return []
+
+        start_time = self._last_poll_time or (now() - self.lookback_sec)
+        start_iso  = datetime.fromtimestamp(start_time, tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+        body = {
+            "resourceNames": [f"projects/{self.project_id}"],
+            "filter": (
+                'protoPayload.serviceName="login.googleapis.com" '
+                f'AND timestamp >= "{start_iso}"'
+            ),
+            "orderBy":  "timestamp asc",
+            "pageSize": 200,
+        }
+
+        try:
+            async with session.post(
+                self.ENTRIES_URL, json=body,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    self._last_error = f"HTTP {resp.status}: {text[:160]}"
+                    self._error_count += 1
+                    return []
+                data = await resp.json()
+        except Exception as e:
+            self._last_error = str(e)
+            self._error_count += 1
+            return []
+
+        self._poll_count += 1
+        self._last_poll_time = now()
+        events = self._parse_events(data.get("entries", []))
+        self._last_error = None
+        return events
+
+    def _build_assertion(self) -> Optional[str]:
+        """
+        Build a self-signed JWT assertion for the OAuth2 JWT-bearer grant.
+        Returns None (with self._last_error set) if PyJWT/cryptography
+        isn't installed or the configured private key is invalid --
+        callers treat that exactly like a network failure and retry
+        next interval, they never raise.
+        """
+        try:
+            import jwt as _pyjwt
+        except ImportError:
+            self._last_error = "PyJWT not installed -- required for GCP service-account auth"
+            return None
+
+        iat = int(now())
+        claims = {
+            "iss":   self.client_email,
+            "scope": self.SCOPE,
+            "aud":   self.TOKEN_URL,
+            "iat":   iat,
+            "exp":   iat + 3600,
+        }
+        try:
+            return _pyjwt.encode(claims, self.private_key, algorithm="RS256")
+        except Exception as e:
+            # Most commonly: cryptography backend missing
+            # (`pip install "pyjwt[crypto]"`), or a malformed private key.
+            self._last_error = f"JWT signing failed: {e}"
+            return None
+
+    async def _ensure_token(self, session) -> Optional[str]:
+        """Get a cached access token, or exchange a fresh JWT assertion for one."""
+        if self._access_token and now() < self._token_expiry - 60:
+            return self._access_token
+
+        assertion = self._build_assertion()
+        if assertion is None:
+            self._error_count += 1
+            return None
+
+        data = {
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion":  assertion,
+        }
+        try:
+            async with session.post(self.TOKEN_URL, data=data) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    self._last_error = f"Token HTTP {resp.status}: {body[:160]}"
+                    self._error_count += 1
+                    return None
+                token_data = await resp.json()
+        except Exception as e:
+            self._last_error = str(e)
+            self._error_count += 1
+            return None
+
+        self._access_token = token_data.get("access_token")
+        self._token_expiry = now() + int(token_data.get("expires_in", 3600))
+        return self._access_token
+
+    def _parse_events(self, raw_entries: List[Dict]) -> List[Event]:
+        out: List[Event] = []
+        for raw in raw_entries:
+            payload   = raw.get("protoPayload", {}) or {}
+            sub_events = payload.get("event", []) or []
+            actor     = (payload.get("authenticationInfo", {}) or {}).get("principalEmail")
+            src_ip    = (payload.get("requestMetadata", {}) or {}).get("callerIp")
+
+            for sub in sub_events:
+                name = sub.get("eventName", "")
+                if name == "login_success":
+                    kind = CloudEventKind.SIGNIN_SUCCESS
+                elif name == "login_failure":
+                    kind = CloudEventKind.SIGNIN_FAIL
+                elif name in self._RISKY_EVENTS:
+                    kind = CloudEventKind.RISKY_SIGNIN
+                elif name in self._MFA_EVENTS:
+                    kind = CloudEventKind.MFA_FAIL
+                else:
+                    continue
+
+                out.append(Event(
+                    ts=now(), source="gcp_identity", kind=kind,
+                    src_ip=src_ip, user=actor, raw=str(raw)[:500],
+                    meta={
+                        "insert_id":  raw.get("insertId"),
+                        "event_name": name,
+                        "provider":   "gcp",
+                    },
+                ))
+        return out
+
+    def status(self) -> Dict[str, Any]:
+        return {
+            "enabled":     self.enabled,
+            "poll_count":  self._poll_count,
+            "error_count": self._error_count,
+            "last_error":  self._last_error,
+            "healthy":     self._error_count == 0 or self._poll_count > 0,
+            "token_valid": bool(self._access_token and now() < self._token_expiry),
+        }
+
+    async def _get_session(self):
+        try:
+            import aiohttp
+            return aiohttp.ClientSession()
+        except ImportError:
+            return None
+
+
+
+# Cloud Identity Poller -- orchestrates all three connectors
 
 
 class CloudIdentityPoller:
@@ -499,14 +751,15 @@ class CloudIdentityPoller:
 
         self.aws      = AWSCloudTrailConnector(cfg)
         self.azure_ad = AzureADConnector(cfg)
+        self.gcp      = GCPCloudIdentityConnector(cfg)
 
-        self.any_enabled = self.aws.enabled or self.azure_ad.enabled
+        self.any_enabled = self.aws.enabled or self.azure_ad.enabled or self.gcp.enabled
         self._running     = False
         self._events_fed   = 0
 
     @property
     def connectors(self) -> List[Any]:
-        return [self.aws, self.azure_ad]
+        return [self.aws, self.azure_ad, self.gcp]
 
     async def run(self, queue: "asyncio.Queue", logger: Any = None) -> None:
         """Long-running poll loop. Call as a background task."""
@@ -542,5 +795,6 @@ class CloudIdentityPoller:
             "connectors": {
                 "aws_cloudtrail": self.aws.status(),
                 "azure_ad":       self.azure_ad.status(),
+                "gcp_identity":   self.gcp.status(),
             },
         }

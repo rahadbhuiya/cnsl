@@ -680,6 +680,89 @@ class TestAzureADParser:
         assert evs[0].src_ip == "9.8.7.6"
         assert evs[0].user == "bob@corp.com"
 
+class TestGCPIdentityParser:
+    """_parse_events correctly maps GCP Workspace login-audit entries to Event objects."""
+
+    def _make_connector(self):
+        from cnsl.cloud_identity import GCPCloudIdentityConnector
+        return GCPCloudIdentityConnector({})
+
+    def _make_raw(self, event_name="login_success", ip="1.2.3.4",
+                  user="alice@example.com", insert_id="ENTRY001"):
+        return {
+            "insertId": insert_id,
+            "protoPayload": {
+                "authenticationInfo": {"principalEmail": user},
+                "requestMetadata":    {"callerIp": ip},
+                "event":              [{"eventName": event_name}],
+            },
+        }
+
+    def test_login_success_maps_to_signin_success(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(event_name="login_success")])
+        assert evs[0].kind == CloudEventKind.SIGNIN_SUCCESS
+
+    def test_login_failure_maps_to_signin_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(event_name="login_failure")])
+        assert evs[0].kind == CloudEventKind.SIGNIN_FAIL
+
+    def test_suspicious_login_variants_map_to_risky_signin(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        for name in ("suspicious_login", "suspicious_login_less_secure_app",
+                     "suspicious_programmatic_login", "account_disabled_hijacked"):
+            evs = c._parse_events([self._make_raw(event_name=name)])
+            assert evs[0].kind == CloudEventKind.RISKY_SIGNIN, f"{name} should map to RISKY_SIGNIN"
+
+    def test_verification_events_map_to_mfa_fail(self):
+        from cnsl.cloud_identity import CloudEventKind
+        c = self._make_connector()
+        for name in ("login_verification", "2sv_verification_switch"):
+            evs = c._parse_events([self._make_raw(event_name=name)])
+            assert evs[0].kind == CloudEventKind.MFA_FAIL, f"{name} should map to MFA_FAIL"
+
+    def test_unrecognized_event_name_skipped(self):
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(event_name="some_other_workspace_event")])
+        assert evs == []
+
+    def test_event_has_correct_source_and_ip(self):
+        c = self._make_connector()
+        evs = c._parse_events([self._make_raw(ip="9.9.9.9", user="carol@example.com")])
+        assert evs[0].source == "gcp_identity"
+        assert evs[0].src_ip == "9.9.9.9"
+        assert evs[0].user == "carol@example.com"
+
+    def test_multiple_sub_events_in_one_entry_all_parsed(self):
+        raw = {
+            "insertId": "MULTI001",
+            "protoPayload": {
+                "authenticationInfo": {"principalEmail": "dave@example.com"},
+                "requestMetadata":    {"callerIp": "8.8.8.8"},
+                "event": [
+                    {"eventName": "login_failure"},
+                    {"eventName": "suspicious_login"},
+                ],
+            },
+        }
+        c = self._make_connector()
+        evs = c._parse_events([raw])
+        assert len(evs) == 2
+
+    def test_missing_protopayload_fields_do_not_crash(self):
+        c = self._make_connector()
+        evs = c._parse_events([{"insertId": "BARE", "protoPayload": {
+            "event": [{"eventName": "login_success"}],
+        }}])
+        assert len(evs) == 1
+        assert evs[0].src_ip is None
+        assert evs[0].user is None
+
+
 class TestSigV4Signing:
     """AWS Signature Version 4 helper produces correct output shape."""
 

@@ -31,6 +31,10 @@ pytest-asyncio>=0.23.0
 bcrypt>=4.0.0
 PyJWT>=2.8.0
 
+#  Optional: GCP cloud identity connector's RS256 service-account
+#  signing (bare PyJWT above can't sign RS256 -- needs the crypto extra)
+#    pip install "PyJWT[crypto]>=2.8.0"
+
 #  Optional: MaxMind offline GeoIP 
 geoip2>=4.7.0
 

@@ -2127,7 +2127,7 @@ async function loadCloudIdentityStatus(){
     return;
   }
   const connectors = d.connectors || {};
-  const labels = {aws_cloudtrail:'AWS CloudTrail', azure_ad:'Azure AD'};
+  const labels = {aws_cloudtrail:'AWS CloudTrail', azure_ad:'Azure AD', gcp_identity:'GCP Cloud Identity'};
   wrap.innerHTML = Object.entries(labels).map(([name, label]) => {
     const c       = connectors[name] || {};
     const enabled = c.enabled !== false;
