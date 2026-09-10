@@ -48,9 +48,9 @@ jobs:
         run: |
           INIT_VER=$(python -c "from cnsl import __version__; print(__version__)")
           TOML_VER=$(python -c "import sys; sys.path.insert(0,''); m=__import__('tomllib' if sys.version_info>=(3,11) else 'tomli'); d=m.load(open('pyproject.toml','rb')); print(d['project']['version'])")
-          ENGINE_VER=$(python -c "import re; print(re.search(r'version=\"CNSL (.+?)\"', open('cnsl/engine.py').read()).group(1))")
+          ENGINE_VER=$(python -m cnsl --version | sed 's/^CNSL //')
           CHART_VER=$(python -c "import yaml; print(yaml.safe_load(open('helm/cnsl/Chart.yaml'))['appVersion'])")
-          echo "__init__: $INIT_VER  pyproject.toml: $TOML_VER  engine.py: $ENGINE_VER  Chart.yaml: $CHART_VER"
+          echo "__init__: $INIT_VER  pyproject.toml: $TOML_VER  --version: $ENGINE_VER  Chart.yaml: $CHART_VER"
           [ "$INIT_VER" = "$TOML_VER" ] && [ "$INIT_VER" = "$ENGINE_VER" ] && [ "$INIT_VER" = "$CHART_VER" ] || (echo "VERSION MISMATCH!" && exit 1)
 
   #  Lint 
