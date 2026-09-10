@@ -106,3 +106,102 @@ class TestConfigurationDocCoversNewerBlocks:
     def test_correlation_rules_documented(self):
         text = self._config_text()
         assert "correlation_rules" in text
+
+
+class TestDockerfileVersion:
+    """
+    The Dockerfile hardcodes cnsl.__version__ in two OCI labels (no
+    build-time templating). Nothing enforces this stays in sync except
+    remembering to update it by hand on every version bump -- which is
+    exactly how it silently drifted a full version behind at v3.4.19.
+    Same pattern as test_helm_chart.py's Chart.yaml appVersion check.
+    """
+
+    def _dockerfile_text(self) -> str:
+        return (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    def test_image_version_label_matches_cnsl_version(self):
+        from cnsl import __version__
+        text = self._dockerfile_text()
+        m = re.search(r'org\.opencontainers\.image\.version="([^"]+)"', text)
+        assert m, "Dockerfile should set org.opencontainers.image.version"
+        assert m.group(1) == __version__, (
+            f"Dockerfile's image.version label ({m.group(1)}) is out of "
+            f"sync with cnsl.__version__ ({__version__}) -- bump it "
+            f"alongside every other version reference."
+        )
+
+    def test_image_description_label_mentions_current_version(self):
+        from cnsl import __version__
+        text = self._dockerfile_text()
+        assert f"v{__version__}" in text, (
+            "Dockerfile's image.description label doesn't mention the "
+            "current version -- bump it alongside image.version."
+        )
+
+
+class TestDockerComposeVersion:
+    """
+    docker-compose.yml hardcodes image tags (cnsl:X.Y.Z) rather than
+    templating them -- same manual-bump-or-drift risk as the Dockerfile
+    labels above, and it drifted the same way (found stuck at v3.4.17
+    while cnsl.__version__ had already moved on).
+    """
+
+    def test_image_tags_match_cnsl_version(self):
+        from cnsl import __version__
+        text = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        tags = set(re.findall(r"image:\s*cnsl:([0-9][0-9A-Za-z.\-]*)", text))
+        assert tags, "docker-compose.yml should reference at least one cnsl:X.Y.Z image tag"
+        assert tags == {__version__}, (
+            f"docker-compose.yml image tag(s) {sorted(tags)} out of sync "
+            f"with cnsl.__version__ ({__version__}) -- bump every "
+            f"'image: cnsl:...' line alongside every other version reference."
+        )
+
+
+class TestCliVersionFlag:
+    """
+    build_arg_parser()'s --version used to be a hardcoded string
+    ("CNSL 3.4.18") that silently went stale by a full version -- the
+    same class of bug as the Dockerfile/docker-compose drift above.
+    It's since been changed to read cnsl.__version__ directly, which
+    makes it structurally impossible to drift; this test guards against
+    a future edit reintroducing a hardcoded literal.
+    """
+
+    def test_version_flag_reports_current_version(self):
+        import subprocess
+        import sys
+        from cnsl import __version__
+        result = subprocess.run(
+            [sys.executable, "-m", "cnsl", "--version"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        assert __version__ in result.stdout, (
+            f"'python -m cnsl --version' printed {result.stdout!r}, "
+            f"which doesn't contain cnsl.__version__ ({__version__})."
+        )
+
+
+class TestDashboardVersionBadge:
+    """
+    The dashboard header's version badge used to be a hardcoded literal
+    ("v3.4.17") baked into the _HTML template string -- it silently went
+    stale the same way the Dockerfile/docker-compose/CLI version strings
+    did. It's since been changed to a {{CNSL_VERSION}} placeholder that
+    dashboard.py's index() handler substitutes with cnsl.__version__ at
+    request time, which makes it structurally impossible to drift; this
+    test guards against a future edit reintroducing a hardcoded literal.
+    """
+
+    def test_badge_uses_placeholder_not_a_hardcoded_literal(self):
+        from cnsl.dashboard_html import _HTML
+        assert "{{CNSL_VERSION}}" in _HTML, (
+            "Dashboard _HTML template should contain the {{CNSL_VERSION}} "
+            "placeholder in its version badge, not a hardcoded literal."
+        )
+        assert not re.search(r'class="badge">v\d', _HTML), (
+            "Dashboard _HTML template's version badge appears to contain "
+            "a hardcoded version literal again instead of {{CNSL_VERSION}}."
+        )

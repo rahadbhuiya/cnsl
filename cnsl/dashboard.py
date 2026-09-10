@@ -103,7 +103,7 @@ async def start_dashboard(
     siem_router:     Any = None,
     federation:      Any = None,
     cloud_identity:  Any = None,
-    zero_trust:      Any = None,
+    zero_trust:      Any = None,  sigma: Any = None,
     queue:           Any = None,
     redis_sync:      Any = None,
     audit_log:       Any = None,
@@ -204,7 +204,7 @@ async def start_dashboard(
             payload, err = auth.verify_token(token)
             if err:
                 raise web.HTTPFound("/login")
-        return web.Response(text=_HTML, content_type="text/html")
+        return web.Response(text=_HTML.replace("{{CNSL_VERSION}}", __version__), content_type="text/html")
 
     #  Auth endpoints 
 
@@ -1142,6 +1142,8 @@ async def start_dashboard(
     from .dashboard_graph_correlation import register_graph_correlation_routes
     register_graph_correlation_routes(router, store, kill_chain, _require_auth, _rate_check)
 
+    from .dashboard_sigma import register_sigma_routes
+    register_sigma_routes(router, sigma, logger, _require_auth, _rate_check)
     #  SIEM Connector API
 
     @router.get("/api/siem/status")

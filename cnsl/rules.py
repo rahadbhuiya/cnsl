@@ -20,6 +20,7 @@ Built-in rules (mirrors the hardcoded thresholds in detector.py):
   db.brute_force           MEDIUM       >= N DB auth failures in window
   fw.honeypot_port         HIGH         connection to honeypot port (threshold=1)
   net.repeat_offender      HIGH         IP hits N+ incidents in escalation window
+  sigma.match              (per-rule)   master switch for imported Sigma rules (cnsl/sigma.py)
 
 Config override example (config.json):
   "rules": {
@@ -262,6 +263,16 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["wazuh", "ossec", "hids", "siem-integration"],
+    ),
+    # Sigma rule import (cnsl/sigma.py)
+    Rule(
+        id          = "sigma.match",
+        name        = "Sigma Rule Match",
+        description = "Master switch for imported Sigma rules. Disable to stop all Sigma matching without re-importing; each imported rule can also be enabled/disabled individually via the Sigma rule store. Severity is per-match, taken from the matched rule's own Sigma `level` -- this rule's severity/threshold fields are unused (threshold=1, fires on every match).",
+        severity    = "MEDIUM",
+        threshold   = 1,
+        window_sec  = 0,
+        tags        = ["sigma", "detection-import"],
     ),
 ]
 

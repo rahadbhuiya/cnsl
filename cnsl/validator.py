@@ -89,6 +89,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Pattern learning
     _validate_pattern_learning(cfg.get("pattern_learning", {}), issues)
 
+    # Sigma rule import
+    _validate_sigma(cfg.get("sigma", {}), issues)
+
     # SIEM connectors
     _validate_siem(cfg.get("siem", {}), issues)
 
@@ -426,6 +429,28 @@ def _validate_pattern_learning(pl: Any, issues: List) -> None:
     v.is_positive_int("lookback_sec",    max_val=3600)
     v.is_positive_int("min_occurrences", max_val=1000)
     v.is_positive_int("max_suggestions", max_val=10_000)
+
+
+def _validate_sigma(sig: Any, issues: List) -> None:
+    if not sig or not isinstance(sig, dict):
+        return
+    v = _V(sig, issues, "sigma")
+    v.is_bool("enabled")
+    v.is_str("rules_dir")
+    if sig.get("enabled") and not sig.get("rules_dir"):
+        issues.append(ValidationError(
+            "sigma.rules_dir", "required when sigma.enabled is true",
+            level="warning",
+        ))
+    if sig.get("enabled"):
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            issues.append(ValidationError(
+                "sigma.enabled",
+                "sigma.enabled=true requires PyYAML: pip install PyYAML",
+                level="warning",
+            ))
 
 
 def _validate_siem(siem: Any, issues: List) -> None:

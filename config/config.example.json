@@ -354,6 +354,10 @@
     "max_suggestions": 50,
     "persist": true
   },
+  "sigma": {
+    "enabled": false,
+    "rules_dir": ""
+  },
   "siem": {
     "splunk": {
       "enabled": false,

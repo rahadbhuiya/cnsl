@@ -111,6 +111,7 @@ _KIND_TO_STAGE: Dict[str, int] = {
 
     # Exploitation
     "SSH_SUCCESS":         KCStage.EXPLOITATION,
+    "SIGMA_MATCH":         KCStage.EXPLOITATION,  # imported rule matched -- treated like a confirmed foothold signal
 
     # Installation
     "SUDO_FAIL":           KCStage.INSTALLATION,

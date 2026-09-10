@@ -530,6 +530,33 @@ Requires `redis.enabled: true`. All nodes must share the same Redis instance and
 
 ---
 
+---
+
+## Sigma Rule Import
+
+```json
+{
+  "sigma": {
+    "enabled":   false,
+    "rules_dir": "/etc/cnsl/sigma-rules"
+  }
+}
+```
+
+| Key | Default | Description |
+|:---|:---|:---|
+| `enabled` | `false` | Import and evaluate Sigma rules from `rules_dir` at startup |
+| `rules_dir` | `""` | Directory scanned recursively for `*.yml` / `*.yaml` Sigma rule files |
+
+Requires PyYAML (already a core CNSL dependency). Each imported rule can
+also be individually enabled/disabled at runtime; the `sigma.match` entry
+in the rules API is the master switch for all Sigma matching.
+
+See `docs/sigma-rules.md` for the supported rule subset, field-matching
+behavior, and import troubleshooting.
+
+---
+
 ## Cloud Identity Connectors
 
 ```json

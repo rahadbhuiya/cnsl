@@ -48,6 +48,7 @@ from .siem_connectors import SIEMRouter
 from .federation      import FederationBus
 from .cloud_identity  import CloudIdentityPoller
 from .zero_trust      import ZeroTrustEngine
+from .sigma           import SigmaRuleStore
 
 
 
@@ -108,6 +109,7 @@ async def engine_loop(
 
 def build_arg_parser():
     import argparse
+    from . import __version__
 
     ap = argparse.ArgumentParser(
         prog="cnsl",
@@ -134,7 +136,7 @@ Examples:
     ap.add_argument("--api",         action="store_true", help="Enable REST API (legacy)")
     ap.add_argument("--no-geoip",    action="store_true", help="Disable GeoIP lookups")
     ap.add_argument("--no-db",       action="store_true", help="Disable SQLite persistence")
-    ap.add_argument("--version",     action="version", version="CNSL 3.4.19")
+    ap.add_argument("--version",     action="version", version=f"CNSL {__version__}")
     ap.add_argument("--report",       default=None,
                     choices=["html","pdf","json"],
                     help="Generate a report and exit")
@@ -271,6 +273,18 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if threat_feed.enabled:
         await threat_feed.start()
 
+    # Sigma rule import -- see cnsl/sigma.py for the supported subset
+    sigma_cfg   = cfg.get("sigma", {})
+    sigma_store = SigmaRuleStore()
+    if sigma_cfg.get("enabled", False):
+        rules_dir = sigma_cfg.get("rules_dir", "")
+        if rules_dir:
+            result = sigma_store.import_dir(rules_dir)
+            await logger.log("sigma_import", {
+                "rules_dir": rules_dir, **result,
+                "errors": sigma_store.import_errors(),
+            })
+
     # UEBA engine
     ueba = UEBAEngine(cfg, store)
     if ueba.enabled:
@@ -332,7 +346,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         siem_router=siem_router,
                         federation=federation,
                         cloud_identity=None,
-                        zero_trust=zero_trust)
+                        zero_trust=zero_trust,
+                        sigma=sigma_store)
 
     # Reporter (after detector so rule_engine is available)
     reporter = Reporter(store=store, fim=fim_engine, cfg=cfg,
@@ -497,6 +512,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             kill_chain=kill_chain_tracker,
                             pattern_learner=pattern_learner,
                             siem_router=siem_router,
+                            sigma=sigma_store,
                             federation=federation,
                             cloud_identity=cloud_identity,
                             zero_trust=zero_trust,

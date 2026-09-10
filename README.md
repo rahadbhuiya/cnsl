@@ -106,6 +106,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/kill-chain.md`](docs/kill-chain.md) | Kill chain tracker (predictive blocking: see [`docs/api.md`](docs/api.md#predictive-blocking)) |
 | [`docs/federation.md`](docs/federation.md) | Multi-node setup and the hub view |
 | [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD + GCP integration |
+| [`docs/sigma-rules.md`](docs/sigma-rules.md) | Sigma detection rule import |
 | [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
@@ -124,7 +125,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/huddle.md`](docs/huddle.md) | Incident huddle/collaboration |
 | [`docs/notifications.md`](docs/notifications.md) | Email/Slack/Telegram alerts |
 | [`docs/changelog.md`](docs/changelog.md) | Version history |
-| [`docs/`](docs/) | Browse all 27 guides |
+| [`docs/`](docs/) | Browse all 28 guides |
 
 ---
 

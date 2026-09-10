@@ -68,6 +68,7 @@ if TYPE_CHECKING:
     from .threat_feed   import ThreatFeed
     from .threat_intel  import AbuseIPDB, BehavioralBaseline
     from .ueba           import UEBAEngine
+    from .sigma           import SigmaRuleStore
 
 
 
@@ -191,6 +192,7 @@ class Detector:
         federation:      Optional[Any]                 = None,
         cloud_identity:  Optional[Any]                 = None,
         zero_trust:      Optional[Any]                 = None,
+        sigma:           Optional["SigmaRuleStore"]     = None,
     ):
         # Rule engine — all thresholds are read from here at evaluation time
         self.rules = RuleEngine(cfg)
@@ -250,6 +252,7 @@ class Detector:
         self.federation       = federation
         self.cloud_identity  = cloud_identity
         self.zero_trust      = zero_trust
+        self.sigma           = sigma
 
         self._state: Dict[str, IPState] = defaultdict(IPState)
 
@@ -343,6 +346,16 @@ class Detector:
         st = self._state[ip]
         t  = ev.ts
         _prune_all(st, self.window_sec, t)
+
+        # Sigma rule matching -- runs once per event, ahead of the
+        # kind-specific handlers below, so an imported rule can fire
+        # regardless of which handler would otherwise process this
+        # event kind. See cnsl/sigma.py for what's matched against and
+        # why this only sees events that already reached this point
+        # (kind in _ALL_HANDLED, src_ip present) rather than every raw
+        # log line CNSL parses.
+        if self.sigma and len(self.sigma) and self.rules.is_enabled("sigma.match"):
+            await self._check_sigma(ip, ev, st, t)
 
         #  Route by kind 
 
@@ -938,6 +951,40 @@ class Detector:
             await self._maybe_fire(ip, st, t, sev, reasons, trigger="wazuh",
                                    fail_count=len(st.fails), uniq_users=0,
                                    user=ev.user)
+
+    #  Sigma rule matching 
+
+    async def _check_sigma(self, ip: str, ev: Event, st: IPState, t: float) -> None:
+        """
+        Evaluate imported Sigma rules (cnsl/sigma.py) against this event.
+
+        Unlike the threshold rules below, Sigma rules are per-event, not
+        per-window -- each matching rule fires independently, and a
+        single event can trigger more than one Sigma rule (e.g. a
+        generic "suspicious keyword" rule and a specific CVE rule both
+        matching the same log line). Each fires through the same
+        _maybe_fire() path as everything else, so it gets the same
+        cooldown, AbuseIPDB check, storage, and notification handling --
+        Sigma severity (mapped from the rule's own `level`) is used
+        as-is rather than re-derived from a threshold.
+        """
+        matches = self.sigma.evaluate(ev)
+        if not matches:
+            return
+
+        geo = self.geoip.get_cached(ip) if self.geoip else None
+        for rule in matches:
+            await self._kc_update(ip, "SIGMA_MATCH", geo=geo, severity=rule.severity)
+            await self.logger.log("sigma_match", {
+                "ip": ip, "rule_id": rule.id, "title": rule.title,
+                "severity": rule.severity, "tags": rule.tags,
+            })
+            await self._maybe_fire(
+                ip, st, t, rule.severity,
+                [f"[SIGMA:{rule.id}] {rule.title}"],
+                trigger="sigma", fail_count=len(st.fails), uniq_users=0,
+                user=ev.user,
+            )
 
     #  Correlation alert handler (Phase 2) 
 

@@ -43,6 +43,7 @@
 | Cloud | AWS CloudTrail polling for ConsoleLogin failures, MFA bypass |
 | Cloud | Azure AD sign-in polling for risky sign-ins, MFA failures, impossible travel |
 | Cloud | GCP Cloud Logging polling for Workspace login-audit events (sign-in fail/success, suspicious login, 2SV failure) |
+| Detection import | Sigma rule import -- field-matching detection rules (community or custom) evaluated per-event alongside the built-in rules |
 | Zero-Trust | Per-entity trust score (0-100%) per IP and username |
 | Zero-Trust | Low-trust entities trigger alerts at lower event counts (threshold scaling) |
 | Zero-Trust | Score decay and recovery over time, manual reset from dashboard |
@@ -147,7 +148,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 1032 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 1099 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

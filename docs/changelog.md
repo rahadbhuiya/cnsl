@@ -4,6 +4,49 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.20 -- Sigma rule import
+
+CNSL can now import and evaluate [Sigma](https://github.com/SigmaHQ/sigma) detection rules -- the closest thing the detection-engineering community has to a common rule format. Thousands of community rules already exist; this gives CNSL access to that detection logic without hand-writing it, and gives teams already using Sigma elsewhere a way to bring their rules along.
+
+**New: `cnsl/sigma.py`**
+- Implements a practical subset of the Sigma spec: named field-match selections (map / list-of-maps OR / keyword-list), field modifiers (`contains`, `startswith`, `endswith`, `re`, `all`, `cased`), and the condition mini-language (`and`/`or`/`not`, parentheses, `N of x*`, `all of x*`, `1 of them`).
+- Deliberately does NOT implement Sigma "correlation" rules or aggregation functions (`count() by`, `near`, `temporal`) -- CNSL's own threshold/correlation engine (`rules.py`, `correlator.py`) already covers cross-event logic; Sigma import here is strictly per-event field matching. Both are rejected at import time with a specific reason, never silently mis-evaluated.
+- Field resolution: an alias table onto Event's typed attributes (`SourceIp`/`User`/`kind` -> `src_ip`/`user`/`kind`), then `event.meta` (case-insensitive), then a last-resort substring search over `event.raw`.
+- `logsource` is intentionally not used to filter events -- see the module docstring for why building a Windows/Sysmon-taxonomy mapping onto CNSL's Linux-focused event model isn't worth it. Practical effect: only a fraction of any public Sigma rule pack will match live traffic here, same as if `logsource` filtering existed, without the mapping to get wrong.
+- `SigmaRuleStore`: bulk directory import, single-file/inline-text import, per-rule enable/disable, and non-fatal per-file import errors (one bad rule in a pack of 500 doesn't block the other 499).
+
+**Wired into detection**
+- `Detector.handle()` evaluates all enabled Sigma rules against every event it already processes (auth, web, db, firewall, cloud identity, OT/ICS, relayed Wazuh alerts) -- ahead of the kind-specific handlers, so a match fires regardless of which handler would otherwise run.
+- Each match goes through the same `_maybe_fire()` path as a built-in rule: same per-IP cooldown, AbuseIPDB check, storage, and notification handling. Severity comes from the rule's own Sigma `level` (informational/low -> LOW, medium -> MEDIUM, high/critical -> HIGH).
+- New `sigma.match` master-switch rule in `rules.py` (disable to stop all Sigma matching without re-importing).
+- New `SIGMA_MATCH` -> Exploitation kill-chain stage mapping.
+
+**Dashboard / API**
+- New `cnsl/dashboard_sigma.py` (split out to keep `dashboard.py` under its line-count budget): `GET /api/sigma/rules`, `POST /api/sigma/rules/{id}/enable|disable`, `POST /api/sigma/import` (raw YAML body upload).
+
+**Config**
+- New `sigma.enabled` / `sigma.rules_dir` config, validated in `validator.py`. Import results (imported/failed/errors) are logged as `sigma_import` at startup.
+
+**Docs**
+- New `docs/sigma-rules.md`: supported subset, field resolution, setup, example rules, severity mapping, troubleshooting.
+- `docs/configuration.md`, `docs/features.md`, `README.md`, `cnsl/__init__.py` docstring updated.
+
+**Also fixed -- a whole family of version-drift bugs**
+- Went looking for other places a version number could go stale the same way, since the Dockerfile above (this section's original note) turned out not to be the only spot. Found four more, all one or more releases behind `cnsl.__version__`:
+  - `docker-compose.yml`: header comment and both `image: cnsl:...` tags were still `3.4.17`. Bumped; added a drift-guard test since these stay hardcoded (no templating in a static compose file).
+  - `helm/cnsl/values.yaml`: `image.tag` was hardcoded to `"3.4.17"`, silently overriding the chart's own `.Values.image.tag | default .Chart.AppVersion` fallback. Set to `""` instead of just bumping the number -- this makes it structurally track `Chart.yaml`'s `appVersion` (already guarded by `test_helm_chart.py`) instead of needing its own manual bump every release.
+  - `cnsl/engine.py`'s `--version` CLI flag was a hardcoded literal (`"CNSL 3.4.18"`). Changed to read `cnsl.__version__` directly -- structurally can't drift now. Added a subprocess test that actually runs `python -m cnsl --version` and checks the output.
+  - The dashboard's header version badge (`cnsl/dashboard_html.py`) was a hardcoded literal (`v3.4.17`) baked into the `_HTML` template string. Changed to a `{{CNSL_VERSION}}` placeholder that `dashboard.py`'s `index()` handler substitutes with `cnsl.__version__` at request time -- same "make it structural, not a habit" fix as the CLI flag.
+  - `Dockerfile`'s OCI image labels were still at v3.4.18 -- one version behind, silently drifted during the v3.4.19 GCP release since nothing guarded it (unlike `helm/cnsl/Chart.yaml`, which already had `test_helm_chart.py::test_app_version_matches_cnsl_version`). Bumped; added the same style of guard.
+- Where a literal number could be replaced with something that reads `cnsl.__version__` at runtime (the CLI flag, the dashboard badge, the Helm chart tag), that's what was done, since a guard test only catches drift after the fact -- reading the source of truth prevents it. Where the file has to stay static (Dockerfile labels, docker-compose tags), a new test asserts the literal matches `cnsl.__version__`.
+
+**Tests**
+- New `tests/test_sigma.py`: 62 tests covering field matching (every modifier), the condition parser (including two real bugs the tests caught and fixed: a `null`-value selector incorrectly falling through to raw-text search, and `and`'s short-circuit evaluation hiding an unknown-selection-reference error at compile time), rule compilation, `SigmaRuleStore`, and detector integration.
+- New in `tests/test_docs.py`: `TestDockerfileVersion` (2 tests), `TestDockerComposeVersion` (1), `TestCliVersionFlag` (1), `TestDashboardVersionBadge` (1) -- guard every fix above from recurring.
+- 1099 tests passing (1032 existing + 62 Sigma + 5 version-drift guards).
+
+---
+
 ### v3.4.19 -- GCP Cloud Identity connector (closes a gap this module's own docstring named)
 
 `cnsl/cloud_identity.py`'s module docstring has said "AWS CloudTrail, Azure AD, GCP IAM" since it was written, quoting the original research paper's future-work item -- but only `AWSCloudTrailConnector` and `AzureADConnector` were ever implemented. This adds the third.
