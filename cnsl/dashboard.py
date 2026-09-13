@@ -1142,8 +1142,8 @@ async def start_dashboard(
     from .dashboard_graph_correlation import register_graph_correlation_routes
     register_graph_correlation_routes(router, store, kill_chain, _require_auth, _rate_check)
 
-    from .dashboard_sigma import register_sigma_routes
-    register_sigma_routes(router, sigma, logger, _require_auth, _rate_check)
+    from .dashboard_sigma import register_sigma_routes; register_sigma_routes(router, sigma, logger, _require_auth, _rate_check)
+    from .dashboard_attack import register_attack_routes; register_attack_routes(router, detector, correlator, sigma, _require_auth, _rate_check)
     #  SIEM Connector API
 
     @router.get("/api/siem/status")

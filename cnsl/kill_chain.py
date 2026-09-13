@@ -21,6 +21,11 @@ How it works:
     Stage 5  C2               -- persistent reconnection after block
     Stage 6  ACTIONS          -- data exfiltration signals (future)
 
+  Each stage also carries an approximate ATT&CK tactic cross-reference
+  (see cnsl/attack.py's KC_STAGE_TO_TACTIC and module docstring for why
+  it's approximate, not an official MITRE mapping) surfaced in
+  StageRecord.to_dict()'s attack_tactic_id/attack_tactic_name fields.
+
   For each IP, the tracker records which stages have been observed,
   when each stage was first and last seen, and the event count per
   stage. It also computes a kill chain score (0.0-1.0) reflecting
@@ -57,6 +62,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .models import iso_time, now
+from .attack import KC_STAGE_TO_TACTIC, tactic_name
 
 
 
@@ -167,10 +173,16 @@ class StageRecord:
     event_kinds: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
+        tactic_id = KC_STAGE_TO_TACTIC.get(self.stage)
         return {
             "stage":       self.stage,
             "name":        STAGE_NAMES[self.stage],
             "description": STAGE_DESCRIPTIONS[self.stage],
+            # Approximate ATT&CK tactic cross-reference for this kill-chain
+            # stage -- see cnsl/attack.py's module docstring for why this
+            # is a convenience mapping, not an official MITRE one.
+            "attack_tactic_id":   tactic_id,
+            "attack_tactic_name": tactic_name(tactic_id) if tactic_id else None,
             "first_seen":  iso_time(self.first_seen),
             "last_seen":   iso_time(self.last_seen),
             "count":       self.count,

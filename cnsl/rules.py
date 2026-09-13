@@ -22,6 +22,10 @@ Built-in rules (mirrors the hardcoded thresholds in detector.py):
   net.repeat_offender      HIGH         IP hits N+ incidents in escalation window
   sigma.match              (per-rule)   master switch for imported Sigma rules (cnsl/sigma.py)
 
+Each rule also carries an attack_techniques list (MITRE ATT&CK ids,
+see cnsl/attack.py) surfaced via to_dict() and aggregated by
+GET /api/attack/coverage.
+
 Config override example (config.json):
   "rules": {
     "ssh.brute_force": {
@@ -57,6 +61,7 @@ class Rule:
     window_sec:  int                    # sliding window in seconds (0 = instantaneous)
     enabled:     bool       = True      # can be toggled at runtime
     tags:        List[str]  = field(default_factory=list)  # e.g. ["ssh", "brute"]
+    attack_techniques: List[str] = field(default_factory=list)  # MITRE ATT&CK ids, e.g. ["T1110.001"] -- see cnsl/attack.py
     # Runtime override fields (set from config, None = use defaults above)
     _override_severity:  Optional[str] = field(default=None, repr=False)
     _override_threshold: Optional[int] = field(default=None, repr=False)
@@ -87,6 +92,7 @@ class Rule:
             "effective_window":    self.effective_window,
             "enabled":            self.enabled,
             "tags":               self.tags,
+            "attack_techniques":  self.attack_techniques,
             "overridden":         any([
                 self._override_severity is not None,
                 self._override_threshold is not None,
@@ -107,6 +113,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 8,
         window_sec  = 60,
         tags        = ["ssh", "brute-force"],
+        attack_techniques = ["T1110.001"],  # Brute Force: Password Guessing
     ),
     Rule(
         id          = "ssh.credential_stuffing",
@@ -116,6 +123,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 4,
         window_sec  = 60,
         tags        = ["ssh", "credential-stuffing"],
+        attack_techniques = ["T1110.004"],  # Brute Force: Credential Stuffing
     ),
     Rule(
         id          = "ssh.credential_breach",
@@ -125,6 +133,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 5,
         window_sec  = 60,
         tags        = ["ssh", "breach", "high-priority"],
+        attack_techniques = ["T1110", "T1078"],  # Brute Force + Valid Accounts (stolen creds worked)
     ),
     Rule(
         id          = "web.scan_flood",
@@ -134,6 +143,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 20,
         window_sec  = 60,
         tags        = ["web", "scan"],
+        attack_techniques = ["T1595.002"],  # Active Scanning: Vulnerability Scanning
     ),
     Rule(
         id          = "web.auth_flood",
@@ -143,6 +153,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 15,
         window_sec  = 60,
         tags        = ["web", "auth", "brute-force"],
+        attack_techniques = ["T1110.001"],  # Brute Force: Password Guessing (web login form)
     ),
     Rule(
         id          = "web.exploit",
@@ -152,6 +163,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["web", "exploit", "high-priority"],
+        attack_techniques = ["T1190"],  # Exploit Public-Facing Application
     ),
     Rule(
         id          = "db.brute_force",
@@ -161,6 +173,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 5,
         window_sec  = 60,
         tags        = ["database", "brute-force"],
+        attack_techniques = ["T1110"],  # Brute Force
     ),
     Rule(
         id          = "fw.honeypot_port",
@@ -170,6 +183,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["firewall", "honeypot", "high-priority"],
+        attack_techniques = ["T1046"],  # Network Service Discovery
     ),
     Rule(
         id          = "net.repeat_offender",
@@ -189,6 +203,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 5,
         window_sec  = 300,
         tags        = ["cloud", "brute-force", "aws", "azure"],
+        attack_techniques = ["T1110.003"],  # Brute Force: Password Spraying (common against cloud IdPs)
     ),
     Rule(
         id          = "cloud.mfa_failure",
@@ -198,6 +213,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["cloud", "mfa", "aws", "azure"],
+        attack_techniques = ["T1621"],  # Multi-Factor Authentication Request Generation
     ),
     Rule(
         id          = "cloud.risky_signin",
@@ -207,6 +223,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["cloud", "risky", "azure"],
+        attack_techniques = ["T1078.004"],  # Valid Accounts: Cloud Accounts
     ),
     Rule(
         id          = "cloud.signin_breach",
@@ -216,6 +233,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 3,
         window_sec  = 300,
         tags        = ["cloud", "credential-breach", "aws", "azure"],
+        attack_techniques = ["T1110", "T1078.004"],  # Brute Force + Valid Accounts: Cloud Accounts
     ),
     Rule(
         id          = "cloud.impossible_travel",
@@ -225,8 +243,14 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 1,
         window_sec  = 0,
         tags        = ["cloud", "impossible-travel", "azure"],
+        attack_techniques = ["T1078.004"],  # Valid Accounts: Cloud Accounts
     ),
-    # OT/ICS rules
+    # OT/ICS rules -- ot.modbus_write and ot.scada_alarm describe
+    # OT-actuation-specific behavior (unauthorized commands, alarms)
+    # that ATT&CK's own ICS matrix (a separate T0xxx namespace from
+    # the Enterprise T1xxx techniques cnsl/attack.py curates) covers
+    # more accurately than anything in the Enterprise matrix -- left
+    # untagged here rather than force-fit an Enterprise technique.
     Rule(
         id          = "ot.modbus_write",
         name        = "OT Modbus Write Command",
@@ -244,6 +268,7 @@ _BUILTIN_RULES: List[Rule] = [
         threshold   = 5,
         window_sec  = 60,
         tags        = ["ot", "modbus", "reconnaissance"],
+        attack_techniques = ["T1046"],  # Network Service Discovery (the scanning behavior itself)
     ),
     Rule(
         id          = "ot.scada_alarm",

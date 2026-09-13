@@ -4,6 +4,38 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.21 -- MITRE ATT&CK technique mapping
+
+CNSL's rules now say *which ATT&CK technique* they correspond to, and the dashboard can report aggregate coverage. This is a tagging/reporting layer, not a new detector -- it doesn't change what CNSL detects, only how that detection is labeled and summarized.
+
+**New: `cnsl/attack.py`**
+- Curated subset of ATT&CK Enterprise techniques (`TECHNIQUES` dict) -- only the ones CNSL's own detections plausibly correspond to, not a copy of MITRE's full knowledge base.
+- `build_coverage_report()`: aggregates enabled built-in rules, correlation rules, and imported Sigma rules into one "which techniques does this deployment have live coverage for" report, grouped by tactic. Disabled rules don't count.
+- Sigma rules need no CNSL-specific tagging -- `sigma_tags_to_technique_ids()` reads the community's own `attack.tNNNN` tag convention directly, so imported rules contribute to coverage automatically.
+- ATT&CK's separate ICS matrix (`T0xxx` namespace) is out of scope -- `ot.modbus_write` and `ot.scada_alarm` describe OT-actuation behavior the ICS matrix would represent more accurately, so they're left untagged rather than force-fit onto an Enterprise technique.
+
+**Tagged**
+- Every built-in rule in `cnsl/rules.py` (`ssh.*`, `web.*`, `db.brute_force`, `fw.honeypot_port`, `cloud.*`, `ot.modbus_scan`) with `attack_techniques`.
+- All 6 correlation rules in `cnsl/correlator.py`.
+- Each kill chain stage (`cnsl/kill_chain.py`) with an *approximate* ATT&CK tactic cross-reference (`StageRecord.to_dict()`'s new `attack_tactic_id`/`attack_tactic_name`) -- explicitly documented as a convenience mapping, not an official MITRE one, since the 7-stage Lockheed Martin kill chain predates and doesn't correspond 1:1 to ATT&CK's 14 tactics.
+
+**Dashboard / API**
+- New `cnsl/dashboard_attack.py` (split out to keep `dashboard.py` under its line-count budget): `GET /api/attack/coverage`.
+
+**Docs**
+- New `docs/attack-mapping.md`: scope, where tags live, coverage report shape, kill-chain cross-reference table, how to add a new technique.
+- `docs/features.md`, `README.md`, `cnsl/rules.py`/`cnsl/__init__.py` docstrings updated.
+
+**Not done this release**
+- STIX export (`cnsl/stix_export.py`) doesn't yet attach ATT&CK external references to exported indicators -- left as future work rather than widening this release's scope.
+
+**Tests**
+- New `tests/test_attack.py`: 26 tests -- technique/tactic lookup, Sigma tag extraction, coverage aggregation (including cross-source merging and unrecognized-id handling), kill-chain integration, dashboard route (aiohttp TestClient), and drift guards asserting every technique id referenced by `rules.py`/`correlator.py` actually exists in `attack.py`'s table.
+- 1125 tests passing (1099 existing + 26 new).
+- Version bumped to 3.4.21 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml` -- `helm/cnsl/values.yaml`'s `image.tag` needed no touch, confirming last release's fix (empty tag, falls back to `Chart.yaml`'s `appVersion`) is holding.
+
+---
+
 ### v3.4.20 -- Sigma rule import
 
 CNSL can now import and evaluate [Sigma](https://github.com/SigmaHQ/sigma) detection rules -- the closest thing the detection-engineering community has to a common rule format. Thousands of community rules already exist; this gives CNSL access to that detection logic without hand-writing it, and gives teams already using Sigma elsewhere a way to bring their rules along.

@@ -106,6 +106,7 @@ class CorrelationRule:
     cooldown_sec:int = 120
     confidence:  float = 0.5
     enabled:     bool = True
+    attack_techniques: List[str] = []  # MITRE ATT&CK ids -- see cnsl/attack.py
 
     # Runtime override fields (set via update()/config, None = use class defaults)
     _override_window_sec:   Optional[int]   = None
@@ -137,6 +138,7 @@ class CorrelationRule:
             "name":                self.name,
             "description":         self.description,
             "enabled":             self.enabled,
+            "attack_techniques":   self.attack_techniques,
             "default_window_sec":  self.window_sec,
             "default_cooldown_sec":self.cooldown_sec,
             "default_confidence":  self.confidence,
@@ -163,6 +165,7 @@ class MultiServiceBruteForce(CorrelationRule):
     description = "Credential spray across SSH and database"
     window_sec  = 300
     confidence  = 0.85
+    attack_techniques = ["T1110", "T1078"]  # Brute Force + Valid Accounts (cross-service credential spray)
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         ssh_fails = buf.count_kind("SSH_FAIL",    self.effective_window_sec)
@@ -192,6 +195,7 @@ class WebReconThenSSH(CorrelationRule):
     description = "Web reconnaissance followed by SSH brute-force"
     window_sec  = 600
     confidence  = 0.80
+    attack_techniques = ["T1595", "T1110"]  # Active Scanning -> Brute Force
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         web_scans = buf.count_kind("WEB_SCAN",          self.effective_window_sec)
@@ -226,6 +230,7 @@ class HoneypotPortThenSSH(CorrelationRule):
     description = "Honeypot port probe followed by SSH attempt"
     window_sec  = 180
     confidence  = 0.90
+    attack_techniques = ["T1046", "T1110"]  # Network Service Discovery -> Brute Force
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         honeypot = buf.count_kind("FW_HONEYPOT_PORT", self.effective_window_sec)
@@ -255,6 +260,7 @@ class WebAuthFlood(CorrelationRule):
     window_sec  = 120
     confidence  = 0.75
     threshold   = 15
+    attack_techniques = ["T1110.001"]  # Brute Force: Password Guessing
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         auth_fails = buf.count_kind("WEB_AUTH_FAIL", self.effective_window_sec)
@@ -279,6 +285,7 @@ class PrivilegeEscalationAttempt(CorrelationRule):
     description = "Privilege escalation attempt after login"
     window_sec  = 300
     confidence  = 0.85
+    attack_techniques = ["T1548.003"]  # Abuse Elevation Control Mechanism: Sudo and Sudo Caching
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         ssh_ok    = buf.count_kind("SSH_SUCCESS", self.effective_window_sec)
@@ -313,6 +320,7 @@ class PersistentReconnaissance(CorrelationRule):
     description = "Persistent multi-vector reconnaissance"
     window_sec  = 1800   # 30 minutes
     confidence  = 0.70
+    attack_techniques = ["T1595"]  # Active Scanning
 
     def evaluate(self, ip: str, buf: IPEventBuffer) -> Optional[CorrelationAlert]:
         events    = buf.get_window(self.effective_window_sec)
