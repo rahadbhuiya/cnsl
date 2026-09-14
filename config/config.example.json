@@ -165,6 +165,17 @@
     },
     "session_timeout_minutes": 0
   },
+  "oidc": {
+    "enabled": false,
+    "issuer": "",
+    "client_id": "",
+    "client_secret": "",
+    "redirect_uri": "",
+    "scopes": "openid email profile",
+    "role_claim": "groups",
+    "role_mapping": {},
+    "default_role": "viewer"
+  },
   "queue": {
     "maxsize": 10000
   },

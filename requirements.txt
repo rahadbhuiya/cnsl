@@ -33,6 +33,8 @@ PyJWT>=2.8.0
 
 #  Optional: GCP cloud identity connector's RS256 service-account
 #  signing (bare PyJWT above can't sign RS256 -- needs the crypto extra)
+#  Also required for OIDC SSO (cnsl/oidc.py) -- RS256 verification of
+#  the identity provider's ID token signature.
 #    pip install "PyJWT[crypto]>=2.8.0"
 
 #  Optional: MaxMind offline GeoIP 

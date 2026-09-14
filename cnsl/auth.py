@@ -12,6 +12,10 @@ Features:
     - Per-user enable/disable
     - 8 single-use backup codes
     - QR code URI for authenticator app setup
+  - OIDC SSO (see cnsl/oidc.py) -- issue_token_for_sso_user() mints a
+    normal session token for a user authenticated by an external IdP;
+    from that point on an SSO session is indistinguishable from a
+    password session to every other part of the dashboard.
 
 Config example:
   "auth": {
@@ -409,6 +413,36 @@ class AuthManager:
             "sub":  username,
             "role": user.get("role", "viewer"),
             "mcp":  user.get("must_change_password", False),
+            "iat":  int(time.time()),
+            "exp":  int(time.time()) + self.access_expire_hours * 3600,
+            "jti":  secrets.token_hex(8),
+        }
+        return _sign_jwt(payload, self.secret)
+
+    def issue_token_for_sso_user(self, username: str, role: str) -> str:
+        """
+        Mint a normal CNSL session token for a user authenticated via an
+        external identity provider (see cnsl/oidc.py) rather than a
+        local password. The dashboard and its API never see or trust
+        the IdP's own tokens after this point -- from here on an SSO
+        session is indistinguishable from a password session, so every
+        existing role-based check keeps working unchanged.
+
+        Auto-provisions/updates a lightweight user record (role only,
+        no password_hash) on each login so the role reflects the IdP's
+        current group membership rather than whatever it was on first
+        login -- SSO is the source of truth for these users' roles,
+        not anything stored locally.
+        """
+        user = self._users.setdefault(username, {})
+        user["role"]                  = role
+        user["sso"]                   = True
+        user["must_change_password"]  = False
+        payload = {
+            "sub":  username,
+            "role": role,
+            "mcp":  False,
+            "sso":  True,
             "iat":  int(time.time()),
             "exp":  int(time.time()) + self.access_expire_hours * 3600,
             "jti":  secrets.token_hex(8),

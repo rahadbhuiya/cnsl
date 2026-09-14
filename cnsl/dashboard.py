@@ -107,7 +107,7 @@ async def start_dashboard(
     queue:           Any = None,
     redis_sync:      Any = None,
     audit_log:       Any = None,
-    correlator:      Any = None,
+    correlator:      Any = None,  oidc: Any = None,
 ) -> None:
     from . import __version__
     try:
@@ -1141,9 +1141,9 @@ async def start_dashboard(
 
     from .dashboard_graph_correlation import register_graph_correlation_routes
     register_graph_correlation_routes(router, store, kill_chain, _require_auth, _rate_check)
-
     from .dashboard_sigma import register_sigma_routes; register_sigma_routes(router, sigma, logger, _require_auth, _rate_check)
     from .dashboard_attack import register_attack_routes; register_attack_routes(router, detector, correlator, sigma, _require_auth, _rate_check)
+    from .dashboard_oidc import register_oidc_routes; register_oidc_routes(router, auth, oidc, logger, _get_client_ip)
     #  SIEM Connector API
 
     @router.get("/api/siem/status")

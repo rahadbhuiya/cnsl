@@ -108,6 +108,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD + GCP integration |
 | [`docs/sigma-rules.md`](docs/sigma-rules.md) | Sigma detection rule import |
 | [`docs/attack-mapping.md`](docs/attack-mapping.md) | MITRE ATT&CK technique tagging and coverage |
+| [`docs/oidc-sso.md`](docs/oidc-sso.md) | OIDC single sign-on setup |
 | [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
@@ -126,7 +127,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/huddle.md`](docs/huddle.md) | Incident huddle/collaboration |
 | [`docs/notifications.md`](docs/notifications.md) | Email/Slack/Telegram alerts |
 | [`docs/changelog.md`](docs/changelog.md) | Version history |
-| [`docs/`](docs/) | Browse all 29 guides |
+| [`docs/`](docs/) | Browse all 30 guides |
 
 ---
 

@@ -4,6 +4,36 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.22 -- OIDC single sign-on
+
+The dashboard can now authenticate users via an external identity provider (Okta, Azure AD/Entra ID, Google Workspace, Keycloak, Auth0, ...) using OIDC, Authorization Code flow with PKCE -- in addition to, not a replacement for, the existing local username/password + TOTP login.
+
+**Scope: OIDC only, not SAML.** SAML is XML-based and needs XML digital signature verification -- a meaningfully larger and riskier attack surface than an OIDC client -- and every mainstream identity provider supports OIDC, so SAML is left out rather than rushed.
+
+**New: `cnsl/oidc.py`**
+- Full Authorization Code + PKCE (S256) flow: discovery document + JWKS fetch (cached, auto-refreshed on an unrecognized `kid` in case the IdP rotated keys), state generation with a 10-minute single-use TTL, RS256 ID token signature verification via PyJWT's `crypto` extra (same dependency already used by the GCP cloud identity connector, for the same reason -- RSA verification isn't hand-rolled).
+- Claim-based role mapping (`role_claim` + `role_mapping` config) -- SSO users' roles are re-derived from the IdP on every login, never cached stale.
+
+**Wired into auth**
+- `AuthManager.issue_token_for_sso_user()` (`cnsl/auth.py`): mints an ordinary CNSL session JWT for an SSO-authenticated user. From that point on, an SSO session is indistinguishable from a password session -- the dashboard and its API never see or trust the IdP's own tokens, so every existing role-based permission check keeps working unchanged.
+- New `cnsl/dashboard_oidc.py` (split out to keep `dashboard.py` under its line-count budget): `GET /auth/oidc/login`, `GET /auth/oidc/callback`, `GET /api/oidc/status`.
+- Login page: a "Login with SSO" button, shown only when `/api/oidc/status` reports SSO enabled.
+
+**Config**
+- New `oidc.*` config, validated in `validator.py` (required-fields check, `https://` warnings for `issuer`/`redirect_uri`, role-mapping shape check, missing-`pyjwt[crypto]` warning).
+- New `oidc` extra in `pyproject.toml`/`requirements.txt`.
+
+**Docs**
+- New `docs/oidc-sso.md`: flow explanation, config reference, provider setup notes for Okta/Azure AD/Google Workspace/Keycloak, security notes, troubleshooting.
+- `docs/features.md`, `README.md`, `cnsl/auth.py`/`cnsl/__init__.py` docstrings updated.
+
+**Tests**
+- New `tests/test_oidc.py`: 41 tests -- PKCE generation, state single-use/expiry, a full mocked end-to-end flow (discovery -> token exchange -> JWKS -> ID token verification) using a real generated RSA keypair to sign test tokens, wrong-audience/wrong-issuer/tampered-signature/expired-token rejection, key-rotation (unrecognized `kid`) handling, role mapping, and dashboard route tests (aiohttp TestClient) for the login/callback/status endpoints.
+- 1166 tests passing (1125 existing + 41 new).
+- Version bumped to 3.4.22 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.21 -- MITRE ATT&CK technique mapping
 
 CNSL's rules now say *which ATT&CK technique* they correspond to, and the dashboard can report aggregate coverage. This is a tagging/reporting layer, not a new detector -- it doesn't change what CNSL detects, only how that detection is labeled and summarized.

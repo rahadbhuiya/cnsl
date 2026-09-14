@@ -92,6 +92,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Sigma rule import
     _validate_sigma(cfg.get("sigma", {}), issues)
 
+    # OIDC SSO
+    _validate_oidc(cfg.get("oidc", {}), issues)
+
     # SIEM connectors
     _validate_siem(cfg.get("siem", {}), issues)
 
@@ -291,6 +294,70 @@ def _validate_auth(auth: Any, issues: List) -> None:
     sto = auth.get("session_timeout_minutes")
     if sto is not None:
         v.is_positive_int("session_timeout_minutes", max_val=10080)  # 1 week
+
+
+def _validate_oidc(oidc: Any, issues: List) -> None:
+    if not oidc or not isinstance(oidc, dict):
+        return
+    if not oidc.get("enabled"):
+        return
+
+    for field in ("issuer", "client_id", "client_secret", "redirect_uri"):
+        if not oidc.get(field):
+            issues.append(ValidationError(
+                f"oidc.{field}", "required when oidc.enabled=true",
+            ))
+
+    issuer = oidc.get("issuer", "")
+    if issuer and not issuer.startswith("https://"):
+        issues.append(ValidationError(
+            "oidc.issuer",
+            "should be an https:// URL -- most identity providers refuse "
+            "OIDC discovery over plain http",
+            level="warning",
+        ))
+
+    redirect_uri = oidc.get("redirect_uri", "")
+    if redirect_uri and not redirect_uri.startswith("https://"):
+        issues.append(ValidationError(
+            "oidc.redirect_uri",
+            "should be an https:// URL -- most identity providers refuse "
+            "to redirect to a plain http callback",
+            level="warning",
+        ))
+
+    mapping = oidc.get("role_mapping", {})
+    if mapping and not isinstance(mapping, dict):
+        issues.append(ValidationError(
+            "oidc.role_mapping", "must be a mapping of claim-value -> CNSL role",
+        ))
+    elif isinstance(mapping, dict):
+        valid_roles = {"admin", "analyst", "viewer"}
+        for claim_value, role in mapping.items():
+            if role not in valid_roles:
+                issues.append(ValidationError(
+                    f"oidc.role_mapping.{claim_value}",
+                    f"maps to unknown role {role!r} -- expected one of {sorted(valid_roles)}",
+                ))
+
+    default_role = oidc.get("default_role", "viewer")
+    if default_role not in ("admin", "analyst", "viewer"):
+        issues.append(ValidationError(
+            "oidc.default_role",
+            f"unknown role {default_role!r} -- expected admin/analyst/viewer",
+        ))
+
+    if oidc.get("enabled"):
+        try:
+            import jwt as _pyjwt  # noqa: F401
+            from jwt.algorithms import RSAAlgorithm  # noqa: F401
+        except ImportError:
+            issues.append(ValidationError(
+                "oidc.enabled",
+                'oidc.enabled=true requires PyJWT with its crypto extra: '
+                'pip install "pyjwt[crypto]"',
+                level="warning",
+            ))
 
 
 def _validate_dashboard(dash: Any, issues: List) -> None:

@@ -94,6 +94,10 @@ _LOGIN_HTML = """<!DOCTYPE html>
     <label>Password</label>
     <input type="password" id="pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button onclick="doLogin()">Sign in</button>
+    <div id="sso-divider" style="display:none;text-align:center;color:var(--muted);font-size:12px;margin:14px 0">or</div>
+    <a id="sso-btn" href="/auth/oidc/login" style="display:none;text-decoration:none">
+      <button type="button" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">Login with SSO</button>
+    </a>
   </div>
 
   <!-- Step 2: TOTP code (shown only when 2FA is required) -->
@@ -160,6 +164,7 @@ function resetLogin(){
 }
 
 fetch('/api/auth-info').then(r=>r.json()).then(d=>{if(d.default_password)document.getElementById('warn').style.display='block';}).catch(()=>{});
+fetch('/api/oidc/status').then(r=>r.json()).then(d=>{if(d.enabled){document.getElementById('sso-divider').style.display='block';document.getElementById('sso-btn').style.display='block';}}).catch(()=>{});
 </script>
 </body>
 </html>"""

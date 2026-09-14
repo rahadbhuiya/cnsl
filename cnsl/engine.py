@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 from .assets          import AssetInventory
 from .auth            import AuthManager
+from .oidc             import OIDCManager
 from .grafana         import export_dashboard
 from .honeypot        import ActiveResponse
 from .rbac            import RBAC
@@ -207,6 +208,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         await ensure_ipset(ipset_name, logger)
 
     auth = AuthManager(cfg)
+    oidc = OIDCManager(cfg)
 
     # Optional modules
     geoip    = GeoIP(cfg) if not (getattr(args, "no_geoip", False) or cfg.get("_no_geoip")) else None
@@ -519,7 +521,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             queue=queue,
                             redis_sync=redis_sync,
                             audit_log=audit_log,
-                            correlator=correlator),
+                            correlator=correlator,
+                            oidc=oidc),
             name="dashboard",
         ))
 
