@@ -107,7 +107,7 @@ async def start_dashboard(
     queue:           Any = None,
     redis_sync:      Any = None,
     audit_log:       Any = None,
-    correlator:      Any = None,  oidc: Any = None,
+    correlator:      Any = None,  oidc: Any = None,  source_health: Any = None,
 ) -> None:
     from . import __version__
     try:
@@ -1133,19 +1133,19 @@ async def start_dashboard(
             return web.json_response({"error": f"No federation record for {ip}"}, status=404)
         return web.json_response(record.to_dict())
 
-    from .dashboard_hub import register_hub_routes
-    register_hub_routes(router, redis_sync, federation, _require_auth, _rate_check)
-
-    from .dashboard_fingerprint import register_fingerprint_routes
-    register_fingerprint_routes(router, store, _require_auth, _rate_check)
-
-    from .dashboard_graph_correlation import register_graph_correlation_routes
-    register_graph_correlation_routes(router, store, kill_chain, _require_auth, _rate_check)
-    from .dashboard_sigma import register_sigma_routes; register_sigma_routes(router, sigma, logger, _require_auth, _rate_check)
-    from .dashboard_attack import register_attack_routes; register_attack_routes(router, detector, correlator, sigma, _require_auth, _rate_check)
-    from .dashboard_oidc import register_oidc_routes; register_oidc_routes(router, auth, oidc, logger, _get_client_ip)
+    # Route registration for every split-out dashboard_*.py module (kept
+    # under this file's own line-count budget) -- one line per module.
+    import importlib; _reg = lambda m, f, a: getattr(importlib.import_module(f".{m}", __package__), f)(*a)
+    for _m, _f, _a in (
+        ("dashboard_hub", "register_hub_routes", (router, redis_sync, federation, _require_auth, _rate_check)),
+        ("dashboard_fingerprint", "register_fingerprint_routes", (router, store, _require_auth, _rate_check)),
+        ("dashboard_graph_correlation", "register_graph_correlation_routes", (router, store, kill_chain, _require_auth, _rate_check)),
+        ("dashboard_sigma", "register_sigma_routes", (router, sigma, logger, _require_auth, _rate_check)),
+        ("dashboard_attack", "register_attack_routes", (router, detector, correlator, sigma, _require_auth, _rate_check)),
+        ("dashboard_oidc", "register_oidc_routes", (router, auth, oidc, logger, _get_client_ip)),
+        ("dashboard_source_health", "register_source_health_routes", (router, source_health, _require_auth, _rate_check)),
+    ): _reg(_m, _f, _a)
     #  SIEM Connector API
-
     @router.get("/api/siem/status")
     async def api_siem_status(req: web.Request) -> web.Response:
         """Return health and queue stats for all SIEM connectors."""

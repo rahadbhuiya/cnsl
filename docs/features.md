@@ -82,6 +82,7 @@
 | Access | JWT authentication + Role-Based Access Control (4 roles) |
 | Access | 2FA (TOTP) support |
 | Access | OIDC SSO (Authorization Code + PKCE) -- Okta/Azure AD/Google Workspace/Keycloak, with claim-based role mapping |
+| Reliability | Log source health monitoring -- detects a stalled/silent log tailer (nginx/apache/mysql/ufw/syslog/Zeek/OT), `/api/source-health` |
 | Notifications | Telegram, Discord, Slack, Email, custom webhook |
 | Persistence | SQLite incident history, FIM baseline, block records, kill chain, trust scores |
 | Multi-tenant | Tenant isolation with per-tenant config overrides |
@@ -150,7 +151,7 @@ python simulate.py live        # interactive mode
 ## Test Coverage
 
 ```bash
-python -m pytest tests/               # runs 1166 tests, split across tests/test_*.py by domain
+python -m pytest tests/               # runs 1195 tests, split across tests/test_*.py by domain
 ```
 
 Tests cover: config loading, event parsing, detection thresholds, correlation rules, blocking, UEBA, cases, rate limiting, kill chain, pattern learning, SIEM connectors, federation, cloud identity, zero-trust, ML tuning UI, graph tab presence, and all dashboard API signatures.

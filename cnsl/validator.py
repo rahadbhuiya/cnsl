@@ -95,6 +95,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # OIDC SSO
     _validate_oidc(cfg.get("oidc", {}), issues)
 
+    # Log source health monitoring
+    _validate_source_health(cfg.get("source_health", {}), issues)
+
     # SIEM connectors
     _validate_siem(cfg.get("siem", {}), issues)
 
@@ -518,6 +521,41 @@ def _validate_sigma(sig: Any, issues: List) -> None:
                 "sigma.enabled=true requires PyYAML: pip install PyYAML",
                 level="warning",
             ))
+
+
+def _validate_source_health(sh: Any, issues: List) -> None:
+    if not sh or not isinstance(sh, dict):
+        return
+    v = _V(sh, issues, "source_health")
+    v.is_bool("enabled")
+    v.is_positive_int("check_interval_sec", max_val=3600)
+    v.is_positive_int("default_silence_threshold_sec", max_val=86400)
+
+    thresholds = sh.get("per_source_thresholds", {})
+    if thresholds and not isinstance(thresholds, dict):
+        issues.append(ValidationError(
+            "source_health.per_source_thresholds",
+            "must be a mapping of source name -> threshold seconds",
+        ))
+    elif isinstance(thresholds, dict):
+        for source, seconds in thresholds.items():
+            if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds <= 0:
+                issues.append(ValidationError(
+                    f"source_health.per_source_thresholds.{source}",
+                    f"must be a positive integer (got {seconds!r})",
+                ))
+
+    check_interval = sh.get("check_interval_sec")
+    default_threshold = sh.get("default_silence_threshold_sec")
+    if (isinstance(check_interval, int) and isinstance(default_threshold, int)
+            and check_interval > default_threshold):
+        issues.append(ValidationError(
+            "source_health.check_interval_sec",
+            "should not exceed default_silence_threshold_sec -- a source "
+            "could go silent and recover between checks without ever "
+            "being flagged",
+            level="warning",
+        ))
 
 
 def _validate_siem(siem: Any, issues: List) -> None:

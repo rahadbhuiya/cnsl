@@ -22,7 +22,7 @@ New log sources can be added by implementing parse_<name>(line) -> Event | None.
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from .models import Event, now
 from .parsers import _clean_ip
@@ -265,6 +265,7 @@ async def tail_log_file(
     parser,
     logger:   JsonLogger,
     source:   str,
+    health_tracker: Any = None,
 ) -> None:
     """
     Generic async log file tailer.
@@ -277,11 +278,19 @@ async def tail_log_file(
         available (minimal containers, Alpine, etc.). Detects copytruncate
         rotation by comparing the current file inode with the one at open
         time, and reopen when they differ.
+
+    health_tracker (see cnsl/source_health.py), if given, is registered
+    once and gets record_activity(source) on every line read -- whether
+    or not the line parsed into an Event -- so "is this pipe still
+    flowing" can be answered independently of "did we understand what
+    came through it."
     """
     import os
     import shutil
 
     await logger.log("source_start", {"source": source, "path": path})
+    if health_tracker is not None:
+        health_tracker.register_source(source)
 
     _file_warned = False
     _use_tail_f  = shutil.which("tail") is not None
@@ -315,6 +324,8 @@ async def tail_log_file(
                         text = line.decode(errors="ignore").strip()
                         if not text:
                             continue
+                        if health_tracker is not None:
+                            health_tracker.record_activity(source)
                         ev = parser(text)
                         if ev:
                             await queue.put(ev)
@@ -334,6 +345,8 @@ async def tail_log_file(
                         if line:
                             text = line.strip()
                             if text:
+                                if health_tracker is not None:
+                                    health_tracker.record_activity(source)
                                 ev = parser(text)
                                 if ev:
                                     await queue.put(ev)
@@ -355,7 +368,7 @@ async def tail_log_file(
         await asyncio.sleep(_RETRY_DELAY)
 
 
-def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
+def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger, health_tracker: Any = None) -> list:
     """
     Build list of asyncio tasks based on configured log sources.
 
@@ -367,6 +380,10 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
         "ufw":    "/var/log/ufw.log",
         "syslog": "/var/log/syslog"
       }
+
+    health_tracker (see cnsl/source_health.py), if given, is passed to
+    every tail_log_file() task started here (log_sources, Zeek, OT) so
+    each source's activity is tracked for silent-source detection.
     """
     import asyncio as _asyncio
 
@@ -390,7 +407,7 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
             continue
         tasks.append(
             _asyncio.create_task(
-                tail_log_file(queue, path, parser, logger, name),
+                tail_log_file(queue, path, parser, logger, name, health_tracker),
                 name=f"logsrc_{name}",
             )
         )
@@ -409,7 +426,7 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
             zp = make_zeek_parser(log_type, cfg)
             tasks.append(
                 _asyncio.create_task(
-                    tail_log_file(queue, log_path, zp.parse, logger, f"zeek_{log_type}"),
+                    tail_log_file(queue, log_path, zp.parse, logger, f"zeek_{log_type}", health_tracker),
                     name=f"zeek_{log_type}",
                 )
             )
@@ -428,7 +445,7 @@ def get_log_tasks(cfg: dict, queue: asyncio.Queue, logger: JsonLogger) -> list:
                 continue
             tasks.append(
                 _asyncio.create_task(
-                    tail_log_file(queue, path, parser, logger, f"ot_{protocol}"),
+                    tail_log_file(queue, path, parser, logger, f"ot_{protocol}", health_tracker),
                     name=f"ot_{protocol}",
                 )
             )

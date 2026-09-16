@@ -369,6 +369,12 @@
     "enabled": false,
     "rules_dir": ""
   },
+  "source_health": {
+    "enabled": true,
+    "check_interval_sec": 60,
+    "default_silence_threshold_sec": 900,
+    "per_source_thresholds": {}
+  },
   "siem": {
     "splunk": {
       "enabled": false,

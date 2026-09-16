@@ -4,6 +4,58 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.24 -- Log source health monitoring
+
+CNSL's detectors are only as good as the log sources feeding them. A filebeat agent that silently stops, a log rotation that breaks tailing, a Wazuh forwarder that loses its syslog connection -- any of these left CNSL running and reporting "no incidents" while actually just not seeing anything, with nothing to notice the difference. This closes that gap for file-tailed sources.
+
+**New: `cnsl/source_health.py`**
+- `SourceHealthTracker`: every `tail_log_file()` call now registers its source and records activity on every line read (whether or not it parsed into an `Event` -- "is the pipe flowing" is a different question from "did we understand every line").
+- A background loop checks each registered source's time-since-last-activity against a silence threshold (per-source override or a default) on a configurable interval, logging `source_silent` / `source_recovered` transitions exactly once each rather than repeating every check.
+- Scope: covers `log_sources` (nginx/apache/mysql/ufw/syslog/wazuh-file), Zeek logs, and OT/ICS log sources -- all the sources started via `tail_log_file()`. Does not cover `cnsl/syslog_receiver.py`'s UDP/TCP listeners (a different ingestion model where "no traffic" isn't distinguishable from "no attacker activity") or the cloud identity pollers (which already have their own per-connector `status()`/`last_error`).
+
+**Wired into `cnsl/log_sources.py`**
+- `tail_log_file()` and `get_log_tasks()` both take an optional `health_tracker` param (defaults to `None`, fully backward compatible with any existing caller).
+
+**Dashboard / API**
+- New `cnsl/dashboard_source_health.py`: `GET /api/source-health`.
+
+**Also fixed: `dashboard.py`'s recurring line-count-budget pressure**
+
+Every one of the last several features (Sigma, ATT&CK, OIDC, and now this one) has had to fight the same enforced 2000-line budget on `dashboard.py` by adding one more two-line `from .dashboard_X import ...` / `register_X_routes(...)` pair. Replaced all seven of these with a single data-driven loop -- adding a new split-out dashboard module going forward costs one line (one tuple entry), not two. Purely structural, no behavior change; verified the full dashboard still imports and every existing dashboard-route test still passes.
+
+**Config**
+- New `source_health.*` config, validated in `validator.py` (type/range checks, plus a warning if `check_interval_sec` exceeds `default_silence_threshold_sec`, which would let a source go silent and recover between checks without ever being flagged).
+
+**Docs**
+- New `docs/source-health.md`: scope, config reference, API shape, guidance on choosing per-source thresholds for naturally low-volume sources.
+- `docs/features.md`, `README.md`, `cnsl/__init__.py` docstring updated.
+
+**Tests**
+- New `tests/test_source_health.py`: 29 tests -- tracker config/thresholds, registration semantics (a freshly-registered source is healthy, not immediately silent), status snapshot shape, transition logic (fires once, recovers once, independent per source, respects per-source thresholds), the background loop, `log_sources.py` wiring (including a backward-compatibility test with no tracker at all), the dashboard route, and validator checks.
+- 1195 tests passing (1166 existing + 29 new).
+- Version bumped to 3.4.24 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
+### v3.4.23 -- fix: `full`/`dev` extras never installed `cryptography`, so RSA-dependent tests silently skipped
+
+Running v3.4.22's new OIDC test suite locally (`pytest tests/test_oidc.py`) turned up 10 failures: `ImportError: cannot import name 'RSAAlgorithm' from 'jwt.algorithms'`. The root cause was two separate gaps, both fixed here.
+
+**`tests/test_oidc.py`**
+- `_make_idp()` (the test helper that generates a real RSA keypair and signs a fake ID token) imported `jwt.algorithms.RSAAlgorithm` unconditionally. `RSAAlgorithm` only exists when PyJWT's `cryptography` dependency is installed -- in an environment with plain `PyJWT` (no `[crypto]` extra), the class simply isn't defined, so the import fails outright rather than raising something catchable per-test.
+- Fixed with `pytest.importorskip("cryptography", reason=...)` at the top of `_make_idp()` -- the 10 tests that need a real keypair now **skip** cleanly with a clear reason in an environment missing the extra, instead of failing. The other 31 tests (PKCE, state management, role mapping, config validation, disabled/missing-config paths) need no crypto and are unaffected either way.
+
+**`pyproject.toml`**
+- The deeper issue: `full` and `dev` extras pinned plain `PyJWT>=2.8` instead of `PyJWT[crypto]>=2.8` (only the narrower `gcp` and `oidc` extras had the crypto variant). Since CI installs test dependencies via `pip install -e ".[dev]"`, this meant **CI's own environment never had `cryptography` installed either** -- all 10 RSA-dependent OIDC tests would have silently skipped in CI, and retroactively, the GCP cloud identity connector's RS256 service-account signing path (`cnsl/cloud_identity.py`, shipped in v3.4.19) had never actually been exercised by the test suite running in CI, only by whatever happened to be in a given developer's local environment.
+- Both `full` and `dev` now specify `PyJWT[crypto]>=2.8`. Verified locally: `pip install -e ".[dev]"` now pulls in `cryptography`, and all 41 `test_oidc.py` tests pass with none skipped.
+
+**Tests**
+- No new tests -- this release fixes test-environment coverage of existing tests (v3.4.22's `test_oidc.py`) rather than adding new ones.
+- 1166 tests passing, 0 skipped (previously 10 of these would skip/fail depending on the environment's `cryptography` availability).
+- Version bumped to 3.4.23 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.22 -- OIDC single sign-on
 
 The dashboard can now authenticate users via an external identity provider (Okta, Azure AD/Entra ID, Google Workspace, Keycloak, Auth0, ...) using OIDC, Authorization Code flow with PKCE -- in addition to, not a replacement for, the existing local username/password + TOTP login.

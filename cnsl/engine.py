@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 from .assets          import AssetInventory
 from .auth            import AuthManager
 from .oidc             import OIDCManager
+from .source_health    import SourceHealthTracker
 from .grafana         import export_dashboard
 from .honeypot        import ActiveResponse
 from .rbac            import RBAC
@@ -428,7 +429,10 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         await logger.log("ml_started", ml_detector.status())
 
     # Multi-log sources (nginx, apache, mysql, ufw, syslog)
-    tasks.extend(get_log_tasks(cfg, queue, logger))
+    source_health = SourceHealthTracker(cfg)
+    tasks.extend(get_log_tasks(cfg, queue, logger, health_tracker=source_health))
+    if source_health.enabled:
+        tasks.append(asyncio.create_task(source_health.run_health_loop(logger), name="source_health"))
 
     # Generic network syslog receiver (UDP+TCP, RFC 3164/5424) -- lets
     # remote devices, and Wazuh/OSSEC managers configured for syslog
@@ -522,7 +526,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             redis_sync=redis_sync,
                             audit_log=audit_log,
                             correlator=correlator,
-                            oidc=oidc),
+                            oidc=oidc,
+                            source_health=source_health),
             name="dashboard",
         ))
 

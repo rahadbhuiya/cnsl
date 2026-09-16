@@ -10,14 +10,15 @@ Beyond core detection: multi-node federation with a unified hub view,
 attacker fingerprinting and graph-based campaign correlation, opt-in
 predictive blocking, zero-trust trust scoring, UEBA, multi-tenant RBAC,
 cloud identity monitoring (AWS/Azure/GCP), Sigma rule import, MITRE
-ATT&CK technique mapping, OIDC SSO, STIX 2.1 export + built-in TAXII
-2.1 server, Wazuh/OSSEC and Kafka/Redis integration, Grafana/Prometheus
-metrics, PostgreSQL migration, compliance reporting (SOC2/ISO27001/PCI-DSS),
-backup/restore, and a Kubernetes Helm chart.
+ATT&CK technique mapping, OIDC SSO, log source health monitoring,
+STIX 2.1 export + built-in TAXII 2.1 server, Wazuh/OSSEC and
+Kafka/Redis integration, Grafana/Prometheus metrics, PostgreSQL
+migration, compliance reporting (SOC2/ISO27001/PCI-DSS), backup/restore,
+and a Kubernetes Helm chart.
 
 See docs/features.md for the full capability list.
 """
 
-__version__ = "3.4.22"
+__version__ = "3.4.24"
 __author__  = "Rahad Bhuiya"
 __license__ = "MIT"
