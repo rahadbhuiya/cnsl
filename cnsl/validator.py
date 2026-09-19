@@ -98,6 +98,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Log source health monitoring
     _validate_source_health(cfg.get("source_health", {}), issues)
 
+    # Data retention
+    _validate_retention(cfg.get("retention", {}), issues)
+
     # SIEM connectors
     _validate_siem(cfg.get("siem", {}), issues)
 
@@ -555,6 +558,51 @@ def _validate_source_health(sh: Any, issues: List) -> None:
             "could go silent and recover between checks without ever "
             "being flagged",
             level="warning",
+        ))
+
+
+def _validate_retention(r: Any, issues: List) -> None:
+    if not r or not isinstance(r, dict):
+        return
+    v = _V(r, issues, "retention")
+    v.is_bool("enabled")
+    v.is_bool("archive_before_delete")
+    v.is_positive_int("run_interval_hours", max_val=168)  # 1 week
+
+    for field in ("incidents_max_age_days", "audit_log_max_age_days"):
+        val = r.get(field)
+        if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val < 0):
+            issues.append(ValidationError(
+                f"retention.{field}", f"must be a non-negative integer (got {val!r})",
+            ))
+
+    if not r.get("enabled"):
+        return
+
+    max_age = r.get("incidents_max_age_days", 0)
+    if isinstance(max_age, int) and max_age > 0 and max_age < 7:
+        issues.append(ValidationError(
+            "retention.incidents_max_age_days",
+            f"{max_age} days is very aggressive -- incidents that recent "
+            "may still be relevant to an open investigation",
+            level="warning",
+        ))
+
+    audit_days = r.get("audit_log_max_age_days", 0)
+    if isinstance(audit_days, int) and audit_days > 0 and audit_days < 365:
+        issues.append(ValidationError(
+            "retention.audit_log_max_age_days",
+            f"{audit_days} days is below the 1-year minimum most "
+            "compliance frameworks (SOC2, ISO27001, PCI-DSS) require for "
+            "audit trail retention -- confirm this meets your framework's "
+            "requirement before enabling",
+            level="warning",
+        ))
+
+    if r.get("archive_before_delete") and not r.get("archive_dir"):
+        issues.append(ValidationError(
+            "retention.archive_dir",
+            "required when retention.archive_before_delete is true",
         ))
 
 

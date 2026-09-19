@@ -4,6 +4,38 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.25 -- Data retention and archival
+
+`cnsl/store.py`'s `incidents` table and `cnsl/audit.py`'s `audit_log` table accumulated rows forever -- neither module ever deleted anything on its own. On a long-running deployment that meant unbounded disk growth and eventually degraded query performance on tables with no natural cap. This adds a time-based purge with optional archival.
+
+**Disabled by default** -- nothing is ever deleted unless explicitly turned on.
+
+**New: `cnsl/retention.py`**
+- `RetentionPolicy`: purges `incidents` older than `incidents_max_age_days`, and -- only if explicitly configured -- `audit_log` rows older than `audit_log_max_age_days`. Runs on a configurable background interval, or on demand.
+- Optional archival before delete: purged rows export to a gzip-compressed JSONL file (`<table>_<cutoff-date>_<count>.jsonl.gz`) under `archive_dir`. This is a flat-file export for cold storage, not a restorable CNSL backup -- `cnsl/backup.py` remains the backup/restore path.
+- Scope is deliberately narrow. `cases` is not purged (an open investigation's age isn't a signal it's safe to delete, and cases store their own denormalized copy of the incident's fields, so purging the originating incident doesn't break them). `blocks` isn't either (already self-cleans on unblock via `cnsl/blocker.py`). Kill chains, UEBA profiles, and pattern-learner suggestions each already have their own size-based caps -- a different, already-solved problem from unbounded *time* growth.
+
+**Compliance safety**
+- `audit_log_max_age_days` defaults to `0` (never purge) specifically so that enabling incident retention doesn't silently start deleting audit records. Audit purging is a separate deliberate opt-in, and the validator warns if it's set below 365 days -- most compliance frameworks (SOC2, ISO27001, PCI-DSS) that `cnsl/compliance.py` reports against require at least a year of audit trail.
+
+**Dashboard / API**
+- New `cnsl/dashboard_retention.py`: `GET /api/retention/status` (config + last run's result) and `POST /api/retention/run` (manual pass, requires `config:write`).
+
+**Config**
+- New `retention.*` config, validated in `validator.py`: type/range checks, an error if `archive_before_delete` is on without an `archive_dir`, and warnings for aggressively short incident (<7 days) or audit (<365 days) retention.
+
+**Docs**
+- New `docs/retention.md`: scope table (what is and isn't purged, and why), the compliance warning, archive format, API, and guidance on choosing a retention period.
+- `docs/features.md`, `README.md`, `cnsl/__init__.py` docstring updated.
+
+**Tests**
+- New `tests/test_retention.py`: 29 tests -- purge/archive behavior against a real temp SQLite `Store` (old-vs-recent selectivity, idempotent second runs, accurate purge counts with archiving off, archive file contents), the audit-log opt-in defaults, the background loop's disabled no-op, all validator paths, and the dashboard routes including a permission-denied case.
+- Three bugs caught and fixed while building this: `Store.available` is a `@property` not a method (the first draft called it and crashed); the background-loop task was initially registered before `tasks` existed in `engine.py` (would have been a `NameError` at startup); and the manual-run route used a `required_role` kwarg `_require_auth` doesn't have, instead of the codebase's actual `rbac.require(role, permission)` pattern.
+- 1224 tests passing (1195 existing + 29 new).
+- Version bumped to 3.4.25 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.24 -- Log source health monitoring
 
 CNSL's detectors are only as good as the log sources feeding them. A filebeat agent that silently stops, a log rotation that breaks tailing, a Wazuh forwarder that loses its syslog connection -- any of these left CNSL running and reporting "no incidents" while actually just not seeing anything, with nothing to notice the difference. This closes that gap for file-tailed sources.

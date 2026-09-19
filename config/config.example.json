@@ -375,6 +375,14 @@
     "default_silence_threshold_sec": 900,
     "per_source_thresholds": {}
   },
+  "retention": {
+    "enabled": false,
+    "run_interval_hours": 24,
+    "incidents_max_age_days": 90,
+    "audit_log_max_age_days": 0,
+    "archive_before_delete": true,
+    "archive_dir": "/var/lib/cnsl/archives"
+  },
   "siem": {
     "splunk": {
       "enabled": false,

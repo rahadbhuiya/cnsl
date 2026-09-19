@@ -13,6 +13,7 @@ from .assets          import AssetInventory
 from .auth            import AuthManager
 from .oidc             import OIDCManager
 from .source_health    import SourceHealthTracker
+from .retention         import RetentionPolicy
 from .grafana         import export_dashboard
 from .honeypot        import ActiveResponse
 from .rbac            import RBAC
@@ -271,6 +272,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if store.available:
         await audit_log.init()
 
+    # Data retention -- purge/archive old incidents (and, opt-in, audit
+    # log rows) so the store doesn't grow unbounded. See cnsl/retention.py.
+    # Background loop task is started below, once `tasks` exists.
+    retention = RetentionPolicy(cfg)
+
     # Community threat feed
     threat_feed = ThreatFeed(cfg)
     if threat_feed.enabled:
@@ -433,6 +439,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     tasks.extend(get_log_tasks(cfg, queue, logger, health_tracker=source_health))
     if source_health.enabled:
         tasks.append(asyncio.create_task(source_health.run_health_loop(logger), name="source_health"))
+    if retention.enabled and store.available:
+        tasks.append(asyncio.create_task(retention.run_loop(store, audit_log, logger), name="retention"))
 
     # Generic network syslog receiver (UDP+TCP, RFC 3164/5424) -- lets
     # remote devices, and Wazuh/OSSEC managers configured for syslog
@@ -527,7 +535,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             audit_log=audit_log,
                             correlator=correlator,
                             oidc=oidc,
-                            source_health=source_health),
+                            source_health=source_health,
+                            retention=retention),
             name="dashboard",
         ))
 
