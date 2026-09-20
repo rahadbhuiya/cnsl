@@ -317,6 +317,42 @@ class CaseManager:
         await self._db.commit()
         return None
 
+    async def set_severity(
+        self,
+        case_id: int,
+        new_severity: str,
+        actor: str = "system",
+    ) -> Optional[str]:
+        """
+        Change a case's severity. Returns None on success, error on failure.
+        Appends a system note recording the change, same as a status
+        transition -- used by SLA escalation (cnsl/case_sla.py) and
+        available for manual re-triage.
+        """
+        valid = {"LOW", "MEDIUM", "HIGH"}
+        if new_severity not in valid:
+            return f"Invalid severity '{new_severity}'. Must be one of: {', '.join(sorted(valid))}"
+        if not self.available or self._db is None:
+            return "Store unavailable."
+        case = await self.get(case_id)
+        if not case:
+            return f"Case #{case_id} not found."
+        old = case.get("severity", "MEDIUM")
+        if old == new_severity:
+            return None   # no-op
+        now = time.time()
+        await self._db.execute(
+            "UPDATE cases SET severity=?, updated_at=? WHERE id=?",
+            (new_severity, now, case_id),
+        )
+        await self._append_note(
+            case_id,
+            author=f"system ({actor})",
+            body=f"Severity changed: {old} → {new_severity}",
+        )
+        await self._db.commit()
+        return None
+
     async def add_note(
         self, case_id: int, author: str, body: str
     ) -> Optional[str]:

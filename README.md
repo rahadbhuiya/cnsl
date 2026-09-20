@@ -111,6 +111,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/oidc-sso.md`](docs/oidc-sso.md) | OIDC single sign-on setup |
 | [`docs/source-health.md`](docs/source-health.md) | Log source silence detection |
 | [`docs/retention.md`](docs/retention.md) | Data retention and archival |
+| [`docs/case-sla.md`](docs/case-sla.md) | Case SLA tracking and escalation |
 | [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
 | [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
 | [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
@@ -129,7 +130,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 | [`docs/huddle.md`](docs/huddle.md) | Incident huddle/collaboration |
 | [`docs/notifications.md`](docs/notifications.md) | Email/Slack/Telegram alerts |
 | [`docs/changelog.md`](docs/changelog.md) | Version history |
-| [`docs/`](docs/) | Browse all 32 guides |
+| [`docs/`](docs/) | Browse all 33 guides |
 
 ---
 

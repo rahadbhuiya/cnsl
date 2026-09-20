@@ -4,6 +4,38 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.26 -- Case SLA tracking and escalation
+
+`cnsl/cases.py` tracks a case's status, assignee, and notes, but nothing watched how *long* a case sat in a given state -- a HIGH-severity case auto-created at 2am and never picked up looked exactly like one opened a minute ago. This adds per-severity time targets and flags cases that breach them.
+
+**Disabled by default.**
+
+**New: `cnsl/case_sla.py`**
+- Two independent clocks per case: response (did anyone pick it up -- assigned, or moved off `open`?) and resolution (did anyone finish it -- reached `closed`/`false_positive`?), each against a configurable per-severity target. Both stop once a case resolves; reported separately rather than collapsed into one boolean, since they point at different workflow gaps (staffing/triage vs. stuck cases).
+- `evaluate_case()` is a pure function (no I/O) so breach logic is directly testable without a database.
+- Escalation on breach appends a `[SLA BREACH]` system note and, optionally, bumps severity one step (`LOW` -> `MEDIUM` -> `HIGH`, terminal at `HIGH`). Deliberately never changes status or assignee -- a timer expiring doesn't mean anyone actually investigated, and claiming otherwise would misrepresent the case history. Escalates at most once per case (detected via the existing note), so a case sitting breached for a week doesn't climb indefinitely or spam duplicate notes.
+
+**`cnsl/cases.py`**
+- New `CaseManager.set_severity()` (didn't exist before) -- mirrors `assign()`'s structure, appends an audit note recording the change. Used by escalation, and available for manual re-triage.
+
+**Dashboard / API**
+- New `cnsl/dashboard_case_sla.py`: `GET /api/case-sla/status`, `POST /api/case-sla/check` (manual pass, requires `config:write`).
+
+**Config**
+- New `case_sla.*` config, validated in `validator.py`: type/range checks, a warning if a severity's `response_minutes` exceeds its `resolution_minutes` (can't resolve before responding), and a warning for an unrecognized severity key.
+
+**Docs**
+- New `docs/case-sla.md`: the two-clock model, config reference, what escalation does and deliberately doesn't do, API, and guidance on setting realistic targets.
+- `docs/features.md`, `README.md`, `cnsl/__init__.py` docstring updated.
+
+**Tests**
+- New `tests/test_case_sla.py`: 42 tests -- pure breach-evaluation logic (every combination of assigned/unassigned, resolved/unresolved, per-severity targets), escalation against a real SQLite-backed `CaseManager` (note added, severity bumped, idempotent on a second check, HIGH-terminal case doesn't error), `set_severity()`, the background loop's disabled no-op, all validator paths, and the dashboard routes including a permission-denied case.
+- Two signature mismatches caught while building this: `CaseManager.set_severity` didn't exist at all, and `create_manual()` takes `created_by`, not `actor` -- both found via an end-to-end smoke test against a real store before the formal test suite was written.
+- 1266 tests passing (1224 existing + 42 new).
+- Version bumped to 3.4.26 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.25 -- Data retention and archival
 
 `cnsl/store.py`'s `incidents` table and `cnsl/audit.py`'s `audit_log` table accumulated rows forever -- neither module ever deleted anything on its own. On a long-running deployment that meant unbounded disk growth and eventually degraded query performance on tables with no natural cap. This adds a time-based purge with optional archival.

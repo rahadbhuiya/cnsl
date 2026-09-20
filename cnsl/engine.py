@@ -14,6 +14,7 @@ from .auth            import AuthManager
 from .oidc             import OIDCManager
 from .source_health    import SourceHealthTracker
 from .retention         import RetentionPolicy
+from .case_sla           import CaseSLA
 from .grafana         import export_dashboard
 from .honeypot        import ActiveResponse
 from .rbac            import RBAC
@@ -267,6 +268,10 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if store.available:
         await case_manager.init()
 
+    # Case SLA tracking and escalation -- see cnsl/case_sla.py.
+    # Background loop task is started below, once `tasks` exists.
+    case_sla = CaseSLA(cfg)
+
     # Compliance audit trail (manual block/unblock, secret rotation, etc.)
     audit_log = AuditLog(store)
     if store.available:
@@ -441,6 +446,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         tasks.append(asyncio.create_task(source_health.run_health_loop(logger), name="source_health"))
     if retention.enabled and store.available:
         tasks.append(asyncio.create_task(retention.run_loop(store, audit_log, logger), name="retention"))
+    if case_sla.enabled and store.available:
+        tasks.append(asyncio.create_task(case_sla.run_loop(case_manager, logger), name="case_sla"))
 
     # Generic network syslog receiver (UDP+TCP, RFC 3164/5424) -- lets
     # remote devices, and Wazuh/OSSEC managers configured for syslog
@@ -536,7 +543,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             correlator=correlator,
                             oidc=oidc,
                             source_health=source_health,
-                            retention=retention),
+                            retention=retention,
+                            case_sla=case_sla),
             name="dashboard",
         ))
 

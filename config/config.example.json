@@ -383,6 +383,18 @@
     "archive_before_delete": true,
     "archive_dir": "/var/lib/cnsl/archives"
   },
+  "case_sla": {
+    "enabled": false,
+    "check_interval_sec": 300,
+    "targets": {
+      "HIGH":   {"response_minutes": 30, "resolution_minutes": 240},
+      "MEDIUM": {"response_minutes": 240, "resolution_minutes": 1440},
+      "LOW":    {"response_minutes": 1440, "resolution_minutes": 10080}
+    },
+    "escalate_on_breach": true,
+    "bump_severity": true,
+    "notify_on_breach": false
+  },
   "siem": {
     "splunk": {
       "enabled": false,

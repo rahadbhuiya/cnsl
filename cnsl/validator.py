@@ -101,6 +101,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Data retention
     _validate_retention(cfg.get("retention", {}), issues)
 
+    # Case SLA tracking
+    _validate_case_sla(cfg.get("case_sla", {}), issues)
+
     # SIEM connectors
     _validate_siem(cfg.get("siem", {}), issues)
 
@@ -604,6 +607,57 @@ def _validate_retention(r: Any, issues: List) -> None:
             "retention.archive_dir",
             "required when retention.archive_before_delete is true",
         ))
+
+
+def _validate_case_sla(s: Any, issues: List) -> None:
+    if not s or not isinstance(s, dict):
+        return
+    v = _V(s, issues, "case_sla")
+    v.is_bool("enabled")
+    v.is_bool("escalate_on_breach")
+    v.is_bool("bump_severity")
+    v.is_bool("notify_on_breach")
+    v.is_positive_int("check_interval_sec", max_val=86400)
+
+    targets = s.get("targets", {})
+    if targets and not isinstance(targets, dict):
+        issues.append(ValidationError(
+            "case_sla.targets", "must be a mapping of severity -> {response_minutes, resolution_minutes}",
+        ))
+        return
+
+    valid_severities = {"LOW", "MEDIUM", "HIGH"}
+    for severity, target in (targets or {}).items():
+        if severity not in valid_severities:
+            issues.append(ValidationError(
+                f"case_sla.targets.{severity}",
+                f"unknown severity {severity!r} -- expected one of {sorted(valid_severities)}",
+                level="warning",
+            ))
+            continue
+        if not isinstance(target, dict):
+            issues.append(ValidationError(
+                f"case_sla.targets.{severity}",
+                "must be a mapping with response_minutes and resolution_minutes",
+            ))
+            continue
+        response = target.get("response_minutes")
+        resolution = target.get("resolution_minutes")
+        for field, val in (("response_minutes", response), ("resolution_minutes", resolution)):
+            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val <= 0):
+                issues.append(ValidationError(
+                    f"case_sla.targets.{severity}.{field}",
+                    f"must be a positive integer (got {val!r})",
+                ))
+        if (isinstance(response, int) and isinstance(resolution, int)
+                and response > resolution):
+            issues.append(ValidationError(
+                f"case_sla.targets.{severity}",
+                f"response_minutes ({response}) exceeds resolution_minutes "
+                f"({resolution}) -- a case can't be resolved before it's "
+                f"even been responded to",
+                level="warning",
+            ))
 
 
 def _validate_siem(siem: Any, issues: List) -> None:
