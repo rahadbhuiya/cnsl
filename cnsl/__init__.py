@@ -20,6 +20,6 @@ Kubernetes Helm chart.
 See docs/features.md for the full capability list.
 """
 
-__version__ = "3.4.26"
+__version__ = "3.4.27"
 __author__  = "Rahad Bhuiya"
 __license__ = "MIT"

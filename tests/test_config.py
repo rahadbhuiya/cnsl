@@ -120,6 +120,59 @@ class TestValidateConfigAuth:
         paths = [e.path for e in validate_config(cfg) if e.level == "error"]
         assert "auth.secret_key" not in paths
 
+    def test_session_timeout_zero_is_not_an_error(self):
+        """
+        Regression test: session_timeout_minutes=0 is a documented
+        sentinel meaning "disabled" (see AuthManager.__init__ in
+        cnsl/auth.py), not an invalid value. This used to be flagged
+        as an error ("must be > 0"), which meant config.example.json's
+        own committed default failed its own validator.
+        """
+        from cnsl.validator import validate_config
+        cfg = {"auth": {"enabled": True, "secret_key": "a" * 32,
+                         "session_timeout_minutes": 0}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert "auth.session_timeout_minutes" not in paths
+
+    def test_session_timeout_negative_is_still_an_error(self):
+        from cnsl.validator import validate_config
+        cfg = {"auth": {"enabled": True, "secret_key": "a" * 32,
+                         "session_timeout_minutes": -5}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert "auth.session_timeout_minutes" in paths
+
+    def test_session_timeout_positive_valid(self):
+        from cnsl.validator import validate_config
+        cfg = {"auth": {"enabled": True, "secret_key": "a" * 32,
+                         "session_timeout_minutes": 60}}
+        paths = [e.path for e in validate_config(cfg) if e.level == "error"]
+        assert "auth.session_timeout_minutes" not in paths
+
+    def test_example_config_validates_with_zero_errors(self):
+        """
+        Regression test: config.example.json (the file every new user
+        copies as a starting point) should never fail its own
+        validator -- if it does, either the example or the validator
+        drifted.
+
+        config.example.json ships with actions.dry_run=false, and the
+        validator has a separate, legitimate check that real blocking
+        (dry_run=false) requires root (iptables/ipset need it) -- that
+        check is about the *current process's* privilege level, not
+        the config's own correctness, so it's mocked out here rather
+        than making this test's result depend on whether pytest
+        happens to be run as root.
+        """
+        import json
+        from pathlib import Path
+        from unittest.mock import patch
+        from cnsl.validator import validate_config
+        cfg_path = Path(__file__).parent.parent / "config" / "config.example.json"
+        cfg = json.loads(cfg_path.read_text())
+        with patch("os.geteuid", return_value=0, create=True):
+            errors = [e for e in validate_config(cfg) if e.level == "error"]
+        assert errors == [], f"config.example.json has validator errors: {errors}"
+
 class TestValidateConfigAllowlist:
     """allowlist IP/CIDR validation."""
 

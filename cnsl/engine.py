@@ -619,8 +619,55 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+def _detect_log_sources() -> Dict[str, str]:
+    """
+    Check a short list of common paths per source and return whichever
+    actually exist on this machine. This is what makes the wizard's
+    output a *working* config rather than a config.json with an empty
+    log_sources block that silently detects nothing -- the single
+    biggest way a hand-copied config.example.json produces a CNSL
+    that runs but never sees anything.
+    """
+    import os
+    candidates = {
+        "nginx":  ["/var/log/nginx/access.log"],
+        "apache": ["/var/log/apache2/access.log", "/var/log/httpd/access_log"],
+        "mysql":  ["/var/log/mysql/error.log", "/var/log/mysqld.log"],
+        "ufw":    ["/var/log/ufw.log"],
+        "syslog": ["/var/log/syslog", "/var/log/messages"],
+    }
+    found = {}
+    for name, paths in candidates.items():
+        for p in paths:
+            if os.path.exists(p):
+                found[name] = p
+                break
+    return found
+
+
+def _detect_authlog_path() -> str:
+    """Debian/Ubuntu vs RHEL/CentOS use different paths for the same thing."""
+    import os
+    for p in ("/var/log/auth.log", "/var/log/secure"):
+        if os.path.exists(p):
+            return p
+    return "/var/log/auth.log"   # cnsl/config.py's own default -- keep it even if not found yet
+
+
 def _run_init_wizard() -> None:
-    """Interactive setup wizard — creates /etc/cnsl/config.json."""
+    """Interactive setup wizard — creates a working config.json in under 5 minutes.
+
+    Detects real log sources on this machine (nginx/apache/mysql/ufw/
+    syslog, auth.log vs secure) rather than asking the user to know
+    and type file paths, so the generated config actually has
+    something to watch on first run. Everything else in
+    config.example.json's ~30 sections (Sigma import, OIDC SSO, cloud
+    identity, ATT&CK mapping, retention, case SLA, ...) is optional
+    and defaults to off/sensible -- the wizard deliberately doesn't
+    ask about any of it. Add those later, one config.json edit at a
+    time, from the relevant docs/*.md guide, once the basics are
+    running.
+    """
     import json, pathlib, secrets as _sec
     print("CNSL Setup Wizard")
     print("-" * 40)
@@ -629,6 +676,18 @@ def _run_init_wizard() -> None:
     dry_run   = input("Enable dry-run mode? (real blocking disabled) [Y/n]: ").strip().lower()
     execute   = dry_run in ("n", "no")
     dashboard = input("Enable web dashboard? [Y/n]: ").strip().lower() not in ("n", "no")
+
+    print("\n--- Log sources (auto-detected) ---")
+    detected = _detect_log_sources()
+    authlog  = _detect_authlog_path()
+    print(f"  auth log: {authlog}")
+    if detected:
+        for name, path in detected.items():
+            print(f"  {name:8s}: {path}")
+    else:
+        print("  (none of the common nginx/apache/mysql/ufw/syslog paths found on this machine --")
+        print("   CNSL will still watch the auth log above for SSH activity; add others to")
+        print("   log_sources in the generated config.json once they exist)")
 
     print("\n--- Notifications (leave blank to skip) ---")
     tg_token  = input("Telegram bot token: ").strip()
@@ -657,6 +716,8 @@ def _run_init_wizard() -> None:
         "actions": {"dry_run": not execute, "block_duration_sec": 900},
         "auth": {"enabled": dashboard, "secret_key": _sec.token_hex(32)},
         "store": {"db_path": "/var/lib/cnsl/cnsl_state.db"},
+        "authlog_path": authlog,
+        "log_sources": detected,
         "notifications": {
             "min_severity": "MEDIUM",
             "dedup_window_sec": 300,
@@ -668,11 +729,29 @@ def _run_init_wizard() -> None:
     if email_cfg:
         cfg["notifications"]["email"] = email_cfg
 
+    from .validator import validate_config
+    problems = validate_config(cfg)
+    errors   = [p for p in problems if p.level == "error"]
+    warnings = [p for p in problems if p.level == "warning"]
+    if errors:
+        print("\nThe generated config has problems and was NOT written:")
+        for e in errors:
+            print(f"  {e}")
+        return
+    if warnings:
+        print("\nGenerated config has warnings (written anyway -- review these):")
+        for w in warnings:
+            print(f"  {w}")
+
     pathlib.Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(cfg, f, indent=2)
     print(f"\nConfig written to {out_path}")
     print(f"Run: sudo python -m cnsl --config {out_path}" + (" --dashboard" if dashboard else ""))
+    print("\nThat's everything needed to run. config.example.json in the repo shows ~30")
+    print("more optional sections (Sigma rule import, OIDC SSO, cloud identity, MITRE")
+    print("ATT&CK mapping, data retention, case SLA, ...) -- all off or sensibly")
+    print("defaulted until you add them. See docs/*.md for each; none are required.")
 
 
 async def _show_status(cfg: Dict) -> None:

@@ -82,13 +82,20 @@ ssh -L 8765:127.0.0.1:8765 user@yourserver
 
 ## Configuration
 
-Copy and edit the example config:
+**Fastest path -- the setup wizard (under 5 minutes):**
+
+```bash
+sudo python -m cnsl --init
+```
+
+Asks a handful of questions (allowlist IP, dashboard on/off, notification channels), auto-detects which log files actually exist on this machine (nginx, apache, mysql, ufw, syslog, `auth.log` vs `secure`), and writes a working, validated `config.json` -- you don't need to read or understand the full reference config to get running.
+
+**Full reference**, once you want to turn on optional features (Sigma rules, OIDC SSO, cloud identity, ATT&CK mapping, retention, case SLA, ...) -- all ~30 sections are documented individually in [`docs/configuration.md`](docs/configuration.md) and default to off/sensible, so nothing there is required reading up front:
 
 ```bash
 cp config/config.example.json /etc/cnsl/config.json
 ```
 
-All options are documented in [`docs/configuration.md`](docs/configuration.md).  
 Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `cloud_identity`, `zero_trust`, `siem`, `federation`.
 
 ---

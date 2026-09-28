@@ -301,8 +301,15 @@ def _validate_auth(auth: Any, issues: List) -> None:
 
     v = _V(auth, issues, "auth")
     sto = auth.get("session_timeout_minutes")
-    if sto is not None:
+    # 0 is a documented sentinel meaning "disabled" (see cnsl/auth.py's
+    # AuthManager.__init__) -- not an invalid value to flag.
+    if isinstance(sto, int) and not isinstance(sto, bool) and sto != 0:
         v.is_positive_int("session_timeout_minutes", max_val=10080)  # 1 week
+    elif sto is not None and not (isinstance(sto, int) and not isinstance(sto, bool)):
+        issues.append(ValidationError(
+            "auth.session_timeout_minutes",
+            f"must be an integer (got {sto!r})",
+        ))
 
 
 def _validate_oidc(oidc: Any, issues: List) -> None:

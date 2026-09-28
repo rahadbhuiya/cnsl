@@ -1,5 +1,7 @@
 # Configuration Reference
 
+**Don't want to read this whole document first?** `sudo python -m cnsl --init` runs an interactive wizard that auto-detects log sources on this machine and writes a working, validated config in under 5 minutes -- see the README's Quick start. Everything below is the full reference, useful once you want a specific optional feature (Sigma, OIDC, cloud identity, ...); none of it is required reading to get CNSL running.
+
 ## Config File Location
 
 CNSL auto-discovers config in this order:

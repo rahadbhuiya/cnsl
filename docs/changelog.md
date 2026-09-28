@@ -4,6 +4,34 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.27 -- 5-minute setup wizard, and a validator bug that outlived three prior mentions
+
+Two unrelated fixes, both aimed at "getting a working CNSL running shouldn't require reading the whole config reference first."
+
+**Fix: `session_timeout_minutes: 0` incorrectly flagged as a validator error**
+
+`cnsl/auth.py` has documented `session_timeout_minutes: 0` as meaning "disabled" since it was written -- but `validator.py`'s check ran it through `is_positive_int()`, which rejects `0`. This meant `config.example.json`'s own committed default (`0`) failed its own validator, something flagged three separate times in earlier release notes and never actually fixed until now. `_validate_auth()` now only checks positivity/range for non-zero values; `0` passes cleanly. `config.example.json` now validates with zero errors for the first time.
+
+**Improved: `--init` setup wizard actually detects log sources**
+
+The wizard (`cnsl --init`) existed already but asked nothing about log sources -- it generated a config with no `log_sources` block at all, meaning a hand-run wizard produced a CNSL that started but watched nothing beyond SSH. Now it:
+- Checks a short list of common paths per source (nginx, apache, mysql, ufw, syslog) and includes whichever actually exist on the machine, rather than asking the user to know and type file paths.
+- Detects `/var/log/auth.log` vs `/var/log/secure` (Debian/Ubuntu vs RHEL/CentOS) for the auth log CNSL already watches for SSH activity by default.
+- Runs the real config validator on the assembled config before writing it, printing any errors (and refusing to write) or warnings (written anyway, but shown) -- the wizard can no longer silently hand you a config that fails its own validation.
+- Prints a closing note distinguishing what was just configured (the essentials) from the ~30 additional optional sections in `config.example.json` (Sigma import, OIDC SSO, cloud identity, ATT&CK mapping, retention, case SLA, ...), none of which need reading up front.
+
+**Docs**
+- README's Quick start now leads with `cnsl --init` as the fast path, reframing `config.example.json` as the full reference for optional features rather than the only documented starting point.
+- `docs/configuration.md` opens with a pointer to the wizard before the manual copy-and-edit instructions.
+
+**Tests**
+- New `tests/test_init_wizard.py`: 20 tests -- log-source and authlog detection logic in isolation, and full wizard runs (stdin-fed) checking the answer-to-config-field wiring, that detected sources land in the output, and that a forced validator failure prevents the file from being written.
+- New regression tests in `tests/test_config.py`: `session_timeout_minutes=0`/negative/positive all validated correctly, and a direct assertion that `config.example.json` itself produces zero validator errors -- so this specific bug (and the general class of "the shipped example config doesn't pass its own validator") can't silently regress again.
+- 1290 tests passing (1266 existing + 4 validator regression + 20 wizard).
+- Version bumped to 3.4.27 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.26 -- Case SLA tracking and escalation
 
 `cnsl/cases.py` tracks a case's status, assignee, and notes, but nothing watched how *long* a case sat in a given state -- a HIGH-severity case auto-created at 2am and never picked up looked exactly like one opened a minute ago. This adds per-severity time targets and flags cases that breach them.
