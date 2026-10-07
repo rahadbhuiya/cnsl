@@ -54,7 +54,7 @@ point at cases that are stuck.
 | `targets.<SEVERITY>.resolution_minutes` | see above | Minutes before an unresolved case is a resolution breach |
 | `escalate_on_breach` | `true` | Annotate breached cases (see below) |
 | `bump_severity` | `true` | Also bump severity one step on breach |
-| `notify_on_breach` | `false` | Reserved -- not yet wired to a notification channel |
+| `notify_on_breach` | `false` | Also send the breach through CNSL's existing notification channels (Telegram/Discord/Slack/webhook/email). Only takes effect when `escalate_on_breach` is also true -- see below |
 
 The validator warns if `response_minutes` exceeds `resolution_minutes`
 for the same severity (a case can't be resolved before it's even been
@@ -70,6 +70,11 @@ On a breach, when `escalate_on_breach` is true:
 2. **Optionally bumps severity** one step (`LOW` -> `MEDIUM` ->
    `HIGH`) when `bump_severity` is true. `HIGH` is terminal -- there's
    nothing above it, so a breached HIGH case just gets the note.
+3. **Optionally notifies** through CNSL's existing notification
+   channels when `notify_on_breach` is true, reusing the same
+   Telegram/Discord/Slack/webhook/email setup as every other alert
+   (`cnsl/notify.py`) rather than a separate parallel path. A failed
+   notification never blocks the note or severity bump above.
 
 Escalation **never** changes status or assignee. A machine deciding a
 case is "investigating" because a timer expired would misrepresent who
@@ -78,8 +83,14 @@ nobody has engaged with it yet.
 
 A case is escalated **at most once** -- detected by the `[SLA BREACH]`
 note already being present -- so a case sitting breached for a week
-doesn't climb severity repeatedly or spam the timeline with duplicate
-notes on every check.
+doesn't climb severity repeatedly, spam the timeline with duplicate
+notes, or send repeat notifications on every check.
+
+`notify_on_breach` piggybacks on this same once-per-case escalation
+path, which is what gives it that "only once" guarantee -- it has no
+effect while `escalate_on_breach` is false (the validator warns if
+you set it that way), since there'd be no dedup mechanism to stop it
+firing every `check_interval_sec` for a case that's still breached.
 
 ## API
 

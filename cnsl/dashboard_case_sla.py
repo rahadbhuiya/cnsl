@@ -25,6 +25,7 @@ def register_case_sla_routes(
     rbac:           Any,
     _require_auth:  Callable,
     _rate_check:    Callable,
+    notifier:       Any = None,
 ) -> None:
     """Attach /api/case-sla/* to `router`.
 
@@ -55,5 +56,5 @@ def register_case_sla_routes(
             return web.json_response({"error": "Case SLA is not enabled"}, status=400)
         if case_manager is None or not getattr(case_manager, "available", False):
             return web.json_response({"error": "Case manager is not available"}, status=400)
-        result = await case_sla.check_once(case_manager, logger)
+        result = await case_sla.check_once(case_manager, logger, notifier)
         return web.json_response(result)

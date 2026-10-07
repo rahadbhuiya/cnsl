@@ -4,6 +4,32 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.28 -- `case_sla.notify_on_breach` actually wired up
+
+v3.4.26 shipped `case_sla.notify_on_breach` as a config flag with no effect -- documented as "reserved" -- and `cnsl/case_sla.py`'s own `check_once()`/`run_loop()` already accepted a `notifier` parameter that `cnsl/engine.py` never passed in. This closes that gap.
+
+**`cnsl/case_sla.py`**
+- A breach now optionally sends through CNSL's existing notification channels (Telegram/Discord/Slack/webhook/email -- `cnsl/notify.py`), reusing the same `Detection`-shaped payload everything else there sends rather than building a second parallel path.
+- Notification fires from inside `_escalate()`, the same code path that already guarantees "once per case" via the `[SLA BREACH]` note check -- piggybacking there means no new state is needed to stop a still-breached case from re-notifying every `check_interval_sec`. Consequence, by design: `notify_on_breach` has no effect unless `escalate_on_breach` is also true.
+- A failed notification (channel down, etc.) never blocks the note or severity bump -- those have already happened by the time notification is attempted.
+
+**Wiring**
+- `cnsl/engine.py`: `case_sla.run_loop(...)` now actually receives the already-constructed `notifier`.
+- `cnsl/dashboard_case_sla.py`: the manual `POST /api/case-sla/check` endpoint now also passes `notifier` through.
+
+**Validator**
+- New warning when `notify_on_breach=true` but `escalate_on_breach=false`, since that combination would silently never fire.
+
+**Docs**
+- `docs/case-sla.md`: escalation section now lists notification as step 3, and explains the `escalate_on_breach` dependency; config table updated from "Reserved -- not yet wired" to the real behavior.
+
+**Tests**
+- 7 new tests in `tests/test_case_sla.py`: notification fires with the right `Detection` fields, has no effect without `escalate_on_breach`, fires at most once per case, stays silent when the flag is off, and a notifier failure doesn't block escalation -- plus two validator tests for the new warning.
+- 1297 tests passing (1290 existing + 7 new).
+- Version bumped to 3.4.28 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.27 -- 5-minute setup wizard, and a validator bug that outlived three prior mentions
 
 Two unrelated fixes, both aimed at "getting a working CNSL running shouldn't require reading the whole config reference first."

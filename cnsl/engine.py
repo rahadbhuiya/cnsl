@@ -447,7 +447,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if retention.enabled and store.available:
         tasks.append(asyncio.create_task(retention.run_loop(store, audit_log, logger), name="retention"))
     if case_sla.enabled and store.available:
-        tasks.append(asyncio.create_task(case_sla.run_loop(case_manager, logger), name="case_sla"))
+        tasks.append(asyncio.create_task(case_sla.run_loop(case_manager, logger, notifier), name="case_sla"))
 
     # Generic network syslog receiver (UDP+TCP, RFC 3164/5424) -- lets
     # remote devices, and Wazuh/OSSEC managers configured for syslog

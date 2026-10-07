@@ -247,6 +247,100 @@ class TestCheckOnce:
             await cm._store.close()
         _run(go())
 
+    def test_notify_on_breach_sends_through_notifier(self, tmp_path):
+        from unittest.mock import AsyncMock
+        async def go():
+            cm = await _make_case_manager(tmp_path)
+            cid = await cm.create_manual(title="old", severity="HIGH", src_ip="1.1.1.1")
+            old = time.time() - 10 * 3600
+            await cm._db.execute("UPDATE cases SET created_at=? WHERE id=?", (old, cid))
+            await cm._db.commit()
+
+            notifier = AsyncMock()
+            notifier.send = AsyncMock()
+            s = _sla(notify_on_breach=True, escalate_on_breach=True)
+            await s.check_once(cm, notifier=notifier)
+
+            notifier.send.assert_awaited_once()
+            detection = notifier.send.await_args.args[0]
+            assert detection.src_ip == "1.1.1.1"
+            assert detection.severity == "HIGH"
+            assert "SLA breach" in detection.reasons[0]
+            await cm._store.close()
+        _run(go())
+
+    def test_notify_on_breach_no_effect_without_escalate(self, tmp_path):
+        from unittest.mock import AsyncMock
+        async def go():
+            cm = await _make_case_manager(tmp_path)
+            cid = await cm.create_manual(title="old", severity="HIGH", src_ip="1.1.1.1")
+            old = time.time() - 10 * 3600
+            await cm._db.execute("UPDATE cases SET created_at=? WHERE id=?", (old, cid))
+            await cm._db.commit()
+
+            notifier = AsyncMock()
+            notifier.send = AsyncMock()
+            s = _sla(notify_on_breach=True, escalate_on_breach=False)
+            await s.check_once(cm, notifier=notifier)
+
+            notifier.send.assert_not_awaited()
+            await cm._store.close()
+        _run(go())
+
+    def test_notify_on_breach_not_sent_twice(self, tmp_path):
+        from unittest.mock import AsyncMock
+        async def go():
+            cm = await _make_case_manager(tmp_path)
+            cid = await cm.create_manual(title="old", severity="HIGH", src_ip="1.1.1.1")
+            old = time.time() - 10 * 3600
+            await cm._db.execute("UPDATE cases SET created_at=? WHERE id=?", (old, cid))
+            await cm._db.commit()
+
+            notifier = AsyncMock()
+            notifier.send = AsyncMock()
+            s = _sla(notify_on_breach=True)
+            await s.check_once(cm, notifier=notifier)
+            await s.check_once(cm, notifier=notifier)
+            assert notifier.send.await_count == 1
+            await cm._store.close()
+        _run(go())
+
+    def test_no_notify_when_flag_disabled(self, tmp_path):
+        from unittest.mock import AsyncMock
+        async def go():
+            cm = await _make_case_manager(tmp_path)
+            cid = await cm.create_manual(title="old", severity="HIGH", src_ip="1.1.1.1")
+            old = time.time() - 10 * 3600
+            await cm._db.execute("UPDATE cases SET created_at=? WHERE id=?", (old, cid))
+            await cm._db.commit()
+
+            notifier = AsyncMock()
+            notifier.send = AsyncMock()
+            s = _sla(notify_on_breach=False)
+            await s.check_once(cm, notifier=notifier)
+            notifier.send.assert_not_awaited()
+            await cm._store.close()
+        _run(go())
+
+    def test_notify_failure_does_not_block_escalation(self, tmp_path):
+        from unittest.mock import AsyncMock
+        async def go():
+            cm = await _make_case_manager(tmp_path)
+            cid = await cm.create_manual(title="old", severity="HIGH", src_ip="1.1.1.1")
+            old = time.time() - 10 * 3600
+            await cm._db.execute("UPDATE cases SET created_at=? WHERE id=?", (old, cid))
+            await cm._db.commit()
+
+            notifier = AsyncMock()
+            notifier.send = AsyncMock(side_effect=RuntimeError("channel down"))
+            s = _sla(notify_on_breach=True)
+            result = await s.check_once(cm, notifier=notifier)
+            assert result["escalated"] == 1
+            case = await cm.get(cid)
+            assert any(n["body"].startswith("[SLA BREACH]") for n in case["notes"])
+            await cm._store.close()
+        _run(go())
+
     def test_severity_not_bumped_when_disabled(self, tmp_path):
         async def go():
             cm = await _make_case_manager(tmp_path)
@@ -390,6 +484,22 @@ class TestRunLoop:
 
 
 class TestValidator:
+    def test_notify_without_escalate_warns(self):
+        from cnsl.validator import _validate_case_sla
+        issues = []
+        _validate_case_sla({"enabled": True, "notify_on_breach": True,
+                             "escalate_on_breach": False}, issues)
+        assert len(issues) == 1
+        assert issues[0].level == "warning"
+        assert issues[0].path == "case_sla.notify_on_breach"
+
+    def test_notify_with_escalate_no_warning(self):
+        from cnsl.validator import _validate_case_sla
+        issues = []
+        _validate_case_sla({"enabled": True, "notify_on_breach": True,
+                             "escalate_on_breach": True}, issues)
+        assert issues == []
+
     def test_empty_config_is_noop(self):
         from cnsl.validator import _validate_case_sla
         issues = []

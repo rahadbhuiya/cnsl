@@ -33,6 +33,15 @@ Severity is bumped at most once per case (tracked by the escalation
 note already being present), so a case sitting breached for a week
 doesn't climb indefinitely or re-notify on every check.
 
+notify_on_breach additionally sends the breach through CNSL's existing
+notification channels (cnsl/notify.py -- Telegram/Discord/Slack/
+webhook/email). It fires at the same once-per-case point as the
+escalation note, which is what guarantees a still-breached case
+doesn't re-notify every check interval -- so it only takes effect
+when escalate_on_breach is also true (the validator warns if not). A
+failed notification never blocks escalation itself; the note and
+severity bump have already happened by then.
+
 This module only ever reads and annotates. It never closes, deletes,
 or reassigns a case.
 
@@ -149,8 +158,20 @@ class CaseSLA:
         age_min = int(report["age_sec"] // 60)
         return f"{_ESCALATION_NOTE_PREFIX} {'; '.join(parts)} (case is {age_min}m old)"
 
-    async def _escalate(self, case_manager: Any, case: Dict[str, Any], report: Dict[str, Any]) -> Dict[str, Any]:
-        """Annotate (and optionally bump severity on) one breached case."""
+    async def _escalate(
+        self, case_manager: Any, case: Dict[str, Any], report: Dict[str, Any], notifier: Any = None,
+    ) -> Dict[str, Any]:
+        """
+        Annotate (and optionally bump severity on, and notify about) one
+        breached case. This is the natural place for notify_on_breach:
+        it's the code path that already only runs once per case (see
+        _already_escalated below), so piggybacking notification here
+        gets that same one-time guarantee for free rather than needing
+        separate state to avoid re-notifying every check_interval_sec
+        for a case that's still breached. Consequence: notify_on_breach
+        has no effect unless escalate_on_breach is also true -- see
+        cnsl/validator.py's warning for this and docs/case-sla.md.
+        """
         case_id = case["id"]
         notes = case.get("notes") or []
         if self._already_escalated(notes):
@@ -165,7 +186,37 @@ class CaseSLA:
                 await case_manager.set_severity(case_id, new_sev, actor="sla")
                 bumped_to = new_sev
 
+        if self.notify_on_breach and notifier is not None:
+            await self._notify(notifier, case, report)
+
         return {"case_id": case_id, "escalated": True, "bumped_to": bumped_to}
+
+    async def _notify(self, notifier: Any, case: Dict[str, Any], report: Dict[str, Any]) -> None:
+        """
+        Send an SLA breach alert through the existing notification
+        channels (Telegram/Discord/Slack/webhook/email -- see
+        cnsl/notify.py), reusing the same Detection-shaped payload
+        everything else there already sends, rather than building a
+        second parallel notification path just for this.
+        """
+        from .models import Detection
+        parts = []
+        if report["response_breached"]:
+            parts.append(f"no response within {report['response_target_sec'] // 60:.0f}m target")
+        if report["resolution_breached"]:
+            parts.append(f"not resolved within {report['resolution_target_sec'] // 60:.0f}m target")
+        detection = Detection(
+            src_ip=case.get("src_ip") or "(no source IP on case)",
+            severity=report["severity"],
+            reasons=[f"Case #{case['id']} \"{case.get('title', '')}\" SLA breach: " + "; ".join(parts)],
+            fail_count=0, uniq_users=0, window_sec=0,
+        )
+        try:
+            await notifier.send(detection, None)
+        except Exception:
+            # Notification failure must never block escalation itself --
+            # the note and severity bump above already happened.
+            pass
 
     #  Check pass
 
@@ -198,7 +249,7 @@ class CaseSLA:
             if self.escalate_on_breach:
                 full = await case_manager.get(case["id"])
                 if full:
-                    escalations.append(await self._escalate(case_manager, full, report))
+                    escalations.append(await self._escalate(case_manager, full, report, notifier))
 
         result = {
             "ran":            True,

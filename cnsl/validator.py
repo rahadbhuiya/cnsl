@@ -626,6 +626,15 @@ def _validate_case_sla(s: Any, issues: List) -> None:
     v.is_bool("notify_on_breach")
     v.is_positive_int("check_interval_sec", max_val=86400)
 
+    if s.get("notify_on_breach") and not s.get("escalate_on_breach", True):
+        issues.append(ValidationError(
+            "case_sla.notify_on_breach",
+            "has no effect while escalate_on_breach is false -- breach "
+            "notifications piggyback on the escalation path (which is "
+            "what guarantees each case is only notified about once)",
+            level="warning",
+        ))
+
     targets = s.get("targets", {})
     if targets and not isinstance(targets, dict):
         issues.append(ValidationError(

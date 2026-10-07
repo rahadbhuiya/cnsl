@@ -1143,7 +1143,7 @@ async def start_dashboard(
         ("dashboard_oidc", "register_oidc_routes", (router, auth, oidc, logger, _get_client_ip)),
         ("dashboard_source_health", "register_source_health_routes", (router, source_health, _require_auth, _rate_check)),
         ("dashboard_retention", "register_retention_routes", (router, retention, store, audit_log, logger, rbac, _require_auth, _rate_check)),
-        ("dashboard_case_sla", "register_case_sla_routes", (router, case_sla, case_manager, logger, rbac, _require_auth, _rate_check)),
+        ("dashboard_case_sla", "register_case_sla_routes", (router, case_sla, case_manager, logger, rbac, _require_auth, _rate_check, notifier)),
     ): _reg(_m, _f, _a)
     #  SIEM Connector API
     @router.get("/api/siem/status")
