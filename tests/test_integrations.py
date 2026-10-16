@@ -619,3 +619,36 @@ class TestCloudConnectorConfig:
         assert "aws_cloudtrail" in status["connectors"]
         assert "azure_ad" in status["connectors"]
         assert "gcp_identity" in status["connectors"]
+
+# ---- Elasticsearch auto-push (buffering / flush) ----
+
+def test_es_pusher_enqueue_disabled_is_noop():
+    from cnsl.search_engine import ElasticsearchPusher
+    p = ElasticsearchPusher({"search": {"elasticsearch": {"enabled": False}}})
+    p.enqueue(object())
+    assert p.stats()["buffered"] == 0
+
+
+def test_es_pusher_buffer_is_bounded_and_flush_requeues_on_failure():
+    import asyncio
+    from cnsl.search_engine import ElasticsearchPusher
+    cfg = {"search": {"elasticsearch": {
+        "enabled": True, "batch_size": 2, "max_buffer": 3}}}
+    p = ElasticsearchPusher(cfg)
+    for i in range(5):
+        p.enqueue(i)
+    st = p.stats()
+    assert st["buffered"] == 3 and st["dropped"] == 2
+
+    async def failing_push(batch):
+        return {"error": "down", "pushed": 0}
+    p.push = failing_push
+    asyncio.run(p.flush())
+    assert p.stats()["buffered"] == 3          # requeued, nothing lost
+    assert p.stats()["failed_batches"] == 1
+
+    async def ok_push(batch):
+        return {"pushed": len(batch), "errors": False}
+    p.push = ok_push
+    asyncio.run(p.flush())
+    assert p.stats()["buffered"] == 1 and p.stats()["pushed"] == 2

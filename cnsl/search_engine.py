@@ -28,6 +28,10 @@ Config:
       "index":    "cnsl-events",
       "username": "",
       "password": "",
+      "auto_push": true,
+      "batch_size": 100,
+      "flush_interval_sec": 5,
+      "max_buffer": 5000,
       "timeout_sec": 5
     }
   }
@@ -35,6 +39,7 @@ Config:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -337,6 +342,76 @@ class ElasticsearchPusher:
         self.password = es.get("password", "")
         self.timeout  = int(es.get("timeout_sec", 5))
         self._session = None
+        # Auto-push settings: events are buffered by enqueue() and flushed
+        # in batches by run_loop(), so the hot detection path never waits
+        # on the network.
+        self.auto_push      = bool(es.get("auto_push", True))
+        self.batch_size     = max(1, int(es.get("batch_size", 100)))
+        self.flush_interval = max(0.5, float(es.get("flush_interval_sec", 5)))
+        self.max_buffer     = max(self.batch_size, int(es.get("max_buffer", 5000)))
+        self._buffer: list  = []
+        self._dropped       = 0
+        self._pushed        = 0
+        self._failed        = 0
+
+    def enqueue(self, norm) -> None:
+        """Add one NormalizedEvent to the outgoing buffer (non-blocking).
+
+        No-op unless enabled and auto_push are both true. When the buffer
+        is full (ES down or slow) the oldest event is dropped so memory
+        stays bounded.
+        """
+        if not (self.enabled and self.auto_push):
+            return
+        if len(self._buffer) >= self.max_buffer:
+            self._buffer.pop(0)
+            self._dropped += 1
+        self._buffer.append(norm)
+
+    async def flush(self) -> Dict[str, Any]:
+        """Push up to batch_size buffered events. Failed batches are
+        put back at the front of the buffer for the next attempt."""
+        if not self._buffer:
+            return {"pushed": 0}
+        batch = self._buffer[: self.batch_size]
+        del self._buffer[: len(batch)]
+        result = await self.push(batch)
+        if "error" in result or result.get("errors"):
+            self._failed += 1
+            # requeue (respecting the cap) so a short outage loses nothing
+            room = self.max_buffer - len(self._buffer)
+            if room > 0:
+                self._buffer[0:0] = batch[:room]
+            self._dropped += max(0, len(batch) - max(room, 0))
+        else:
+            self._pushed += result.get("pushed", 0)
+        return result
+
+    async def run_loop(self) -> None:
+        """Background task: flush the buffer every flush_interval seconds
+        (or immediately when a full batch is waiting)."""
+        if not (self.enabled and self.auto_push):
+            return
+        try:
+            while True:
+                if len(self._buffer) >= self.batch_size:
+                    await self.flush()
+                    await asyncio.sleep(0)
+                else:
+                    await asyncio.sleep(self.flush_interval)
+                    await self.flush()
+        except asyncio.CancelledError:
+            raise
+
+    def stats(self) -> Dict[str, Any]:
+        return {
+            "enabled":  self.enabled,
+            "auto_push": self.auto_push,
+            "buffered": len(self._buffer),
+            "pushed":   self._pushed,
+            "failed_batches": self._failed,
+            "dropped":  self._dropped,
+        }
 
     async def _get_session(self):
         if self._session is None:
@@ -405,6 +480,12 @@ class ElasticsearchPusher:
             return {"error": str(e), "pushed": 0}
 
     async def close(self) -> None:
+        # best-effort final flush so a clean shutdown does not lose the tail
+        if self.enabled and self._buffer:
+            try:
+                await asyncio.wait_for(self.flush(), timeout=self.timeout)
+            except Exception:
+                pass
         if self._session:
             try:
                 await self._session.close()

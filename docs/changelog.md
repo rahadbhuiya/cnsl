@@ -4,6 +4,29 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.29 -- Elasticsearch auto-push actually wired up
+
+`ElasticsearchPusher` was constructed in `cnsl/engine.py` but only ever called from the manual `POST /api/search/es-push` endpoint, so setting `search.elasticsearch.enabled` did nothing on its own. This closes that gap.
+
+**`cnsl/search_engine.py`**
+- `ElasticsearchPusher` now has `enqueue()`, `flush()`, `run_loop()` and `stats()`. Events are buffered and bulk-pushed in the background, so the detection path never waits on the network.
+- Failed batches are requeued for the next attempt. The buffer is bounded by `max_buffer`; beyond it the oldest events are dropped and counted.
+- `close()` does a best-effort final flush.
+
+**Wiring**
+- `cnsl/engine.py`: `engine_loop` enqueues each normalized event, an `es_push` background task runs the flush loop, and shutdown flushes and closes the pusher and search engine before the store closes.
+- `cnsl/dashboard.py`: the ES status endpoint now also reports `auto_push` counters.
+
+**Config**
+- New keys under `search.elasticsearch`: `auto_push` (default true), `batch_size` (100), `flush_interval_sec` (5), `max_buffer` (5000). Existing configs keep working; with ES disabled nothing changes.
+
+**Tests**
+- Buffer bound, disabled no-op, requeue-on-failure and successful flush are covered in `tests/test_integrations.py`.
+
+- Version bumped to 3.4.29 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.28 -- `case_sla.notify_on_breach` actually wired up
 
 v3.4.26 shipped `case_sla.notify_on_breach` as a config flag with no effect -- documented as "reserved" -- and `cnsl/case_sla.py`'s own `check_once()`/`run_loop()` already accepted a `notifier` parameter that `cnsl/engine.py` never passed in. This closes that gap.

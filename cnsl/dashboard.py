@@ -909,7 +909,7 @@ async def start_dashboard(
         if err: return err
 
         if es_pusher and es_pusher.enabled:
-            health = await es_pusher.health()
+            health = {**await es_pusher.health(), "auto_push": es_pusher.stats()}
         else:
             health = {"enabled": False}
 

@@ -359,12 +359,25 @@ Modes: `redirect` (fake shell), `drop` (silent drop), `tarpit` (slow connection)
     "index":    "cnsl-events",
     "username": "",
     "password": "",
-    "timeout_sec": 5
+    "timeout_sec": 5,
+    "auto_push": true,
+    "batch_size": 100,
+    "flush_interval_sec": 5,
+    "max_buffer": 5000
   }
 }
 ```
 
-Push events: `POST /api/search/es-push`
+When `enabled` is true and `auto_push` is true (the default), every
+normalized event is buffered and bulk-pushed in the background, in batches of
+`batch_size` or every `flush_interval_sec`, whichever comes first. The
+detection path never waits on Elasticsearch. If Elasticsearch is down, failed
+batches are retried; once `max_buffer` events are waiting, the oldest are
+dropped so memory stays bounded. Buffered events are flushed on clean
+shutdown. Set `auto_push` to false to keep the old manual-only behavior.
+
+Push status and counters: `GET /api/search/es-status` (see `auto_push` field).
+Manual push: `POST /api/search/es-push`
 
 ---
 

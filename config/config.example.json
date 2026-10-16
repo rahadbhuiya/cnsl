@@ -349,7 +349,11 @@
       "index": "cnsl-events",
       "username": "",
       "password": "",
-      "timeout_sec": 5
+      "timeout_sec": 5,
+      "auto_push": true,
+      "batch_size": 100,
+      "flush_interval_sec": 5,
+      "max_buffer": 5000
     }
   },
   "kill_chain": {

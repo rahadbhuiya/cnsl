@@ -66,6 +66,7 @@ async def engine_loop(
     logger:         JsonLogger,
     ml_detector:    "MLDetector | None"    = None,
     pattern_learner: "PatternLearner | None" = None,
+    es_pusher:      "Any | None"           = None,
 ) -> None:
     from .normalizer import normalize as _normalize
 
@@ -83,6 +84,8 @@ async def engine_loop(
             try:
                 norm = _normalize(ev)
                 ev.meta["_ecs"] = norm.to_dict()
+                if es_pusher is not None:
+                    es_pusher.enqueue(norm)   # buffered, never blocks
             except Exception:
                 pass  # normalization failure must never stop detection
 
@@ -398,8 +401,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     tasks.append(asyncio.create_task(
         engine_loop(queue, detector, blocker, logger,
                     ml_detector=ml_detector,
-                    pattern_learner=pattern_learner), name="engine"
+                    pattern_learner=pattern_learner,
+                    es_pusher=es_pusher), name="engine"
     ))
+    if es_pusher.enabled and es_pusher.auto_push:
+        tasks.append(asyncio.create_task(es_pusher.run_loop(), name="es_push"))
 
     authlog_path = cfg.get("authlog_path", "/var/log/auth.log")
     tasks.append(asyncio.create_task(
@@ -611,6 +617,8 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     await federation.stop()
     await cloud_identity.stop()
     await siem_router.close()
+    await es_pusher.close()      # final flush of buffered events
+    await search_engine.close()
     await store.close()
     logger.close()
 

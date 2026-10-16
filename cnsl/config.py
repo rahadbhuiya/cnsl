@@ -351,6 +351,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "username":    "",
             "password":    "",
             "timeout_sec": 5,
+            "auto_push":          True,   # push every normalized event automatically
+            "batch_size":         100,
+            "flush_interval_sec": 5,
+            "max_buffer":         5000,   # oldest dropped beyond this
         },
     },
 
