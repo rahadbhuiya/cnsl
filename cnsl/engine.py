@@ -565,18 +565,50 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # Does NOT restart log tailers, Redis connections, or dashboard.
     _cfg_path = args.config if args.config else None
 
+    async def _reload_config() -> None:
+        """Re-read the config file and apply what can change live: rule
+        thresholds, the allowlist, Sigma rules (existing enable/disable
+        state is kept) and a threat feed refresh. Log tailers, Redis,
+        Kafka and the dashboard are NOT restarted."""
+        try:
+            new_cfg = load_config(_cfg_path)
+            applied = []
+
+            detector.rules._apply_config(new_cfg)
+            applied.append("rules")
+
+            # Mutate the same set object the blocker already holds.
+            new_allow = set(new_cfg.get("allowlist", []))
+            allowlist.clear()
+            allowlist.update(new_allow)
+            asset_inventory.set_allowlist(list(new_allow))
+            applied.append("allowlist")
+
+            s_cfg = new_cfg.get("sigma", {})
+            if s_cfg.get("enabled", False) and s_cfg.get("rules_dir"):
+                disabled = [r["id"] for r in sigma_store.all_rules()
+                            if not r.get("enabled", True)]
+                res = sigma_store.import_dir(s_cfg["rules_dir"])
+                for rid in disabled:
+                    sigma_store.disable(rid)
+                applied.append(f"sigma({res.get('imported', 0)} imported)")
+
+            if threat_feed.enabled:
+                await threat_feed.refresh()
+                applied.append("threat_feed")
+
+            await logger.log("config_reloaded", {
+                "path": _cfg_path, "applied": applied,
+            })
+        except Exception as e:
+            await logger.log("config_reload_error", {"error": str(e)})
+
     def _handle_sighup(*_):
         if _cfg_path:
-            try:
-                new_cfg = load_config(_cfg_path)
-                detector.rules._apply_config(new_cfg)
-                await_log = logger.log("config_reloaded", {
-                    "path": _cfg_path, "msg": "rules reloaded via SIGHUP"
-                })
-                asyncio.ensure_future(await_log)
-            except Exception as e:
-                asyncio.ensure_future(logger.log("config_reload_error",
-                                                  {"error": str(e)}))
+            asyncio.ensure_future(_reload_config())
+        else:
+            asyncio.ensure_future(logger.log("config_reload_error", {
+                "error": "no --config path given; nothing to reload"}))
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -611,20 +643,44 @@ async def _main_async(args: Any, cfg: Dict) -> None:
 
     await stop.wait()
     await logger.log("shutdown", {"msg": "Stopping CNSL"})
-    fim_engine.close()
-    syslog_receiver.stop()
-    await redis_sync.close()
-    await federation.stop()
-    await cloud_identity.stop()
-    await siem_router.close()
-    await es_pusher.close()      # final flush of buffered events
-    await search_engine.close()
-    await store.close()
-    logger.close()
 
+    # 1. Stop background loops first, so nothing is still writing to the
+    #    store or logger while the components below are closed.
     for t in tasks:
         t.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _safe(label, fn):
+        """Run one shutdown step; a failure must not skip the rest."""
+        try:
+            r = fn()
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception as e:
+            try:
+                await logger.log("shutdown_error", {"step": label, "error": str(e)})
+            except Exception:
+                pass
+
+    # 2. Producers and network components.
+    await _safe("kafka",          lambda: kafka.stop())
+    await _safe("huddle",         lambda: huddle.stop())
+    await _safe("syslog",         lambda: syslog_receiver.stop())
+    await _safe("threat_feed",    lambda: threat_feed.stop())
+    await _safe("notifier",       lambda: notifier.stop())
+    await _safe("fim",            lambda: fim_engine.close())
+    await _safe("federation",     lambda: federation.stop())
+    await _safe("cloud_identity", lambda: cloud_identity.stop())
+    await _safe("redis",          lambda: redis_sync.close())
+
+    # 3. Sinks: flush what is buffered, then close.
+    await _safe("es_pusher",      lambda: es_pusher.close())
+    await _safe("search_engine",  lambda: search_engine.close())
+    await _safe("siem_router",    lambda: siem_router.close())
+
+    # 4. Storage and logger last.
+    await _safe("store",          lambda: store.close())
+    logger.close()
 
 
 def _detect_log_sources() -> Dict[str, str]:

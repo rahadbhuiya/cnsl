@@ -4,6 +4,28 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.30 -- Clean shutdown order and wider SIGHUP reload
+
+Shutdown closed the store before cancelling background loops (retention, case SLA, source health), so a loop waking at the wrong moment could write to a closed database. Several components were never stopped at all. SIGHUP only reloaded rule thresholds. Both are fixed.
+
+**`cnsl/engine.py` -- shutdown**
+- Background tasks are now cancelled and awaited first.
+- Every component is then stopped: Kafka, HuddleCluster, syslog receiver, threat feed, notifier, FIM, federation, cloud identity, Redis. Previously Kafka, Huddle, threat feed and notifier were never stopped.
+- Sinks are flushed and closed next (Elasticsearch pusher, search engine, SIEM router), then the store, then the logger last.
+- Each step runs through `_safe()`, so one component failing to stop is logged as `shutdown_error` and does not skip the rest.
+
+**`cnsl/engine.py` -- SIGHUP**
+- Reload now covers rule thresholds, the allowlist, Sigma rules, and a threat feed refresh. The allowlist is updated in place, so the blocker sees the change immediately.
+- Sigma rules are re-imported from `sigma.rules_dir`; rules you disabled stay disabled. Rules whose file was deleted are not removed until restart.
+- Log tailers, Redis, Kafka and the dashboard are still not restarted. Result is logged as `config_reloaded` with an `applied` list, or `config_reload_error`.
+
+**Tests**
+- `tests/test_dashboard.py`: shutdown ordering (tasks before store, store and logger last), every component stopped, failures isolated, and the wider reload.
+
+- Version bumped to 3.4.30 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.29 -- Elasticsearch auto-push actually wired up
 
 `ElasticsearchPusher` was constructed in `cnsl/engine.py` but only ever called from the manual `POST /api/search/es-push` endpoint, so setting `search.elasticsearch.enabled` did nothing on its own. This closes that gap.

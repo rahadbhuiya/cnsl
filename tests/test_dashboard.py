@@ -392,3 +392,57 @@ class TestTelegramEscape:
 
 
 # v1.0.2 — LOW severity count fix
+
+
+# v3.4.30 -- shutdown order and wider SIGHUP reload
+
+class TestShutdownOrderAndReload:
+    """engine.py cancels background tasks before closing anything, stops
+    every component, and closes the store last. SIGHUP reloads more than
+    just rules."""
+
+    @staticmethod
+    def _src():
+        from pathlib import Path
+        return (Path(__file__).parent.parent / "cnsl" / "engine.py"
+                ).read_text(encoding="utf-8")
+
+    def test_tasks_cancelled_before_store_closed(self):
+        src = self._src()
+        tail = src[src.index("await stop.wait()"):]
+        assert tail.index("t.cancel()") < tail.index("store.close()")
+
+    def test_store_and_logger_are_last(self):
+        tail = self._src()
+        tail = tail[tail.index("await stop.wait()"):]
+        tail = tail[:tail.index("def _detect_log_sources")]
+        assert tail.index("es_pusher.close()") < tail.index("store.close()")
+        assert tail.index("store.close()") < tail.index("logger.close()")
+
+    def test_every_component_is_stopped(self):
+        tail = self._src()
+        tail = tail[tail.index("await stop.wait()"):]
+        for call in ("kafka.stop()", "huddle.stop()", "syslog_receiver.stop()",
+                     "threat_feed.stop()", "notifier.stop()",
+                     "fim_engine.close()", "federation.stop()",
+                     "cloud_identity.stop()", "redis_sync.close()",
+                     "es_pusher.close()", "search_engine.close()",
+                     "siem_router.close()", "store.close()"):
+            assert call in tail, call
+
+    def test_one_failing_step_does_not_skip_the_rest(self):
+        # each step goes through _safe(), which swallows and logs errors
+        tail = self._src()
+        tail = tail[tail.index("await stop.wait()"):]
+        assert "async def _safe(" in tail
+        assert tail.count("await _safe(") >= 13
+
+    def test_sighup_reloads_allowlist_sigma_and_threat_feed(self):
+        src = self._src()
+        body = src[src.index("async def _reload_config"):
+                   src.index("def _handle_sighup")]
+        assert "_apply_config" in body
+        assert "allowlist.clear()" in body and "allowlist.update(" in body
+        assert "sigma_store.import_dir" in body
+        assert "sigma_store.disable" in body       # keeps disabled state
+        assert "threat_feed.refresh()" in body
