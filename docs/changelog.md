@@ -4,6 +4,27 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.31 -- Kafka events take the same path as every other source
+
+Kafka messages were handed straight to `detector.handle()`, bypassing `engine_loop`. That meant Kafka events skipped ECS normalization, ML anomaly ingest and the Elasticsearch auto-push added in v3.4.29, and ignored the queue's backpressure limit. They now go through the shared event queue.
+
+**`cnsl/kafka_consumer.py`**
+- `KafkaConsumer` takes an optional `queue`. When given, parsed events are put on it (waiting if the queue is full, so a slow engine slows consumption instead of dropping messages). Without one, it still calls the detector directly, so standalone use and existing tests behave as before.
+
+**`cnsl/engine.py`**
+- The event queue and task list are created before the Kafka consumer, which is built with `queue=queue`.
+- The `cloud_identity=None` argument to `Detector` is now commented: the poller feeds the same queue, so the detector already sees those events.
+
+**Behavior change worth knowing**
+- Kafka events now show up in ML features, the ECS export and Elasticsearch, which they did not before. If you relied on Kafka events being excluded from those, that is no longer the case.
+
+**Tests**
+- `tests/test_agent_infra.py`: queue path vs direct path, and queue-before-Kafka wiring.
+
+- Version bumped to 3.4.31 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.30 -- Clean shutdown order and wider SIGHUP reload
 
 Shutdown closed the store before cancelling background loops (retention, case SLA, source health), so a loop waking at the wrong moment could write to a closed database. Several components were never stopped at all. SIGHUP only reloaded rule thresholds. Both are fixed.

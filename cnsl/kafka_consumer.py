@@ -124,7 +124,13 @@ class KafkaConsumer:
         cfg:      Dict[str, Any],
         detector: "Detector",
         logger:   "JsonLogger",
+        queue:    "Optional[asyncio.Queue]" = None,
     ):
+        # When a queue is given, parsed events go through it so they take the
+        # same path as every other source (ECS normalize, ML, ES push, asset
+        # tracking in engine_loop). Without one, fall back to calling the
+        # detector directly (used by tests and standalone mode).
+        self.queue = queue
         kc = cfg.get("kafka", {})
         self.enabled           = bool(kc.get("enabled", False))
         self.bootstrap_servers = kc.get("bootstrap_servers", "localhost:9092")
@@ -317,7 +323,10 @@ class KafkaConsumer:
         try:
             ev = parser(value)
             if ev and ev.src_ip:
-                await self.detector.handle(ev)
+                if self.queue is not None:
+                    await self.queue.put(ev)   # backpressure if engine is behind
+                else:
+                    await self.detector.handle(ev)
                 self._stats["events_parsed"] += 1
         except Exception:
             self._stats["parse_errors"] += 1

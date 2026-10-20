@@ -409,3 +409,38 @@ class TestRequestSizeLimit:
                ).read_text(encoding="utf-8")
         assert "client_max_size" in src, \
             "client_max_size missing from web.Application() -- no request size limit"
+
+
+# ---- v3.4.31: Kafka events go through the shared queue when one is given ----
+
+def test_kafka_process_message_uses_queue_when_provided():
+    import asyncio
+    from types import SimpleNamespace
+    from cnsl.kafka_consumer import KafkaConsumer
+
+    handled = []
+
+    class _Det:
+        async def handle(self, ev):
+            handled.append(ev)
+
+    ev = SimpleNamespace(src_ip="1.2.3.4")
+
+    async def run():
+        q = asyncio.Queue()
+        kc = KafkaConsumer({}, _Det(), None, queue=q)
+        await kc._process_message("x", lambda v: ev, "t")
+        assert q.qsize() == 1 and handled == []
+
+        kc2 = KafkaConsumer({}, _Det(), None)       # no queue -> direct path
+        await kc2._process_message("x", lambda v: ev, "t")
+        assert handled == [ev]
+
+    asyncio.run(run())
+
+
+def test_engine_creates_queue_before_kafka_and_passes_it():
+    from pathlib import Path
+    src = (Path(__file__).parent.parent / "cnsl" / "engine.py").read_text(encoding="utf-8")
+    assert src.index("queue: asyncio.Queue = asyncio.Queue(") < src.index("KafkaConsumer(cfg")
+    assert "KafkaConsumer(cfg, detector, logger, queue=queue)" in src

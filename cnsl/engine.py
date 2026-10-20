@@ -362,6 +362,9 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         pattern_learner=pattern_learner,
                         siem_router=siem_router,
                         federation=federation,
+                        # Intentionally None: CloudIdentityPoller pushes its
+                        # events onto the shared queue (see run() below), so
+                        # the detector sees them via engine_loop.
                         cloud_identity=None,
                         zero_trust=zero_trust,
                         sigma=sigma_store)
@@ -374,8 +377,14 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                         kill_chain=kill_chain_tracker,
                         pattern_learner=pattern_learner)
 
+    # Shared event queue and task list. Created before Kafka so Kafka events
+    # go through engine_loop like every other source.
+    queue_size = safe_int(cfg.get('queue', {}).get('maxsize', 10000), 10000)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
+    tasks: List[asyncio.Task] = []
+
     # Kafka consumer (after detector)
-    kafka = KafkaConsumer(cfg, detector, logger)
+    kafka = KafkaConsumer(cfg, detector, logger, queue=queue)
     if kafka.enabled:
         await kafka.start()
 
@@ -393,10 +402,6 @@ async def _main_async(args: Any, cfg: Dict) -> None:
             )
         await _orig_handle(ev)
     detector.handle = _handle_with_assets
-
-    queue_size = safe_int(cfg.get('queue', {}).get('maxsize', 10000), 10000)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
-    tasks: List[asyncio.Task] = []
 
     tasks.append(asyncio.create_task(
         engine_loop(queue, detector, blocker, logger,
