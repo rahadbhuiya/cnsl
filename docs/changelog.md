@@ -4,6 +4,23 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.32 -- Plain-ASCII startup banner, "Correlated" naming, real dashboard URL
+
+First part of the ASCII cleanup (the project rule is plain ASCII only: no em-dashes, arrows or box-drawing characters). This batch covers `cnsl/engine.py`; the remaining files follow in the next releases.
+
+**`cnsl/engine.py`**
+- The startup banner is now built by `format_banner()` in plain ASCII (`+`, `=`, `-`, `|`). The box widens to fit its longest value, so long log paths or URLs no longer break the right edge.
+- The banner shows the dashboard address from `dashboard.host` and `dashboard.port`. It was hardcoded to `http://127.0.0.1:8765`, which was wrong for any other host or port.
+- `--help` description now reads "Correlated Network Security Layer" (it said "Cyber"). "Cyber Kill Chain" in the ATT&CK docs is the Lockheed Martin model's real name and is unchanged.
+- The `->` in the update-check and Grafana messages, and the remaining dashes and divider characters in comments and docstrings, are plain ASCII. The file has no non-ASCII characters left.
+
+**Tests**
+- `tests/test_dashboard.py`: banner is ASCII and every row has equal width, widens for long values, `engine.py` stays ASCII-only, CLI description says Correlated, and the banner URL comes from config.
+
+- Version bumped to 3.4.32 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.31 -- Kafka events take the same path as every other source
 
 Kafka messages were handed straight to `detector.handle()`, bypassing `engine_loop`. That meant Kafka events skipped ECS normalization, ML anomaly ingest and the Elasticsearch auto-push added in v3.4.29, and ignored the queue's backpressure limit. They now go through the shared event queue.

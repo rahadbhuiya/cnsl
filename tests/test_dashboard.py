@@ -446,3 +446,44 @@ class TestShutdownOrderAndReload:
         assert "sigma_store.import_dir" in body
         assert "sigma_store.disable" in body       # keeps disabled state
         assert "threat_feed.refresh()" in body
+
+
+# v3.4.32 -- plain-ASCII startup banner, "Correlated" naming, config-driven URL
+
+class TestStartupBannerAndNaming:
+
+    def test_banner_is_ascii_and_aligned(self):
+        from cnsl.engine import format_banner
+        lines = format_banner([
+            ("Auth log", "/var/log/auth.log"),
+            ("Dashboard", "http://10.20.30.40:9000"),
+            ("Mode", "LIVE BLOCKING ENABLED"),
+        ])
+        assert all(all(ord(c) < 128 for c in ln) for ln in lines)
+        assert len({len(ln) for ln in lines}) == 1      # every row same width
+        assert any("http://10.20.30.40:9000" in ln for ln in lines)
+
+    def test_banner_widens_for_long_values(self):
+        from cnsl.engine import format_banner
+        long = "x" * 120
+        lines = format_banner([("Auth log", long)])
+        assert len({len(ln) for ln in lines}) == 1
+        assert long in "".join(lines)
+
+    def test_engine_source_is_ascii_only(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "engine.py"
+               ).read_text(encoding="utf-8")
+        assert all(ord(c) < 128 for c in src)
+
+    def test_cli_description_says_correlated(self):
+        from cnsl.engine import build_arg_parser
+        desc = build_arg_parser().description
+        assert "Correlated" in desc and "Cyber" not in desc
+
+    def test_banner_uses_configured_dashboard_address(self):
+        from pathlib import Path
+        src = (Path(__file__).parent.parent / "cnsl" / "engine.py"
+               ).read_text(encoding="utf-8")
+        assert "127.0.0.1:8765" not in src.split("def format_banner")[-1].split("def build_arg_parser")[0]
+        assert '"http://%s:%s"' in src

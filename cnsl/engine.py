@@ -1,5 +1,5 @@
 """
-cnsl/engine.py — Main async engine loop + CLI entrypoint.
+cnsl/engine.py -- Main async engine loop + CLI entrypoint.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ async def engine_loop(
         try:
             ev: Event = await asyncio.wait_for(queue.get(), timeout=1.0)
 
-            # Normalize to ECS schema — attached to event meta for downstream use
+            # Normalize to ECS schema -- attached to event meta for downstream use
             try:
                 norm = _normalize(ev)
                 ev.meta["_ecs"] = norm.to_dict()
@@ -114,13 +114,32 @@ async def engine_loop(
 # CLI
 
 
+def format_banner(rows, title="CNSL -- Correlated Network Security Layer"):
+    """Return the startup banner as a list of plain-ASCII lines.
+
+    rows is a list of (label, value) pairs. The box widens to fit the
+    longest value, so long paths or URLs never push the right edge out
+    of line (the old fixed-width banner truncated alignment).
+    """
+    label_w = max((len(k) for k, _ in rows), default=0)
+    body    = ["  %s : %s" % (k.ljust(label_w), v) for k, v in rows]
+    width   = max([len(title) + 2] + [len(x) + 1 for x in body])
+    edge    = "+" + "=" * (width + 1) + "+"
+    mid     = "+" + "-" * (width + 1) + "+"
+
+    def row(text):
+        return "| " + text.ljust(width - 1) + " |"
+
+    return ([edge, row(" " + title), mid] + [row(x) for x in body] + [edge])
+
+
 def build_arg_parser():
     import argparse
     from . import __version__
 
     ap = argparse.ArgumentParser(
         prog="cnsl",
-        description="CNSL — Cyber Network Security Layer",
+        description="CNSL -- Correlated Network Security Layer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -163,7 +182,7 @@ Examples:
     ap.add_argument("--status",        action="store_true",
                     help="Show running status and block counts, then exit")
     ap.add_argument("--init",          action="store_true",
-                    help="Interactive setup wizard — create /etc/cnsl/config.json")
+                    help="Interactive setup wizard -- create /etc/cnsl/config.json")
     ap.add_argument("--check-update",     action="store_true",
                     help="Check if a newer version is available on PyPI")
     ap.add_argument("--validate-config",  action="store_true",
@@ -388,7 +407,7 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     if kafka.enabled:
         await kafka.start()
 
-    # HuddleCluster — start after detector so queue_ref is available
+    # HuddleCluster -- start after detector so queue_ref is available
     if huddle.enabled:
         await huddle.start()
 
@@ -628,22 +647,26 @@ async def _main_async(args: Any, cfg: Dict) -> None:
         pass  # Windows does not support SIGHUP
 
     print("", flush=True)
-    print("╔═══════════════════════════════════════════╗")
-    print("║  CNSL — Correlated Network Security Layer ║")
-    print("╠═══════════════════════════════════════════╣")
-    print(f"║  Auth log  : {authlog_path:<28} ║")
-    print(f"║  Mode      : {'DRY-RUN (planning only)' if dry_run else 'LIVE BLOCKING ENABLED':<28} ║")
-    print(f"║  Backend   : {backend:<28} ║")
-    print(f"║  GeoIP     : {'enabled ('+geoip.backend+')' if geoip else 'disabled':<28} ║")
-    print(f"║  Redis     : {'enabled (node:'+redis_sync.node_id+')' if redis_sync.connected else 'disabled':<28} ║")
-    print(f"║  AbuseIPDB : {'enabled' if abuseipdb.enabled else 'disabled':<28} ║")
-    print(f"║  FIM       : {'enabled' if fim_engine.enabled else 'disabled':<28} ║")
-    print(f"║  ML detect : {'enabled' if ml_detector.enabled else 'disabled':<28} ║")
-    print(f"║  Honeypot  : {active_response.mode if active_response.enabled else 'disabled':<28} ║")
-    print(f"║  Assets    : {'tracking' if asset_inventory.enabled else 'disabled':<28} ║")
-    print(f"║  Database  : {'enabled (SQLite)' if store.available else 'disabled':<28} ║")
-    print(f"║  Dashboard : {'http://127.0.0.1:8765' if use_dashboard else 'disabled':<28} ║")
-    print("╚═══════════════════════════════════════════╝")
+    dash_url = None
+    if use_dashboard:
+        _d = cfg.get("dashboard", {})
+        dash_url = "http://%s:%s" % (_d.get("host", "127.0.0.1"),
+                                     safe_int(_d.get("port"), 8765))
+    for _line in format_banner([
+        ("Auth log",  authlog_path),
+        ("Mode",      "DRY-RUN (planning only)" if dry_run else "LIVE BLOCKING ENABLED"),
+        ("Backend",   backend),
+        ("GeoIP",     "enabled (" + geoip.backend + ")" if geoip else "disabled"),
+        ("Redis",     "enabled (node:" + redis_sync.node_id + ")" if redis_sync.connected else "disabled"),
+        ("AbuseIPDB", "enabled" if abuseipdb.enabled else "disabled"),
+        ("FIM",       "enabled" if fim_engine.enabled else "disabled"),
+        ("ML detect", "enabled" if ml_detector.enabled else "disabled"),
+        ("Honeypot",  active_response.mode if active_response.enabled else "disabled"),
+        ("Assets",    "tracking" if asset_inventory.enabled else "disabled"),
+        ("Database",  "enabled (SQLite)" if store.available else "disabled"),
+        ("Dashboard", dash_url if dash_url else "disabled"),
+    ]):
+        print(_line)
     print("  Press Ctrl+C to stop.\n", flush=True)
 
     await stop.wait()
@@ -724,7 +747,7 @@ def _detect_authlog_path() -> str:
 
 
 def _run_init_wizard() -> None:
-    """Interactive setup wizard — creates a working config.json in under 5 minutes.
+    """Interactive setup wizard -- creates a working config.json in under 5 minutes.
 
     Detects real log sources on this machine (nginx/apache/mysql/ufw/
     syslog, auth.log vs secure) rather than asking the user to know
@@ -829,7 +852,7 @@ async def _show_status(cfg: Dict) -> None:
     import os
     db_path = cfg.get("store", {}).get("db_path", "./cnsl_state.db")
     if not os.path.exists(db_path):
-        print("CNSL status: no database found — not running or no events yet.")
+        print("CNSL status: no database found -- not running or no events yet.")
         return
     s = Store(db_path)
     await s.init()
@@ -861,7 +884,7 @@ async def _check_update() -> None:
         if latest == __version__:
             print(f"CNSL {__version__} is up to date.")
         else:
-            print(f"Update available: {__version__} → {latest}")
+            print(f"Update available: {__version__} -> {latest}")
             print("Run: pip install --upgrade cnsl")
     except Exception as e:
         print(f"Could not check for updates: {e}")
@@ -886,7 +909,7 @@ def main() -> None:
     if getattr(args, 'grafana_export', False):
         path = export_dashboard()
         print(f"Grafana dashboard exported to: {path}")
-        print("Import in Grafana: Dashboards → Import → Upload JSON file")
+        print("Import in Grafana: Dashboards -> Import -> Upload JSON file")
         return
 
     # Init wizard
