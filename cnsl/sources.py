@@ -1,5 +1,5 @@
 """
-cnsl/sources.py — Async readers that feed events into the central queue.
+cnsl/sources.py -- Async readers that feed events into the central queue.
 
 Each source runs as a long-lived asyncio task.
 If the subprocess dies (e.g. log rotation, permission error), it retries

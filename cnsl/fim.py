@@ -1,25 +1,25 @@
 """
-cnsl/fim.py — File Integrity Monitoring (FIM).
+cnsl/fim.py -- File Integrity Monitoring (FIM).
 
 Watches critical system files for unauthorized changes.
 Uses SHA-256 hashing + inotify (via watchdog) for real-time detection.
 
 What it watches (configurable):
-  /etc/passwd              — user account changes
-  /etc/shadow              — password hash changes
-  /etc/sudoers             — privilege escalation setup
-  /etc/ssh/sshd_config     — SSH backdoor config
-  /root/.ssh/authorized_keys  — attacker adding SSH key
+  /etc/passwd              -- user account changes
+  /etc/shadow              -- password hash changes
+  /etc/sudoers             -- privilege escalation setup
+  /etc/ssh/sshd_config     -- SSH backdoor config
+  /root/.ssh/authorized_keys  -- attacker adding SSH key
   /home/*/.ssh/authorized_keys
-  /etc/crontab, /etc/cron.d/* — persistence via cron
-  /etc/hosts               — DNS hijacking
-  /etc/ld.so.preload       — library injection (rootkit)
-  /sbin/init, /bin/bash    — binary replacement
+  /etc/crontab, /etc/cron.d/* -- persistence via cron
+  /etc/hosts               -- DNS hijacking
+  /etc/ld.so.preload       -- library injection (rootkit)
+  /sbin/init, /bin/bash    -- binary replacement
 
 Alert severity:
-  CRITICAL  — auth files, SSH keys, sudo, ld.so.preload (rootkit)
-  HIGH      — cron, /etc/hosts, init binaries
-  MEDIUM    — config files, logs
+  CRITICAL  -- auth files, SSH keys, sudo, ld.so.preload (rootkit)
+  HIGH      -- cron, /etc/hosts, init binaries
+  MEDIUM    -- config files, logs
 
 Config example:
   "fim": {
@@ -274,7 +274,7 @@ class FIMEngine:
         self.logger   = logger
         self._db:     Optional[FIMDatabase] = None
 
-        # Callback — set by engine
+        # Callback -- set by engine
         self.on_alert: Optional[Callable] = None
 
     async def initialize(self) -> None:
@@ -322,10 +322,10 @@ class FIMEngine:
             await asyncio.sleep(self.scan_interval)
 
     async def _scan(self) -> None:
-        """One full scan pass — compare current state to baseline."""
+        """One full scan pass -- compare current state to baseline."""
         loop      = asyncio.get_running_loop()
         paths     = self._collect_paths()
-        # Load baselines in thread — synchronous SQLite read
+        # Load baselines in thread -- synchronous SQLite read
         baselines = await loop.run_in_executor(None, lambda: {
             b["path"]: b for b in self._db.all_baselines()
         })
@@ -427,10 +427,10 @@ class FIMEngine:
 
         for p in self._watch_paths:
             if os.path.isfile(p):
-                # Direct file — watch it
+                # Direct file -- watch it
                 paths.append(p)
             elif os.path.isdir(p):
-                # Directory in watch_paths — scan all files inside recursively
+                # Directory in watch_paths -- scan all files inside recursively
                 for root, _dirs, files in os.walk(p):
                     for fname in files:
                         paths.append(os.path.join(root, fname))

@@ -1,7 +1,7 @@
 """
-cnsl/correlator.py — Cross-source correlation rules engine.
+cnsl/correlator.py -- Cross-source correlation rules engine.
 
-This is the core of "Correlated Network Security Layer" —
+This is the core of "Correlated Network Security Layer" --
 it combines signals from multiple sources to detect attacks
 that no single log source can see alone.
 

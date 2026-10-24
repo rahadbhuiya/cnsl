@@ -1,5 +1,5 @@
 """
-cnsl/rules.py — Alert Rule Engine.
+cnsl/rules.py -- Alert Rule Engine.
 
 Defines detection rules as first-class objects that can be:
   - Listed via the dashboard API
@@ -10,7 +10,7 @@ Defines detection rules as first-class objects that can be:
 Built-in rules (mirrors the hardcoded thresholds in detector.py):
 
   Rule ID                  Default sev  Trigger
-  ──────────────────────── ───────────  ──────────────────────────────────
+  ------------------------ -----------  ----------------------------------
   ssh.brute_force          MEDIUM       >= N SSH fails in window
   ssh.credential_stuffing  MEDIUM       >= N distinct usernames in window
   ssh.credential_breach    HIGH         SSH success after >= N fails
@@ -118,7 +118,7 @@ _BUILTIN_RULES: List[Rule] = [
     Rule(
         id          = "ssh.credential_stuffing",
         name        = "SSH Credential Stuffing",
-        description = "Fires when an IP tries too many distinct usernames — indicates a credential list.",
+        description = "Fires when an IP tries too many distinct usernames -- indicates a credential list.",
         severity    = "MEDIUM",
         threshold   = 4,
         window_sec  = 60,
@@ -128,7 +128,7 @@ _BUILTIN_RULES: List[Rule] = [
     Rule(
         id          = "ssh.credential_breach",
         name        = "SSH Credential Breach",
-        description = "Fires when an IP succeeds after many failures — stolen credentials.",
+        description = "Fires when an IP succeeds after many failures -- stolen credentials.",
         severity    = "HIGH",
         threshold   = 5,
         window_sec  = 60,
@@ -138,7 +138,7 @@ _BUILTIN_RULES: List[Rule] = [
     Rule(
         id          = "web.scan_flood",
         name        = "Web Scan Flood",
-        description = "Fires when an IP generates many 404/scan responses — active directory enumeration.",
+        description = "Fires when an IP generates many 404/scan responses -- active directory enumeration.",
         severity    = "MEDIUM",
         threshold   = 20,
         window_sec  = 60,
@@ -148,7 +148,7 @@ _BUILTIN_RULES: List[Rule] = [
     Rule(
         id          = "web.auth_flood",
         name        = "Web Auth Flood",
-        description = "Fires when an IP generates many 401/403 responses — web credential brute-force.",
+        description = "Fires when an IP generates many 401/403 responses -- web credential brute-force.",
         severity    = "MEDIUM",
         threshold   = 15,
         window_sec  = 60,
@@ -178,7 +178,7 @@ _BUILTIN_RULES: List[Rule] = [
     Rule(
         id          = "fw.honeypot_port",
         name        = "Honeypot Port Hit",
-        description = "Fires on any connection to a honeypot port — never a legitimate access.",
+        description = "Fires on any connection to a honeypot port -- never a legitimate access.",
         severity    = "HIGH",
         threshold   = 1,
         window_sec  = 0,

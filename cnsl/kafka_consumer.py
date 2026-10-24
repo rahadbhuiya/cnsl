@@ -1,5 +1,5 @@
 """
-cnsl/kafka_consumer.py — Kafka log ingestion.
+cnsl/kafka_consumer.py -- Kafka log ingestion.
 
 Consumes events from Kafka topics and feeds them into the CNSL
 detection pipeline. Supports multiple topics with per-topic parsers.
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 
 def _build_parser_registry() -> Dict[str, Callable]:
-    """Build a map of parser name → parse function."""
+    """Build a map of parser name -> parse function."""
     registry: Dict[str, Callable] = {}
 
     # Standard log parsers
@@ -262,7 +262,7 @@ class KafkaConsumer:
                 except Exception:
                     pass
 
-    #  confluent-kafka consumer (sync → executor) 
+    #  confluent-kafka consumer (sync -> executor) 
 
     async def _consume_confluent(self, topic: str, topic_cfg: Dict) -> None:
         import confluent_kafka

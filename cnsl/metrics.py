@@ -1,16 +1,16 @@
 """
-cnsl/metrics.py — Prometheus-compatible metrics endpoint.
+cnsl/metrics.py -- Prometheus-compatible metrics endpoint.
 
 Exposes /metrics in text exposition format.
-Scrape with Prometheus → visualize in Grafana.
+Scrape with Prometheus -> visualize in Grafana.
 
 Metrics exposed:
-  cnsl_incidents_total{severity}        — total incidents by severity
-  cnsl_blocks_active                    — currently blocked IPs
-  cnsl_blocks_total                     — all-time blocks
-  cnsl_ssh_fails_total                  — all SSH failures seen
-  cnsl_events_processed_total           — total events processed
-  cnsl_top_attacker_fails{ip,country}   — per-IP fail count (top 10)
+  cnsl_incidents_total{severity}        -- total incidents by severity
+  cnsl_blocks_active                    -- currently blocked IPs
+  cnsl_blocks_total                     -- all-time blocks
+  cnsl_ssh_fails_total                  -- all SSH failures seen
+  cnsl_events_processed_total           -- total events processed
+  cnsl_top_attacker_fails{ip,country}   -- per-IP fail count (top 10)
 """
 
 from __future__ import annotations

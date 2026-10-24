@@ -1,5 +1,5 @@
 """
-cnsl/search_engine.py — Search & Query Engine for CNSL events.
+cnsl/search_engine.py -- Search & Query Engine for CNSL events.
 
 Provides:
   - Full-text search across incidents (IP, country, ISP, reasons)
@@ -17,8 +17,8 @@ KQL-like query syntax supported in /api/search:
   severity:HIGH
   country:China
   reasons:brute_force
-  1.2.3.4                  (bare term — matches any field)
-  severity:HIGH country:China   (AND — all terms must match)
+  1.2.3.4                  (bare term -- matches any field)
+  severity:HIGH country:China   (AND -- all terms must match)
 
 Config:
   "search": {
@@ -73,10 +73,10 @@ def parse_query(query: str) -> List[Tuple[Optional[str], str]]:
     Parse a KQL-like query string into (field, value) pairs.
 
     Examples:
-      "1.2.3.4"              → [(None, "1.2.3.4")]
-      "severity:HIGH"        → [("severity", "HIGH")]
-      "severity:HIGH country:China"  → [("severity","HIGH"), ("country","China")]
-      'reasons:"brute force"' → [("reasons", "brute force")]
+      "1.2.3.4"              -> [(None, "1.2.3.4")]
+      "severity:HIGH"        -> [("severity", "HIGH")]
+      "severity:HIGH country:China"  -> [("severity","HIGH"), ("country","China")]
+      'reasons:"brute force"' -> [("reasons", "brute force")]
     """
     terms = []
     for m in _KQL_TERM_RE.finditer(query.strip()):
@@ -121,7 +121,7 @@ def build_sql_filter(
     for field, value in terms:
         val_like = f"%{value}%"
         if field is None:
-            # Bare term — search across all text fields
+            # Bare term -- search across all text fields
             clauses.append(
                 "(src_ip LIKE ? OR UPPER(severity) = UPPER(?)"
                 " OR country LIKE ? OR isp LIKE ? OR reasons LIKE ?)"
@@ -140,7 +140,7 @@ def build_sql_filter(
             clauses.append("reasons LIKE ?")
             params.append(val_like)
         else:
-            # Unknown field — try as a generic LIKE on reasons
+            # Unknown field -- try as a generic LIKE on reasons
             clauses.append("reasons LIKE ?")
             params.append(val_like)
 
@@ -292,7 +292,7 @@ class SearchEngine:
             rows = await cur.fetchall()
         result["top_countries"] = {r["country"]: r["cnt"] for r in rows}
 
-        # Hourly buckets — use provided range or last 30 days
+        # Hourly buckets -- use provided range or last 30 days
         hourly_cutoff = since if since is not None else (time.time() - 30 * 86400)
         async with self._db.execute(
             """SELECT
@@ -326,7 +326,7 @@ class ElasticsearchPusher:
     Pushes normalized CNSL events to Elasticsearch or OpenSearch.
 
     Only used when search.elasticsearch.enabled=true in config.
-    Does not replace SQLite — it's an additional secondary index.
+    Does not replace SQLite -- it's an additional secondary index.
 
     Usage:
         pusher = ElasticsearchPusher(cfg)

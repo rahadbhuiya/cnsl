@@ -1,14 +1,14 @@
 """
-cnsl/syslog_receiver.py — Network syslog receiver (RFC 3164 / RFC 5424).
+cnsl/syslog_receiver.py -- Network syslog receiver (RFC 3164 / RFC 5424).
 
 Listens on UDP and/or TCP port 514 (or any configured port) so remote
-devices — routers, switches, firewalls, other Linux servers — can ship
+devices -- routers, switches, firewalls, other Linux servers -- can ship
 their logs directly to CNSL without a file agent.
 
 Supported formats:
-  RFC 3164  — <priority>MMM DD HH:MM:SS hostname tag: message
-  RFC 5424  — <priority>VERSION timestamp hostname app procid msgid msg
-  Plain     — raw text lines (fallback)
+  RFC 3164  -- <priority>MMM DD HH:MM:SS hostname tag: message
+  RFC 5424  -- <priority>VERSION timestamp hostname app procid msgid msg
+  Plain     -- raw text lines (fallback)
 
 Each received line is:
   1. Parsed for source IP and message text
@@ -253,16 +253,16 @@ async def _handle_tcp_client(reader, writer, queue, parsers, logger, max_msg_siz
 
 class SyslogReceiver:
     """
-    Network syslog receiver — listens on UDP and/or TCP.
+    Network syslog receiver -- listens on UDP and/or TCP.
 
     Config keys (under "syslog_receiver"):
-      enabled      bool   — enable/disable (default False)
-      host         str    — bind address   (default "0.0.0.0")
-      udp_port     int    — UDP port       (default 514, use 5514 without root)
-      tcp_port     int    — TCP port       (default 514, use 5514 without root)
-      udp_enabled  bool   — enable UDP     (default True)
-      tcp_enabled  bool   — enable TCP     (default True)
-      max_msg_size int    — max bytes/msg  (default 8192)
+      enabled      bool   -- enable/disable (default False)
+      host         str    -- bind address   (default "0.0.0.0")
+      udp_port     int    -- UDP port       (default 514, use 5514 without root)
+      tcp_port     int    -- TCP port       (default 514, use 5514 without root)
+      udp_enabled  bool   -- enable UDP     (default True)
+      tcp_enabled  bool   -- enable TCP     (default True)
+      max_msg_size int    -- max bytes/msg  (default 8192)
     """
 
     def __init__(self, cfg: Dict[str, Any], queue, parsers: List[Callable], logger: JsonLogger):

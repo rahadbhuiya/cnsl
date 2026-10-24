@@ -1,5 +1,5 @@
 """
-cnsl/normalizer.py — Event normalization to a common schema.
+cnsl/normalizer.py -- Event normalization to a common schema.
 
 Every source (SSH, nginx, MySQL, UFW, syslog, remote syslog) produces
 Events in slightly different shapes. This module normalizes them all into
@@ -57,7 +57,7 @@ class NormalizedEvent:
     """
 
     # Core ECS fields
-    timestamp:            str   = ""          # @timestamp — ISO-8601 UTC
+    timestamp:            str   = ""          # @timestamp -- ISO-8601 UTC
     event_kind:           str   = "event"     # event.kind
     event_category:       List[str] = field(default_factory=list)   # event.category
     event_type:           List[str] = field(default_factory=list)   # event.type
@@ -103,7 +103,7 @@ class NormalizedEvent:
     cnsl_threat_score:    int            = 0      # 0-10 threat score
     cnsl_meta:            Dict[str, Any] = field(default_factory=dict)
 
-    # Internal — unix timestamp in ms for CEF rt= field (not serialized)
+    # Internal -- unix timestamp in ms for CEF rt= field (not serialized)
     _ts_ms: float = field(default_factory=lambda: time.time() * 1000)
 
     def __post_init__(self) -> None:
@@ -231,7 +231,7 @@ class NormalizedEvent:
 
 
 
-# Normalization rules — one per EventKind / source
+# Normalization rules -- one per EventKind / source
 
 
 def _ip_version(ip: Optional[str]) -> Optional[str]:

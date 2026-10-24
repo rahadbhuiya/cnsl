@@ -1,5 +1,5 @@
 """
-cnsl/fingerprint.py — Attacker fingerprinting & cross-IP actor clustering.
+cnsl/fingerprint.py -- Attacker fingerprinting & cross-IP actor clustering.
 
 The same attacker frequently rotates through many IPs (VPN exits, botnet
 nodes, cloud-provider churn) while their *behavior* stays recognizable:

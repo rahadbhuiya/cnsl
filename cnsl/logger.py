@@ -1,5 +1,5 @@
 """
-cnsl/logger.py — Structured async JSON logger with console output.
+cnsl/logger.py -- Structured async JSON logger with console output.
 
 Every event written to the JSONL file has:
   { "ts": <unix float>, "time": <ISO-8601>, "type": <str>, "payload": {...} }
@@ -41,8 +41,8 @@ class JsonLogger:
             os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
             self._fp = open(self.path, "a", encoding="utf-8", buffering=1)
         except Exception as e:
-            # Fall back to stderr — never crash because of log file issues
-            print(f"[WARN] Cannot open log file {self.path}: {e} — logging to stderr only",
+            # Fall back to stderr -- never crash because of log file issues
+            print(f"[WARN] Cannot open log file {self.path}: {e} -- logging to stderr only",
                   file=sys.stderr, flush=True)
             self._fp = None
 
@@ -60,7 +60,7 @@ class JsonLogger:
                 try:
                     self._fp.write(line + "\n")
                 except OSError:
-                    # Disk full or file removed — try reopening once
+                    # Disk full or file removed -- try reopening once
                     try:
                         self._fp.close()
                     except Exception:

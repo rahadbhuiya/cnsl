@@ -1,5 +1,5 @@
 """
-cnsl/wazuh.py — Wazuh/OSSEC integration.
+cnsl/wazuh.py -- Wazuh/OSSEC integration.
 
 Wazuh (and its predecessor OSSEC) is a widely-deployed open-source HIDS.
 CNSL doesn't replace it -- it ingests Wazuh's own already-vetted alerts

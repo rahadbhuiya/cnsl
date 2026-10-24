@@ -1,9 +1,9 @@
 """
-cnsl/parsers.py — Log-line parsers for auth.log and tcpdump output.
+cnsl/parsers.py -- Log-line parsers for auth.log and tcpdump output.
 
 Design principles:
   - auth.log is the *primary* signal (precise, human-readable, reliable).
-  - tcpdump is *secondary / hint* (noisy — used only for observability).
+  - tcpdump is *secondary / hint* (noisy -- used only for observability).
   - Each parser returns an Event or None; no side effects.
 """
 
@@ -22,9 +22,9 @@ from .models import Event, EventKind, now
 def _clean_ip(ip: str) -> str:
     """
     Normalize an IP address string:
-      - Strip IPv6 mapped IPv4 prefix (::ffff:1.2.3.4 → 1.2.3.4)
-      - Strip zone IDs (fe80::1%eth0 → fe80::1)
-      - Strip surrounding brackets ([::1] → ::1)
+      - Strip IPv6 mapped IPv4 prefix (::ffff:1.2.3.4 -> 1.2.3.4)
+      - Strip zone IDs (fe80::1%eth0 -> fe80::1)
+      - Strip surrounding brackets ([::1] -> ::1)
     """
     ip = ip.strip().strip("[]")
     # IPv6-mapped IPv4: ::ffff:1.2.3.4
@@ -39,11 +39,11 @@ def _clean_ip(ip: str) -> str:
 
 
 
-# auth.log (sshd lines) — primary signal
+# auth.log (sshd lines) -- primary signal
 #
 # Modern OpenSSH (Kali, Debian 12+, Ubuntu 24+) splits into two processes:
-#   sshd[PID]          — the listener / pre-auth dispatcher
-#   sshd-session[PID]  — the per-connection session handler
+#   sshd[PID]          -- the listener / pre-auth dispatcher
+#   sshd-session[PID]  -- the per-connection session handler
 # All auth events (Failed password, Accepted, PAM failures) now come from
 # sshd-session[PID], so every regex must match BOTH variants.
 
@@ -117,7 +117,7 @@ def parse_auth_event(line: str) -> Optional[Event]:
 
 
 
-# tcpdump — secondary / hint signal
+# tcpdump -- secondary / hint signal
 
 
 # "IP 192.168.0.5.445 > 192.168.0.10.53218: Flags ..."

@@ -1,14 +1,14 @@
 """
-cnsl/api.py — Lightweight REST API (optional, requires aiohttp).
+cnsl/api.py -- Lightweight REST API (optional, requires aiohttp).
 
 Endpoints:
-  GET  /health              — liveness probe
-  GET  /status              — engine summary + tracked IPs
-  POST /block   {"ip": ...} — manually block an IP   [requires X-CNSL-Secret]
-  POST /unblock {"ip": ...} — manually remove a block [requires X-CNSL-Secret]
+  GET  /health              -- liveness probe
+  GET  /status              -- engine summary + tracked IPs
+  POST /block   {"ip": ...} -- manually block an IP   [requires X-CNSL-Secret]
+  POST /unblock {"ip": ...} -- manually remove a block [requires X-CNSL-Secret]
 
 Enable with --api flag (or api.enabled=true in config).
-Bind only to 127.0.0.1 by default — do NOT expose to the internet.
+Bind only to 127.0.0.1 by default -- do NOT expose to the internet.
 Add nginx/auth proxy in front if you need remote access.
 
 Authentication:
@@ -56,7 +56,7 @@ async def start_api(
     def _check_secret(request: "web.Request") -> bool:
         """Return True if the request carries the correct secret header."""
         if not secret:
-            return False  # no secret configured → deny write endpoints
+            return False  # no secret configured -> deny write endpoints
         return request.headers.get("X-CNSL-Secret", "") == secret
 
     @router.get("/health")

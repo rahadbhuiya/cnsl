@@ -1,8 +1,8 @@
 """
-cnsl/ml_detector.py — ML-based anomaly detection.
+cnsl/ml_detector.py -- ML-based anomaly detection.
 
 Uses scikit-learn IsolationForest to learn each server's normal
-behavior and flag statistical outliers — attacks that evade
+behavior and flag statistical outliers -- attacks that evade
 fixed thresholds.
 
 How it works:
@@ -15,7 +15,7 @@ How it works:
        - source diversity (how many log sources)
        - web/ssh/db event ratio
   2. After MIN_SAMPLES observations, train IsolationForest
-  3. Score each new window — anomaly_score < threshold = alert
+  3. Score each new window -- anomaly_score < threshold = alert
   4. Retrain periodically as behavior evolves
 
 Why IsolationForest:
@@ -297,7 +297,7 @@ class MLDetector:
             return
 
         # Reset timer before training so we don't hammer retrain on every
-        # event if training is slow — will retry after retrain_interval_sec
+        # event if training is slow -- will retry after retrain_interval_sec
         self._last_train = now()
 
         loop = asyncio.get_running_loop()

@@ -1,9 +1,9 @@
 """
-cnsl/threat_intel.py — Threat intelligence integrations.
+cnsl/threat_intel.py -- Threat intelligence integrations.
 
 Includes:
-  1. AbuseIPDB  — community-reported malicious IPs
-  2. Behavioral baseline — per-IP "normal" behavior modeling
+  1. AbuseIPDB  -- community-reported malicious IPs
+  2. Behavioral baseline -- per-IP "normal" behavior modeling
 
 AbuseIPDB:
   - Free tier: 1000 lookups/day
@@ -14,7 +14,7 @@ AbuseIPDB:
 Behavioral baseline:
   - Learns normal SSH login times for each IP
   - Flags logins outside normal hours
-  - Tracks login frequency — sudden spike = suspicious
+  - Tracks login frequency -- sudden spike = suspicious
   - Persists to SQLite (survives restarts)
 """
 
@@ -71,14 +71,14 @@ class AbuseIPDB:
 
         self._cache: Dict[str, Dict] = {}
         self._last_req = 0.0
-        self._lock     = asyncio.Lock()  # serialize HTTP requests — prevents rate-limit races
+        self._lock     = asyncio.Lock()  # serialize HTTP requests -- prevents rate-limit races
 
     async def check(self, ip: str) -> Optional[AbuseReport]:
         """Check IP against AbuseIPDB. Returns None if disabled/error."""
         if not self.enabled or not self.api_key:
             return None
 
-        # Cache check — no lock needed, dict reads are safe
+        # Cache check -- no lock needed, dict reads are safe
         cached = self._cache.get(ip)
         if cached and (now() - cached["_ts"]) < self._CACHE_TTL:
             return self._parse(cached, from_cache=True)
@@ -86,7 +86,7 @@ class AbuseIPDB:
         # Serialize HTTP requests so concurrent callers can't both
         # slip through the rate-limit gap at the same time.
         async with self._lock:
-            # Re-check cache inside the lock — another coroutine may have
+            # Re-check cache inside the lock -- another coroutine may have
             # fetched this IP while we were waiting.
             cached = self._cache.get(ip)
             if cached and (now() - cached["_ts"]) < self._CACHE_TTL:

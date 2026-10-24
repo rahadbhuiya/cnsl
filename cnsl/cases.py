@@ -1,12 +1,12 @@
 """
-cnsl/cases.py — Incident Case Management.
+cnsl/cases.py -- Incident Case Management.
 
 Tracks security incidents as actionable cases with status, assignment,
 and timestamped analyst notes.
 
 Case lifecycle:
-  open  →  investigating  →  closed
-                         →  false_positive
+  open  ->  investigating  ->  closed
+                         ->  false_positive
 
 Features:
   - Auto-create case from HIGH severity incident
@@ -17,13 +17,13 @@ Features:
   - SQLite-backed via the shared Store connection
 
 Schema (added to store.py via migration):
-  cases      — one row per case
-  case_notes — timestamped analyst notes (append-only)
+  cases      -- one row per case
+  case_notes -- timestamped analyst notes (append-only)
 
 RBAC:
-  viewer          — read cases, read notes
-  analyst+        — create, update status, assign, add notes
-  admin           — delete cases (rarely needed)
+  viewer          -- read cases, read notes
+  analyst+        -- create, update status, assign, add notes
+  admin           -- delete cases (rarely needed)
 """
 
 from __future__ import annotations
@@ -285,7 +285,7 @@ class CaseManager:
         await self._append_note(
             case_id,
             author=f"system ({actor})",
-            body=f"Status changed: {old_status} → {new_status}",
+            body=f"Status changed: {old_status} -> {new_status}",
         )
         await self._db.commit()
         return None
@@ -312,7 +312,7 @@ class CaseManager:
         await self._append_note(
             case_id,
             author=f"system ({actor})",
-            body=f"Assigned: {old} → {new}",
+            body=f"Assigned: {old} -> {new}",
         )
         await self._db.commit()
         return None
@@ -348,7 +348,7 @@ class CaseManager:
         await self._append_note(
             case_id,
             author=f"system ({actor})",
-            body=f"Severity changed: {old} → {new_severity}",
+            body=f"Severity changed: {old} -> {new_severity}",
         )
         await self._db.commit()
         return None
@@ -428,8 +428,8 @@ def _auto_title(d: Detection) -> str:
     }
     for key, label in label_map.items():
         if key in primary.lower():
-            return f"{label} — {d.src_ip}"
-    return f"{d.severity} Alert — {d.src_ip}"
+            return f"{label} -- {d.src_ip}"
+    return f"{d.severity} Alert -- {d.src_ip}"
 
 
 def _row_to_case(row: Dict) -> Dict:

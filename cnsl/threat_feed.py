@@ -1,14 +1,14 @@
 """
-cnsl/threat_feed.py — Community Threat Feed.
+cnsl/threat_feed.py -- Community Threat Feed.
 
 Downloads and maintains a local blocklist of known-bad IPs from multiple
 public threat intelligence feeds. IPs matching the feed are flagged or
-blocked immediately — before detection thresholds are reached.
+blocked immediately -- before detection thresholds are reached.
 
 Built-in public feeds (all free, no API key required):
 
   Feed                  URL (fetched by ThreatFeed)          Format
-  ────────────────────  ───────────────────────────────────  ──────
+  --------------------  -----------------------------------  ------
   Emerging Threats      rules.emergingthreats.net            plain
   Feodo Tracker         feodotracker.abuse.ch                plain
   CINS Army             cinsscore.com                        plain
@@ -305,7 +305,7 @@ async def _fetch_feed(src: FeedSource) -> Tuple[Set[str], List[ipaddress.IPv4Net
     try:
         import aiohttp
     except ImportError:
-        raise RuntimeError("aiohttp not installed — run: pip install aiohttp")
+        raise RuntimeError("aiohttp not installed -- run: pip install aiohttp")
 
     timeout = aiohttp.ClientTimeout(total=30)
     async with aiohttp.ClientSession(timeout=timeout) as session:

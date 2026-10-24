@@ -1,5 +1,5 @@
 """
-cnsl/migrate.py — SQLite -> PostgreSQL data migration.
+cnsl/migrate.py -- SQLite -> PostgreSQL data migration.
 
 Copies existing data out of a SQLite-backed CNSL store into a
 PostgreSQL database, creating the same schema Store._init_postgresql()

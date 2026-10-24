@@ -487,3 +487,20 @@ class TestStartupBannerAndNaming:
                ).read_text(encoding="utf-8")
         assert "127.0.0.1:8765" not in src.split("def format_banner")[-1].split("def build_arg_parser")[0]
         assert '"http://%s:%s"' in src
+
+
+# v3.4.33 -- plain-ASCII guard for the package (dashboard_html.py is handled separately)
+
+class TestPackageSourceIsAscii:
+
+    def test_cnsl_modules_are_ascii_only(self):
+        from pathlib import Path
+        pkg = Path(__file__).parent.parent / "cnsl"
+        bad = {}
+        for f in sorted(pkg.glob("*.py")):
+            if f.name == "dashboard_html.py":     # UI symbols, cleaned up separately
+                continue
+            n = sum(1 for c in f.read_text(encoding="utf-8") if ord(c) > 127)
+            if n:
+                bad[f.name] = n
+        assert not bad, "non-ASCII characters in: %s" % bad

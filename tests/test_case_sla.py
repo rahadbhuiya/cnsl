@@ -433,7 +433,7 @@ class TestSetSeverity:
             assert err is None
             case = await cm.get(cid)
             assert case["severity"] == "HIGH"
-            assert any("Severity changed: LOW → HIGH" in n["body"] for n in case["notes"])
+            assert any("Severity changed: LOW -> HIGH" in n["body"] for n in case["notes"])
             await cm._store.close()
         _run(go())
 

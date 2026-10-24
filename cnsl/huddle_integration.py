@@ -1,5 +1,5 @@
 """
-cnsl/huddle_integration.py — HuddleCluster Integration for CNSL.
+cnsl/huddle_integration.py -- HuddleCluster Integration for CNSL.
 
 Connects CNSL with HuddleCluster (github.com/rahadbhuiya/HuddleCluster)
 to provide intelligent load balancing across multiple CNSL instances.
@@ -16,13 +16,13 @@ Features:
      - Sticky sessions via affinity_key (client IP)
      - Health-check integration (GET /api/stats)
 
-  3. CNSL metrics → HuddleCluster temperature
-     - events_per_sec × 0.40
-     - queue_fullness  × 0.35
-     - active_incidents× 0.25
+  3. CNSL metrics -> HuddleCluster temperature
+     - events_per_sec x 0.40
+     - queue_fullness  x 0.35
+     - active_incidentsx 0.25
      - Clamped to [0.0, 1.0]
 
-  4. HuddleCluster eviction webhook → CNSL alert
+  4. HuddleCluster eviction webhook -> CNSL alert
      - When a CNSL node is evicted (overheated), CNSL logs it
      - Alert sent via notification channels
      - Case auto-created for manual investigation
@@ -80,19 +80,19 @@ def compute_temperature(
     Convert CNSL metrics into a HuddleCluster temperature score [0.0, 1.0].
 
     Temperature formula:
-      0.40 × event_load   (events_per_sec / saturation point of 100 eps)
-      0.35 × queue_load   (queue_size / queue_max)
-      0.25 × incident_load (active_incidents / saturation of 50)
+      0.40 x event_load   (events_per_sec / saturation point of 100 eps)
+      0.35 x queue_load   (queue_size / queue_max)
+      0.25 x incident_load (active_incidents / saturation of 50)
 
     A temperature above heat_threshold causes HuddleCluster to evict the
     node to the outer (resting) ring. A node in the outer ring with
     temperature below cool_threshold gets promoted back to inner ring.
 
     Examples:
-      Idle CNSL          → ~0.00  (inner ring, serving)
-      Moderate attack    → ~0.35  (inner ring, healthy)
-      Heavy brute-force  → ~0.70  (inner ring, warm)
-      DDoS / mass attack → ~0.90+ (evicted to outer ring, resting)
+      Idle CNSL          -> ~0.00  (inner ring, serving)
+      Moderate attack    -> ~0.35  (inner ring, healthy)
+      Heavy brute-force  -> ~0.70  (inner ring, warm)
+      DDoS / mass attack -> ~0.90+ (evicted to outer ring, resting)
     """
     event_load    = min(1.0, events_per_sec / 100.0)
     queue_load    = min(1.0, queue_size / max(queue_max, 1))
@@ -116,7 +116,7 @@ class CNSLHuddleNode:
     Wraps a HuddleCluster Server object and periodically pushes
     CNSL metrics as temperature updates.
 
-    Usage (single-node mode — report own temperature):
+    Usage (single-node mode -- report own temperature):
         node = CNSLHuddleNode(cluster, server_id="cnsl-01", metrics=metrics)
         await node.start()          # background task
         temp = node.current_temp    # read anytime
@@ -215,7 +215,7 @@ class HuddleManager:
 
         # In dashboard proxy:
         target = huddle.proxy(client_ip=req.remote)
-        # → "http://10.0.0.2:8765"
+        # -> "http://10.0.0.2:8765"
     """
 
     def __init__(

@@ -1,5 +1,5 @@
 """
-cnsl/graph_correlation.py — Graph-structured attack correlation.
+cnsl/graph_correlation.py -- Graph-structured attack correlation.
 
 cnsl/fingerprint.py already clusters IPs by DIRECT pairwise behavioral
 similarity. This module answers a different question: which IPs are

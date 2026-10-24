@@ -1,5 +1,5 @@
 """
-cnsl/auth.py — JWT-based authentication for the dashboard.
+cnsl/auth.py -- JWT-based authentication for the dashboard.
 
 Features:
   - Login with username/password (bcrypt hashed, stored in config)
@@ -50,7 +50,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 import re
 
-# TOTP (pyotp optional — graceful degradation if not installed)
+# TOTP (pyotp optional -- graceful degradation if not installed)
 try:
     import pyotp as _pyotp
     _HAS_PYOTP = True
@@ -190,7 +190,7 @@ def get_totp_uri(secret: str, username: str) -> str:
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    """Verify a 6-digit TOTP code. Allows ±1 window (30s drift tolerance)."""
+    """Verify a 6-digit TOTP code. Allows +/-1 window (30s drift tolerance)."""
     if not _HAS_PYOTP or not secret or not code:
         return False
     try:
@@ -214,7 +214,7 @@ def generate_backup_codes() -> Tuple[List[str], List[str]]:
 
 
 def _hash_backup_code(code: str) -> str:
-    """SHA-256 hash of backup code (normalised — dashes/spaces stripped, uppercase)."""
+    """SHA-256 hash of backup code (normalised -- dashes/spaces stripped, uppercase)."""
     normalised = code.replace("-", "").replace(" ", "").upper()
     return hashlib.sha256(normalised.encode()).hexdigest()
 
@@ -223,7 +223,7 @@ def verify_backup_code(code: str, hashed_codes: List[str]) -> Tuple[bool, List[s
     """
     Check if code matches any stored hash.
     Returns (matched, remaining_hashes_with_used_one_removed).
-    Backup codes are single-use — matched hash is removed.
+    Backup codes are single-use -- matched hash is removed.
     """
     normalised = code.replace("-", "").replace(" ", "").upper()
     candidate  = hashlib.sha256(normalised.encode()).hexdigest()
@@ -299,9 +299,9 @@ class AuthManager:
         Attempt login. Returns (token_or_partial, error, needs_2fa).
 
         Outcomes:
-          - Password wrong  → (None, error_msg, False)
-          - 2FA enabled     → (partial_token, None, True)
-          - 2FA not enabled → (full_access_token, None, False)
+          - Password wrong  -> (None, error_msg, False)
+          - 2FA enabled     -> (partial_token, None, True)
+          - 2FA not enabled -> (full_access_token, None, False)
         """
         if self._is_rate_limited(client_ip):
             return None, "Too many login attempts. Try again in 60 seconds.", False
@@ -473,7 +473,7 @@ class AuthManager:
         return payload, None
 
     def rotate_secret(self) -> str:
-        """Rotate the JWT signing secret — invalidates ALL active tokens."""
+        """Rotate the JWT signing secret -- invalidates ALL active tokens."""
         self.secret = secrets.token_hex(32)
         self._blacklist.clear()
         self._last_activity.clear()

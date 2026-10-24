@@ -1,5 +1,5 @@
 """
-cnsl/detector.py — Stateful, per-IP threat detection engine.
+cnsl/detector.py -- Stateful, per-IP threat detection engine.
 
 Detection pipeline per event:
   1. Route event by kind (SSH, web, DB, firewall, syslog)
@@ -159,7 +159,7 @@ def _unique_users(dq: deque) -> int:
 
 
 def _is_repeat_offender(st: IPState, threshold: int, window_sec: int, t: float) -> bool:
-    """True if this IP has had many incidents recently — escalate to HIGH."""
+    """True if this IP has had many incidents recently -- escalate to HIGH."""
     cutoff  = t - window_sec
     recent  = sum(1 for ts in st.incident_times if ts > cutoff)
     return recent >= threshold
@@ -194,12 +194,12 @@ class Detector:
         zero_trust:      Optional[Any]                 = None,
         sigma:           Optional["SigmaRuleStore"]     = None,
     ):
-        # Rule engine — all thresholds are read from here at evaluation time
+        # Rule engine -- all thresholds are read from here at evaluation time
         self.rules = RuleEngine(cfg)
 
         th = get_thresholds(cfg)
 
-        # Fallback window (used for pruning state — RuleEngine has per-rule windows)
+        # Fallback window (used for pruning state -- RuleEngine has per-rule windows)
         self.window_sec       = safe_int(th.get("fails_window_sec"), 60)
         self.cooldown_sec     = safe_int(th.get("incident_cooldown_sec"), 120)
 
@@ -211,7 +211,7 @@ class Detector:
         self.web_auth_threshold  = self.rules.threshold("web.auth_flood",        15)
         self.db_fail_threshold   = self.rules.threshold("db.brute_force",         5)
 
-        # Repeat offender escalation — now driven by net.repeat_offender rule
+        # Repeat offender escalation -- now driven by net.repeat_offender rule
         ac = cfg.get("actions", {})
         # Keep for backward compat with correlator/baseline that may read these
         self.repeat_threshold = self.rules.threshold("net.repeat_offender", 3)
@@ -306,7 +306,7 @@ class Detector:
                 pass
 
     async def handle(self, ev: Event) -> None:
-        """Main entry point — route event to the appropriate handler."""
+        """Main entry point -- route event to the appropriate handler."""
         if self.metrics:
             self.metrics.inc_event()
 
@@ -339,7 +339,7 @@ class Detector:
         if self.threat_feed and self.threat_feed.enabled and ip not in self.country_block_allowlist:
             await self._check_threat_feed(ip, ev)
 
-        # Country-based blocking — check before threshold evaluation
+        # Country-based blocking -- check before threshold evaluation
         if self.country_block_enabled and self.blocked_countries and ip not in self.country_block_allowlist:
             await self._check_country_block(ip, ev)
 
@@ -465,7 +465,7 @@ class Detector:
     async def _check_country_block(self, ip: str, ev: Event) -> None:
         """Block IP immediately if it originates from a blocked country.
 
-        Uses cached GeoIP to avoid an extra lookup — if the IP has never been
+        Uses cached GeoIP to avoid an extra lookup -- if the IP has never been
         seen before the geo dict is empty and the check is a no-op (the block
         fires on the next event once the cache is warm, or when the lookup
         completes asynchronously).
@@ -1055,7 +1055,7 @@ class Detector:
     ) -> None:
         """Check AbuseIPDB, then fire incident if severity is set."""
 
-        # AbuseIPDB pre-check — runs regardless of threshold
+        # AbuseIPDB pre-check -- runs regardless of threshold
         # Known-bad IPs get flagged even on first event
         if self.abuseipdb:
             try:
@@ -1202,7 +1202,7 @@ class Detector:
     #  Public: stats for dashboard 
 
     def get_stats(self) -> List[Dict]:
-        """Return snapshot of all tracked IPs — used by dashboard REST API."""
+        """Return snapshot of all tracked IPs -- used by dashboard REST API."""
         result = []
         t = now()
         for ip, st in self._state.items():
@@ -1247,7 +1247,7 @@ def _response_plan(severity: str, ip: str, trigger: str = "") -> List[str]:
         plans = [f"[AUTO] TEMP-BLOCK {ip}"]
         if trigger == "success":
             plans += [
-                "[MANUAL] Audit the successful session — check what was accessed",
+                "[MANUAL] Audit the successful session -- check what was accessed",
                 "[MANUAL] Rotate SSH credentials and keys immediately",
                 "[MANUAL] Check for new cron jobs, authorized_keys, .bashrc changes",
             ]

@@ -1,5 +1,5 @@
 """
-cnsl/agent.py — CNSL Log Forwarding Agent.
+cnsl/agent.py -- CNSL Log Forwarding Agent.
 
 A lightweight agent that runs on remote servers and forwards log events
 to a central CNSL instance via WebSocket.
@@ -294,7 +294,7 @@ async def run_agent(cfg: Dict[str, Any]) -> None:
         if not parser:
             continue
         if not os.path.exists(path):
-            print(f"[agent] Warning: {path} not found — skipping", file=sys.stderr)
+            print(f"[agent] Warning: {path} not found -- skipping", file=sys.stderr)
             continue
         tasks.append(asyncio.create_task(
             tail_file(path, queue, parser, hostname),

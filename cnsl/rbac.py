@@ -1,33 +1,33 @@
 """
-cnsl/rbac.py — Role-Based Access Control.
+cnsl/rbac.py -- Role-Based Access Control.
 
 Roles (least to most privileged):
-  viewer   — read-only: stats, incidents, blocks list, cases
-  analyst  — viewer + manual block/unblock + view FIM alerts + case management
-  auditor  — analyst + generate reports + view all logs
-  admin    — full access including config, user management, case deletion
+  viewer   -- read-only: stats, incidents, blocks list, cases
+  analyst  -- viewer + manual block/unblock + view FIM alerts + case management
+  auditor  -- analyst + generate reports + view all logs
+  admin    -- full access including config, user management, case deletion
 
 Permission table:
   Permission              viewer  analyst  auditor  admin
-  ─────────────────────── ─────── ──────── ──────── ─────
-  stats_read              ✓       ✓        ✓        ✓
-  incidents_read          ✓       ✓        ✓        ✓
-  blocks_read             ✓       ✓        ✓        ✓
-  top_attackers_read      ✓       ✓        ✓        ✓
-  metrics_read            ✓       ✓        ✓        ✓
-  cases_read              ✓       ✓        ✓        ✓
-  fim_read                        ✓        ✓        ✓
-  block_write                     ✓        ✓        ✓
-  unblock_write                   ✓        ✓        ✓
-  cases_write                     ✓        ✓        ✓
-  report_generate                          ✓        ✓
-  logs_read                                ✓        ✓
-  asset_read                               ✓        ✓
-  config_read                                       ✓
-  config_write                                      ✓
-  user_manage                                       ✓
-  honeypot_manage                                   ✓
-  cases_delete                                      ✓
+  ----------------------- ------- -------- -------- -----
+  stats_read              [ok]       [ok]        [ok]        [ok]
+  incidents_read          [ok]       [ok]        [ok]        [ok]
+  blocks_read             [ok]       [ok]        [ok]        [ok]
+  top_attackers_read      [ok]       [ok]        [ok]        [ok]
+  metrics_read            [ok]       [ok]        [ok]        [ok]
+  cases_read              [ok]       [ok]        [ok]        [ok]
+  fim_read                        [ok]        [ok]        [ok]
+  block_write                     [ok]        [ok]        [ok]
+  unblock_write                   [ok]        [ok]        [ok]
+  cases_write                     [ok]        [ok]        [ok]
+  report_generate                          [ok]        [ok]
+  logs_read                                [ok]        [ok]
+  asset_read                               [ok]        [ok]
+  config_read                                       [ok]
+  config_write                                      [ok]
+  user_manage                                       [ok]
+  honeypot_manage                                   [ok]
+  cases_delete                                      [ok]
 """
 
 from __future__ import annotations

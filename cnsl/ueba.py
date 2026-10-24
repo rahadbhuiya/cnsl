@@ -1,22 +1,22 @@
 """
-cnsl/ueba.py — User and Entity Behavior Analytics (UEBA).
+cnsl/ueba.py -- User and Entity Behavior Analytics (UEBA).
 
 Builds per-user behavioral profiles and detects anomalies by comparing
 new activity against established baselines.
 
 Detection capabilities:
-  1. Unusual login hour     — login outside normal hours for this user
-  2. New source IP          — user logging in from an IP never seen before
-  3. Lateral movement       — same user active on multiple IPs in short window
-  4. Login frequency spike  — sudden increase vs 7-day rolling average
-  5. Login after absence    — login after > N days of inactivity
-  6. New username pattern   — first time a username appears (configurable)
+  1. Unusual login hour     -- login outside normal hours for this user
+  2. New source IP          -- user logging in from an IP never seen before
+  3. Lateral movement       -- same user active on multiple IPs in short window
+  4. Login frequency spike  -- sudden increase vs 7-day rolling average
+  5. Login after absence    -- login after > N days of inactivity
+  6. New username pattern   -- first time a username appears (configurable)
 
 Profile data collected per user:
-  - login_hours: {hour: count}  — hour-of-day distribution
-  - known_ips: {ip: last_seen}  — source IPs ever seen for this user
-  - daily_counts: deque(7)      — logins per day, 7-day rolling
-  - recent_ips: deque(10m)      — IPs active in last N seconds (lateral movement)
+  - login_hours: {hour: count}  -- hour-of-day distribution
+  - known_ips: {ip: last_seen}  -- source IPs ever seen for this user
+  - daily_counts: deque(7)      -- logins per day, 7-day rolling
+  - recent_ips: deque(10m)      -- IPs active in last N seconds (lateral movement)
   - total_logins, first_seen, last_seen
   - anomaly_count, anomaly_log (last 20 anomalies)
 
@@ -93,7 +93,7 @@ class UserProfile:
     # Recent IPs in lateral movement window [(ts, ip), ...]
     recent_ips: deque             = field(default_factory=lambda: deque(maxlen=50))
 
-    # Daily login counts — rolling 7-day window [(day_epoch, count), ...]
+    # Daily login counts -- rolling 7-day window [(day_epoch, count), ...]
     daily_counts: deque           = field(default_factory=lambda: deque(maxlen=7))
 
     # Totals
@@ -177,7 +177,7 @@ class UEBAEngine:
     ) -> Optional["UEBAAnomaly"]:
         """
         Record a successful login. Returns UEBAAnomaly if anomalous, else None.
-        This is sync — fast path for the hot detection loop.
+        This is sync -- fast path for the hot detection loop.
         DB persistence is done asynchronously via save_event().
         """
         if not self.enabled or not username:
@@ -242,7 +242,7 @@ class UEBAEngine:
             )
             anomaly_types.append("new_source_ip")
 
-        # 3. Lateral movement — same user, many IPs in short window
+        # 3. Lateral movement -- same user, many IPs in short window
         cutoff       = ts - self.lateral_window_sec
         recent_set   = {ip for t, ip in prof.recent_ips if t >= cutoff and ip != src_ip}
         recent_set.add(src_ip)

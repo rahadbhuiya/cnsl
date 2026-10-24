@@ -1,5 +1,5 @@
 """
-cnsl/models.py — Shared data models and constants.
+cnsl/models.py -- Shared data models and constants.
 """
 
 from __future__ import annotations

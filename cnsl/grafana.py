@@ -1,8 +1,8 @@
 """
-cnsl/grafana.py — Grafana dashboard template generator.
+cnsl/grafana.py -- Grafana dashboard template generator.
 
 Generates a Grafana dashboard JSON that visualises CNSL metrics.
-Import it via Grafana UI: Dashboards → Import → paste JSON.
+Import it via Grafana UI: Dashboards -> Import -> paste JSON.
 
 Requires:
   - CNSL running with --dashboard flag
@@ -172,7 +172,7 @@ class GrafanaDashboard:
     def generate(self) -> str:
         """Return JSON string of the full Grafana dashboard."""
         dashboard = {
-            "title":       "CNSL — Correlated Network Security Layer",
+            "title":       "CNSL -- Correlated Network Security Layer",
             "description": "Real-time security monitoring dashboard for CNSL",
             "tags":        ["cnsl", "security", "intrusion-detection"],
             "timezone":    "browser",

@@ -1,8 +1,8 @@
 """
-cnsl/log_sources.py — Multi-log source parsers.
+cnsl/log_sources.py -- Multi-log source parsers.
 
 Supported log sources:
-  - auth.log / secure     (SSH — existing)
+  - auth.log / secure     (SSH -- existing)
   - nginx access log      (web attacks, scanners)
   - apache access log     (web attacks)
   - mysql error log       (DB brute-force)
@@ -75,7 +75,7 @@ _SCANNER_UA = re.compile(
     re.IGNORECASE,
 )
 
-# Legitimate bots — avoid false positives
+# Legitimate bots -- avoid false positives
 _LEGIT_BOTS = re.compile(
     r'(?i)(googlebot|bingbot|yandexbot|duckduckbot|baiduspider|'
     r'facebookexternalhit|twitterbot|linkedinbot|'
@@ -96,7 +96,7 @@ def parse_web_access(line: str, source: str = "nginx") -> Optional[Event]:
     status = int(m.group("status"))
     ua     = m.group("ua") or ""
 
-    # Skip legitimate bots — no false positives
+    # Skip legitimate bots -- no false positives
     if _LEGIT_BOTS.search(ua):
         return None
 
@@ -122,12 +122,12 @@ def parse_web_access(line: str, source: str = "nginx") -> Optional[Event]:
 
     #  Authentication failure (only if already suspicious or high volume) 
     if status in (401, 403) and kind is None:
-        # Single 401/403 is too noisy — only flag if path is also suspicious
+        # Single 401/403 is too noisy -- only flag if path is also suspicious
         if _SCAN_PATHS.search(path) or _EXPLOIT_PATHS.search(path):
             kind          = "WEB_AUTH_FAIL"
             threat_score += 2
 
-    #  404 flood — only flag scanner UA or exploit paths 
+    #  404 flood -- only flag scanner UA or exploit paths 
     # A bare 404 on a normal path is far too noisy to be useful
     if status == 404 and kind is None and _SCANNER_UA.search(ua):
         kind          = "WEB_SCAN"
@@ -215,7 +215,7 @@ def parse_ufw(line: str) -> Optional[Event]:
 
 
 
-# Syslog — sudo abuse, su failures
+# Syslog -- sudo abuse, su failures
 
 # Jan  1 00:00:00 host sudo: baduser : user NOT in sudoers
 # Jan  1 00:00:00 host su[1234]: FAILED su for root by baduser

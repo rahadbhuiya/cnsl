@@ -1,5 +1,5 @@
 """
-cnsl/rate_limiter.py — Web Request Rate Limiting and DDoS Protection.
+cnsl/rate_limiter.py -- Web Request Rate Limiting and DDoS Protection.
 
 Provides per-IP request rate limiting for the web dashboard and
 incoming HTTP events. Detects and auto-blocks connection floods.

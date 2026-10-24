@@ -1,5 +1,5 @@
 """
-cnsl/taxii.py — Minimal read-only TAXII 2.1 server.
+cnsl/taxii.py -- Minimal read-only TAXII 2.1 server.
 
 Exposes CNSL's detected attacker IPs (via cnsl/stix_export.py) through
 a single-collection, read-only TAXII 2.1 API, so any TAXII 2.1 client

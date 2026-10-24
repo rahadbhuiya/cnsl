@@ -1,5 +1,5 @@
 """
-cnsl/redis_sync.py — Redis distributed blocklist.
+cnsl/redis_sync.py -- Redis distributed blocklist.
 
 Allows multiple CNSL instances (on different servers) to share
 a common blocklist. When server A blocks an IP, servers B and C

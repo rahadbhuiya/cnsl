@@ -1,5 +1,5 @@
 """
-cnsl/audit.py — Compliance audit trail.
+cnsl/audit.py -- Compliance audit trail.
 
 Tracks who did what, when: manual blocks/unblocks, secret rotation,
 case status changes, and other administrative actions. Separate from
@@ -80,7 +80,7 @@ class AuditLog:
     ) -> Optional[int]:
         """
         Append an audit entry. Returns the new row id, or None if the
-        store is unavailable (never raises — auditing must not break
+        store is unavailable (never raises -- auditing must not break
         the action it's recording).
         """
         if not self.available or self._db is None:

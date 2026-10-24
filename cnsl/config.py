@@ -1,5 +1,5 @@
 """
-cnsl/config.py — Configuration loading, merging, and validation.
+cnsl/config.py -- Configuration loading, merging, and validation.
 
 Priority (highest to lowest):
   CLI flags  >  config file  >  DEFAULT_CONFIG
@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 
 
-# Default configuration — every tuneable value lives here
+# Default configuration -- every tuneable value lives here
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -76,14 +76,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "repeat_offender_window_sec": 3600,
     },
 
-    #  HuddleCluster — multi-node load balancing 
+    #  HuddleCluster -- multi-node load balancing 
     # github.com/rahadbhuiya/HuddleCluster
     "huddle": {
         "enabled":                   False,
         "nodes":                     [],     # [{id, host, port, weight}]
         "max_inner_size":            2,      # active CNSL nodes at a time
-        "heat_threshold":            0.75,   # temp above this → evict to outer ring
-        "cool_threshold":            0.35,   # temp below this → promote to inner ring
+        "heat_threshold":            0.75,   # temp above this -> evict to outer ring
+        "cool_threshold":            0.35,   # temp below this -> promote to inner ring
         "gossip":                    False,  # UDP multicast temp sharing
         "gossip_port":               7946,
         "health_check":              True,   # GET /api/stats on each node
@@ -133,7 +133,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled":        True,    # accept agent connections on /ws/agent
     },
 
-    #  UEBA — User and Entity Behavior Analytics 
+    #  UEBA -- User and Entity Behavior Analytics 
     "ueba": {
         "enabled":               False,
         "min_observations":      10,      # logins before anomaly detection starts
@@ -190,7 +190,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_stages": 2,
     },
 
-    #  Allowlist — never blocked 
+    #  Allowlist -- never blocked 
     "allowlist": [
         "127.0.0.1",
         "::1",
@@ -203,7 +203,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "country_block": {
         "enabled":       False,
         "countries":     [],           # ISO-3166-1 alpha-2 codes (uppercase)
-        "severity":      "HIGH",       # always HIGH — logged + blocked immediately
+        "severity":      "HIGH",       # always HIGH -- logged + blocked immediately
         "allowlist":     [],           # IPs exempt from country blocking even if in blocked country
     },
 
@@ -286,7 +286,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "logging": {
         "json_log_path":    "./cnsl.jsonl",
         "console_verbose":  True,
-        "log_net_hints":    False,  # noisy — enable only for debugging
+        "log_net_hints":    False,  # noisy -- enable only for debugging
         "log_correlations": True,   # log correlation rule hits
         "log_baseline":     True,   # log behavioral anomalies
     },
@@ -405,7 +405,7 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     """
     cfg: Dict[str, Any] = _deep_copy(DEFAULT_CONFIG)
 
-    # Resolve path — explicit arg wins, then auto-discover
+    # Resolve path -- explicit arg wins, then auto-discover
     resolved: Optional[str] = resolve_config_path(path)
 
     if not resolved:
@@ -457,7 +457,7 @@ def apply_cli_overrides(cfg: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
 
 
 
-# Typed accessors — use these instead of cfg["key"] in engine code
+# Typed accessors -- use these instead of cfg["key"] in engine code
 
 
 def get_authlog_path(cfg: Dict) -> str:
@@ -563,7 +563,7 @@ def _read_file(path: str) -> Dict[str, Any]:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    # YAML — optional dependency
+    # YAML -- optional dependency
     try:
         import yaml  # type: ignore
     except ImportError:

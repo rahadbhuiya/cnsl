@@ -1,5 +1,5 @@
 """
-cnsl/blocker.py — IP blocking backend.
+cnsl/blocker.py -- IP blocking backend.
 
 Supports:
   - iptables  (simple, default)
@@ -8,7 +8,7 @@ Supports:
 Both backends are IPv6-aware: IPv6 addresses are routed to ip6tables /
 a separate "inet6" ipset automatically (see _backend_for_ip / _ipset_name_for_ip).
 
-Default mode is DRY-RUN — no commands are executed unless --execute is passed.
+Default mode is DRY-RUN -- no commands are executed unless --execute is passed.
 
 Safety rules enforced here:
   1. Allowlisted IPs are never blocked.
@@ -38,7 +38,7 @@ def _is_ipv6(ip: str) -> bool:
 
 
 def _iptables_bin(ip: str) -> str:
-    """Pick the right binary — ip6tables for IPv6 addresses, iptables otherwise."""
+    """Pick the right binary -- ip6tables for IPv6 addresses, iptables otherwise."""
     return "ip6tables" if _is_ipv6(ip) else "iptables"
 
 
@@ -72,7 +72,7 @@ class Blocker:
         self.logger             = logger
         self.metrics            = metrics
         self.on_unblock         = None  # optional async callback(ip) for Redis cluster sync
-        self.store              = None  # optional Store — set after init to remove DB entries
+        self.store              = None  # optional Store -- set after init to remove DB entries
 
         # ip -> unblock_at timestamp
         self.active_blocks: Dict[str, float] = {}
@@ -185,8 +185,8 @@ async def ensure_ipset(name: str, logger: JsonLogger) -> bool:
     at them. Call once at startup when using the ipset backend.
 
     ipset can't mix address families in one set, so this creates two sets:
-      <name>     hash:ip family inet   (IPv4) — matched by iptables
-      <name>_v6  hash:ip family inet6  (IPv6) — matched by ip6tables
+      <name>     hash:ip family inet   (IPv4) -- matched by iptables
+      <name>_v6  hash:ip family inet6  (IPv6) -- matched by ip6tables
     """
     cmds = [
         ["sudo", "ipset", "create", name, "hash:ip", "family", "inet",

@@ -1,5 +1,5 @@
 """
-cnsl/stix_export.py — STIX 2.1 bundle export of detected attacker IPs.
+cnsl/stix_export.py -- STIX 2.1 bundle export of detected attacker IPs.
 
 Turns CNSL's own detections (store.top_attackers()) into a standard
 STIX 2.1 bundle: one Indicator object per attacker IP, plus an Identity

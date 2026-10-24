@@ -4,6 +4,29 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.33 -- ASCII cleanup, part 2: the `cnsl/` package
+
+Continues v3.4.32. Every module in `cnsl/` except `dashboard_html.py` (next release) is now plain ASCII: comments, docstrings and user-visible strings.
+
+**What changed**
+- Em-dashes become `--`, arrows become `->`, box-drawing dividers become `-`, `=` and `|`.
+- Inside HTML (the HTML report in `cnsl/reporter.py`, the alert email body in `cnsl/notify.py`) the same characters are written as entities (`&mdash;`, `&middot;`, `&rarr;`, `&#10003;`), so the rendered report and email look exactly as before while the source stays ASCII.
+- "No data" placeholder cells in the reports (country, ISP, MEDIUM/blocked counts) now show `-` instead of an em-dash.
+- Alert titles and subjects use `--`, for example `CNSL Alert -- HIGH` and `[CNSL] HIGH Alert -- 1.2.3.4`. If you have mail filters or webhook rules matching the old em-dash subject, update them.
+- The Grafana dashboard title is now `CNSL -- Correlated Network Security Layer`.
+- Case notes written by the severity-change code now read `Severity changed: LOW -> HIGH`. Notes already stored in your database keep their old arrow.
+
+**Not changed**
+- No logic, only characters. 48 modules touched.
+
+**Tests**
+- `tests/test_dashboard.py`: guard that fails if any `cnsl/*.py` (other than `dashboard_html.py`) contains non-ASCII again.
+- `tests/test_case_sla.py`: updated for the `->` note text.
+
+- Version bumped to 3.4.33 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.32 -- Plain-ASCII startup banner, "Correlated" naming, real dashboard URL
 
 First part of the ASCII cleanup (the project rule is plain ASCII only: no em-dashes, arrows or box-drawing characters). This batch covers `cnsl/engine.py`; the remaining files follow in the next releases.

@@ -258,7 +258,7 @@ async def start_dashboard(
 
     @router.post("/api/2fa/confirm")
     async def api_2fa_confirm(req: web.Request) -> web.Response:
-        """Confirm 2FA setup with first OTP — activates 2FA and returns backup codes."""
+        """Confirm 2FA setup with first OTP -- activates 2FA and returns backup codes."""
         payload, err = _require_auth(req)
         if err:
             return web.json_response({"error": err}, status=401)
@@ -273,7 +273,7 @@ async def start_dashboard(
 
     @router.post("/api/2fa/disable")
     async def api_2fa_disable(req: web.Request) -> web.Response:
-        """Disable 2FA — requires password confirmation."""
+        """Disable 2FA -- requires password confirmation."""
         payload, err = _require_auth(req)
         if err:
             return web.json_response({"error": err}, status=401)
@@ -782,7 +782,7 @@ async def start_dashboard(
         if err: return err
         try:
             limit = int(req.rel_url.query.get("limit", 50))
-            limit = max(1, min(limit, 500))  # clamp: 1–500
+            limit = max(1, min(limit, 500))  # clamp: 1-500
         except (ValueError, TypeError):
             limit = 50
         rows  = await store.recent_incidents(limit) if store.available else []
@@ -820,7 +820,7 @@ async def start_dashboard(
 
     @router.get("/api/events")
     async def api_events(req: web.Request) -> web.Response:
-        """Raw recent events — alias for /api/incidents with richer fields."""
+        """Raw recent events -- alias for /api/incidents with richer fields."""
         if (r := _rate_check(req)): return r
         _, err = _require_auth(req)
         if err: return err
@@ -840,8 +840,8 @@ async def start_dashboard(
         Query params:
           q         KQL-like query string (e.g. "severity:HIGH", "country:China", "1.2.3.4")
           severity  Filter by severity (HIGH / MEDIUM / LOW)
-          since     Unix timestamp — events after this time
-          until     Unix timestamp — events before this time
+          since     Unix timestamp -- events after this time
+          until     Unix timestamp -- events before this time
           limit     Max results (default 50, max 500)
           offset    Pagination offset (default 0)
         """
@@ -1313,7 +1313,7 @@ async def start_dashboard(
 
     @router.get("/api/debug")
     async def api_debug(req: web.Request) -> web.Response:
-        """Diagnostic endpoint — shows what modules are wired."""
+        """Diagnostic endpoint -- shows what modules are wired."""
         return web.json_response({
             "ml_detector_wired":       ml_detector is not None,
             "ml_detector_enabled":     getattr(ml_detector, "enabled", None),
@@ -1758,20 +1758,20 @@ async def start_dashboard(
 
         return resp
 
-    #  WebSocket — bidirectional live feed + actions 
+    #  WebSocket -- bidirectional live feed + actions 
 
     @router.get("/ws")
     async def ws_handler(req: web.Request) -> web.WebSocketResponse:
         """
-        WebSocket endpoint — replaces SSE with a bidirectional channel.
+        WebSocket endpoint -- replaces SSE with a bidirectional channel.
 
         Auth: send {"type":"auth","token":"..."} as first message.
 
-        Server → client messages:
-          {"type":"event",  "data": {...}}   — live detection event
-          {"type":"ping"}                    — keepalive
+        Server -> client messages:
+          {"type":"event",  "data": {...}}   -- live detection event
+          {"type":"ping"}                    -- keepalive
 
-        Client → server messages:
+        Client -> server messages:
           {"type":"block",   "ip": "1.2.3.4"}
           {"type":"unblock", "ip": "1.2.3.4"}
           {"type":"ping"}
@@ -1779,7 +1779,7 @@ async def start_dashboard(
         ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(req)
 
-        # Auth handshake — first message must be {"type":"auth","token":"..."}
+        # Auth handshake -- first message must be {"type":"auth","token":"..."}
         ws_payload = None
         try:
             first = await asyncio.wait_for(ws.receive(), timeout=10)
@@ -1859,7 +1859,7 @@ async def start_dashboard(
 
         return ws
 
-    #  WebSocket — Agent ingestion endpoint 
+    #  WebSocket -- Agent ingestion endpoint 
 
     @router.get("/ws/agent")
     async def ws_agent_handler(req: web.Request) -> web.WebSocketResponse:
@@ -1869,8 +1869,8 @@ async def start_dashboard(
         Agents connect here, authenticate via Bearer token in headers,
         then stream batches of log events.
 
-        Agent → server: {"type":"agent_events","host":"...","events":[...]}
-        Server → agent: {"ok":true} (handshake ack) or {"type":"pong"}
+        Agent -> server: {"type":"agent_events","host":"...","events":[...]}
+        Server -> agent: {"ok":true} (handshake ack) or {"type":"pong"}
         """
         # Auth from header (agents don't do an interactive handshake)
         token_str = req.headers.get("Authorization", "").replace("Bearer ", "").strip()
@@ -1949,18 +1949,18 @@ async def start_dashboard(
 
     @router.post("/api/auth/rotate-secret")
     async def api_rotate_secret(req: web.Request) -> web.Response:
-        """Rotate JWT signing secret — invalidates ALL active sessions."""
+        """Rotate JWT signing secret -- invalidates ALL active sessions."""
         if (r := _rate_check(req)): return r
         user_payload, err = _require_auth(req)
         if err: return err
         if (r := _require_perm(user_payload, "admin")): return r
         auth.rotate_secret()
         await _audit(req, user_payload, "rotate_secret")
-        return web.json_response({"ok": True, "message": "Secret rotated — all sessions invalidated."})
+        return web.json_response({"ok": True, "message": "Secret rotated -- all sessions invalidated."})
 
     @router.get("/api/audit")
     async def api_audit(req: web.Request) -> web.Response:
-        """Compliance audit trail — who did what, when. Requires logs:read."""
+        """Compliance audit trail -- who did what, when. Requires logs:read."""
         if (r := _rate_check(req)): return r
         user_payload, err = _require_auth(req)
         if err: return err
@@ -1994,6 +1994,6 @@ async def start_dashboard(
         "url":  f"http://{host}:{port}",
         "auth": auth_status,
     })
-    print(f"\n  Dashboard → http://{host}:{port}  (auth: {auth_status})\n", flush=True)
+    print(f"\n  Dashboard -> http://{host}:{port}  (auth: {auth_status})\n", flush=True)
 
     await asyncio.Event().wait()

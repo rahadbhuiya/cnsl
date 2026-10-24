@@ -1,9 +1,9 @@
 """
-cnsl/geoip.py — GeoIP enrichment (offline MaxMind + online fallback).
+cnsl/geoip.py -- GeoIP enrichment (offline MaxMind + online fallback).
 
 Priority:
   1. MaxMind GeoLite2-City.mmdb  (offline, fast, accurate)
-  2. ip-api.com                  (online, free, no key — fallback)
+  2. ip-api.com                  (online, free, no key -- fallback)
 
 MaxMind setup (free):
   1. Register at https://www.maxmind.com/en/geolite2/signup

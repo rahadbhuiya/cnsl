@@ -1,5 +1,5 @@
 """
-cnsl/hub.py — Multi-node hub view.
+cnsl/hub.py -- Multi-node hub view.
 
 Federation (cnsl/federation.py) lets nodes share detection signals, and
 RedisSync (cnsl/redis_sync.py) already gives every node a heartbeat key

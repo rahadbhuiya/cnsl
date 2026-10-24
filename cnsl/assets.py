@@ -1,14 +1,14 @@
 """
-cnsl/assets.py — Asset inventory via passive network discovery.
+cnsl/assets.py -- Asset inventory via passive network discovery.
 
 Builds a map of all devices on the network without active scanning.
-Uses existing tcpdump and auth.log data — no extra traffic generated.
+Uses existing tcpdump and auth.log data -- no extra traffic generated.
 
 Tracks:
   - IP addresses seen on the network
   - First/last seen timestamps
   - Hostnames (from DNS/mDNS)
-  - MAC addresses (from ARP — same subnet only)
+  - MAC addresses (from ARP -- same subnet only)
   - Open services (inferred from connections)
   - Trust level (allowlisted, known, unknown, suspicious)
   - Activity patterns

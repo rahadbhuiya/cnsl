@@ -1,9 +1,9 @@
 """
-cnsl/zeek_parser.py — Zeek (Bro) Network Security Monitor log ingestion.
+cnsl/zeek_parser.py -- Zeek (Bro) Network Security Monitor log ingestion.
 
 Supported Zeek logs:
   Log file     Events produced        Detection triggered
-  ──────────── ────────────────────── ────────────────────────────────────
+  ------------ ---------------------- ------------------------------------
   conn.log     NET_CONN               port scan, connection flood
   ssh.log      SSH_FAIL / SSH_SUCCESS brute-force, credential breach
   http.log     WEB_SCAN / WEB_EXPLOIT web scan flood, exploit attempt
@@ -67,7 +67,7 @@ def _shannon_entropy(s: str) -> float:
 #  Zeek TSV field maps 
 
 # Default field positions for each log type (0-indexed).
-# These match stock Zeek 4.x / 5.x — custom installations may differ.
+# These match stock Zeek 4.x / 5.x -- custom installations may differ.
 # The TSV parser reads the actual #fields header, so this is just a fallback.
 
 _DEFAULT_FIELDS: Dict[str, List[str]] = {
@@ -155,7 +155,7 @@ def _safe_ip(d: Dict, key: str) -> str:
 
 
 def parse_zeek_conn(row: Dict[str, str]) -> Optional[Event]:
-    """conn.log row → NET_CONN event."""
+    """conn.log row -> NET_CONN event."""
     src_ip = _safe_ip(row, "id.orig_h")
     if not src_ip:
         return None
@@ -177,7 +177,7 @@ def parse_zeek_conn(row: Dict[str, str]) -> Optional[Event]:
 
 
 def parse_zeek_ssh(row: Dict[str, str]) -> Optional[Event]:
-    """ssh.log row → SSH_FAIL or SSH_SUCCESS event."""
+    """ssh.log row -> SSH_FAIL or SSH_SUCCESS event."""
     src_ip = _safe_ip(row, "id.orig_h")
     if not src_ip:
         return None
@@ -224,7 +224,7 @@ _SCAN_UA_RE = re.compile(
 
 
 def parse_zeek_http(row: Dict[str, str]) -> Optional[Event]:
-    """http.log row → WEB_SCAN, WEB_AUTH_FAIL, or WEB_EXPLOIT_ATTEMPT."""
+    """http.log row -> WEB_SCAN, WEB_AUTH_FAIL, or WEB_EXPLOIT_ATTEMPT."""
     src_ip = _safe_ip(row, "id.orig_h")
     if not src_ip:
         return None
@@ -245,7 +245,7 @@ def parse_zeek_http(row: Dict[str, str]) -> Optional[Event]:
     elif status == "404":
         kind = "WEB_SCAN"
     else:
-        return None   # normal traffic — skip
+        return None   # normal traffic -- skip
 
     return Event(
         ts     = now(),
@@ -265,7 +265,7 @@ def parse_zeek_http(row: Dict[str, str]) -> Optional[Event]:
 
 def parse_zeek_dns(row: Dict[str, str], entropy_threshold: float = 3.5) -> Optional[Event]:
     """
-    dns.log row → DNS_QUERY event.
+    dns.log row -> DNS_QUERY event.
     Flags high-entropy query names (possible DNS tunneling).
     """
     src_ip = _safe_ip(row, "id.orig_h")
@@ -273,7 +273,7 @@ def parse_zeek_dns(row: Dict[str, str], entropy_threshold: float = 3.5) -> Optio
     if not src_ip or not query:
         return None
 
-    # Only flag if entropy is above threshold — normal hostnames are low entropy
+    # Only flag if entropy is above threshold -- normal hostnames are low entropy
     label = query.split(".")[0]   # highest-entropy subdomain
     entropy = _shannon_entropy(label)
     if entropy < entropy_threshold:
@@ -295,7 +295,7 @@ def parse_zeek_dns(row: Dict[str, str], entropy_threshold: float = 3.5) -> Optio
 
 
 def parse_zeek_notice(row: Dict[str, str]) -> Optional[Event]:
-    """notice.log row → ZEEK_NOTICE event (Zeek's built-in detection framework)."""
+    """notice.log row -> ZEEK_NOTICE event (Zeek's built-in detection framework)."""
     # src can be in "src" or "id.orig_h"
     src_ip = _safe_ip(row, "src") or _safe_ip(row, "id.orig_h")
     note   = row.get("note", "")
@@ -320,7 +320,7 @@ def parse_zeek_notice(row: Dict[str, str]) -> Optional[Event]:
 
 
 def parse_zeek_weird(row: Dict[str, str]) -> Optional[Event]:
-    """weird.log row → ZEEK_WEIRD event (protocol anomalies)."""
+    """weird.log row -> ZEEK_WEIRD event (protocol anomalies)."""
     src_ip = _safe_ip(row, "id.orig_h")
     name   = row.get("name", "")
     if not name:
@@ -402,7 +402,7 @@ class ZeekLogParser:
             return None
         if not isinstance(row, dict) or self._row_fn is None:
             return None
-        # JSON uses dotted keys — normalise to match TSV field names
+        # JSON uses dotted keys -- normalise to match TSV field names
         flat = {k.replace(".", "_"): v for k, v in row.items()}
         # Also keep original dotted keys for compatibility
         flat.update(row)

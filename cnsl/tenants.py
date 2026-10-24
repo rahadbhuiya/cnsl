@@ -1,5 +1,5 @@
 """
-cnsl/tenants.py — Multi-tenant support.
+cnsl/tenants.py -- Multi-tenant support.
 
 Allows a single CNSL instance to serve multiple isolated organizations
 (tenants). Each tenant has:

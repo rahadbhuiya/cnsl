@@ -1,5 +1,5 @@
 """
-cnsl/store.py — SQLite-backed persistent state.
+cnsl/store.py -- SQLite-backed persistent state.
 
 Stores:
   - incidents (full history, survives restarts)
@@ -219,7 +219,7 @@ class Store:
         if not self._available or self._db is None:
             return
         geo = geo or {}
-        # Infer kind from reasons — credential_breach means SSH_SUCCESS (success after fails)
+        # Infer kind from reasons -- credential_breach means SSH_SUCCESS (success after fails)
         kind = "SSH_FAIL"
         reasons_str = " ".join(d.reasons).lower()
         if "credential_breach" in reasons_str:

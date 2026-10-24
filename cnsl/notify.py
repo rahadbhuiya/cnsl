@@ -1,5 +1,5 @@
 """
-cnsl/notify.py — Multi-channel alert notifications.
+cnsl/notify.py -- Multi-channel alert notifications.
 
 Supported channels:
   - Telegram Bot
@@ -9,7 +9,7 @@ Supported channels:
   - Email (SMTP / STARTTLS / SSL)
 
 Configure in config.json under "notifications": { ... }
-All channels are optional and independent — failure in one
+All channels are optional and independent -- failure in one
 does not affect others.
 """
 
@@ -53,7 +53,7 @@ def _build_message(detection: Detection, geo: Optional[Dict] = None) -> str:
         location += f", {city}"
 
     lines = [
-        f"*CNSL ALERT — {detection.severity}*",
+        f"*CNSL ALERT -- {detection.severity}*",
         f"",
         f"IP:       `{detection.src_ip}`{proxy}{hosting}",
         f"Location: {location}",
@@ -176,7 +176,7 @@ class Notifier:
     async def test_channels(self) -> Dict[str, str]:
         """Send a test message to all enabled channels. Returns {channel: 'ok'|error}."""
         results: Dict[str, str] = {}
-        test_text = "[CNSL] Webhook test — channels are working correctly."
+        test_text = "[CNSL] Webhook test -- channels are working correctly."
 
         async def _try(name: str, coro) -> None:
             try:
@@ -235,7 +235,7 @@ class Notifier:
         if events:
             top = sorted(events, key=lambda e: self._sev_order.get(e.severity, 0), reverse=True)[:3]
             msg += "Top events:\n" + "\n".join(
-                f"  {e.severity} {e.src_ip} — {e.kind}" for e in top
+                f"  {e.severity} {e.src_ip} -- {e.kind}" for e in top
             )
         tg = self._cfg.get("telegram", {})
         if tg.get("enabled"):
@@ -270,7 +270,7 @@ class Notifier:
 
         payload = {
             "embeds": [{
-                "title": f"CNSL Alert — {d.severity}",
+                "title": f"CNSL Alert -- {d.severity}",
                 "color": color,
                 "fields": [
                     {"name": "IP",           "value": f"`{d.src_ip}`",  "inline": True},
@@ -333,7 +333,7 @@ class Notifier:
         if not smtp_host or not to_addrs:
             return
 
-        subject = f"{subject_prefix} {d.severity} Alert — {d.src_ip}"
+        subject = f"{subject_prefix} {d.severity} Alert -- {d.src_ip}"
 
         # Build HTML body
         country = geo.get("country", "Unknown") if geo else "Unknown"
@@ -349,14 +349,14 @@ class Notifier:
 <html><body style="font-family:monospace;background:#1a1a1a;color:#e0e0e0;padding:24px">
 <div style="max-width:600px;margin:auto;background:#2a2a2a;border-radius:8px;
             border-left:4px solid {color};padding:20px">
-  <h2 style="color:{color};margin:0 0 16px">CNSL ALERT — {d.severity}</h2>
+  <h2 style="color:{color};margin:0 0 16px">CNSL ALERT &mdash; {d.severity}</h2>
   <table style="width:100%;border-collapse:collapse">
     <tr><td style="padding:4px 0;color:#888;width:120px">IP</td>
         <td style="color:#fff;font-weight:bold">{d.src_ip}</td></tr>
     <tr><td style="padding:4px 0;color:#888">Location</td>
         <td>{location}</td></tr>
     <tr><td style="padding:4px 0;color:#888">ISP</td>
-        <td>{isp or "—"}</td></tr>
+        <td>{isp or "-"}</td></tr>
     <tr><td style="padding:4px 0;color:#888">Fails</td>
         <td>{d.fail_count} (window: {d.window_sec}s)</td></tr>
     <tr><td style="padding:4px 0;color:#888">Unique users</td>
@@ -366,7 +366,7 @@ class Notifier:
   </table>
   <h3 style="color:#aaa;margin:16px 0 8px">Detection Reasons</h3>
   <ul style="margin:0;padding-left:20px;color:#ccc">{reasons_html}</ul>
-  <p style="margin:16px 0 0;font-size:11px;color:#666">Sent by CNSL — Correlated Network Security Layer</p>
+  <p style="margin:16px 0 0;font-size:11px;color:#666">Sent by CNSL -- Correlated Network Security Layer</p>
 </div></body></html>"""
 
         msg = MIMEMultipart("alternative")
@@ -401,7 +401,7 @@ def _smtp_send(
     use_tls: bool,
     use_ssl: bool,
 ) -> None:
-    """Blocking SMTP send — run in executor. Errors are swallowed."""
+    """Blocking SMTP send -- run in executor. Errors are swallowed."""
     try:
         recipients = to_addrs if isinstance(to_addrs, list) else [to_addrs]
         if use_ssl:

@@ -1,15 +1,15 @@
 """
-cnsl/backup.py — Backup and restore for CNSL state.
+cnsl/backup.py -- Backup and restore for CNSL state.
 
 Bundles into a single tar.gz:
   - config file (config.json / .yaml)
-  - main store DB (SQLite only — consistent point-in-time snapshot via
+  - main store DB (SQLite only -- consistent point-in-time snapshot via
     sqlite3's native .backup() API, safe even while CNSL is running)
   - FIM baseline DB (SQLite, same snapshot method)
   - manifest.json describing what's included and where each file
     belongs on restore
 
-PostgreSQL-backed stores are NOT snapshotted here — Postgres needs
+PostgreSQL-backed stores are NOT snapshotted here -- Postgres needs
 pg_dump/pg_restore, which is a separate operational concern. The
 manifest records the backend so restore never silently claims to
 have restored something it didn't.
@@ -54,7 +54,7 @@ def create_backup(cfg: Dict[str, Any], config_path: Optional[str], out_path: str
     """
     Build a backup tar.gz at out_path.
 
-    Returns {"path": out_path, "included": [...], "skipped": [...]} —
+    Returns {"path": out_path, "included": [...], "skipped": [...]} --
     "included"/"skipped" are human-readable descriptions for CLI output.
     """
     included: List[str] = []
@@ -87,7 +87,7 @@ def create_backup(cfg: Dict[str, Any], config_path: Optional[str], out_path: str
                 skipped.append(f"store DB (not found: {db_path})")
         else:
             manifest["skipped_backend"] = backend
-            skipped.append(f"store DB (backend={backend} — use pg_dump/pg_restore separately)")
+            skipped.append(f"store DB (backend={backend} -- use pg_dump/pg_restore separately)")
 
         # FIM baseline DB
         fim_db_path = cfg.get("fim", {}).get("db_path", "./cnsl_fim.db")

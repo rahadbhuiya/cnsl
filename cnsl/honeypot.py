@@ -1,15 +1,15 @@
 """
-cnsl/honeypot.py — Active response and honeypot redirect.
+cnsl/honeypot.py -- Active response and honeypot redirect.
 
 Instead of just blocking attackers, CNSL can redirect them to
-a fake server (honeypot). The attacker thinks they got in —
+a fake server (honeypot). The attacker thinks they got in --
 while we watch what they do.
 
 Modes:
-  DROP      — silently drop all traffic (classic block)
-  REDIRECT  — redirect attacker to honeypot IP/port via iptables DNAT
-  TARPIT    — slow down attacker with iptables TARPIT (needs xt_TARPIT)
-  LOG_ONLY  — just log, don't block (for observation)
+  DROP      -- silently drop all traffic (classic block)
+  REDIRECT  -- redirect attacker to honeypot IP/port via iptables DNAT
+  TARPIT    -- slow down attacker with iptables TARPIT (needs xt_TARPIT)
+  LOG_ONLY  -- just log, don't block (for observation)
 
 Honeypot:
   CNSL includes a built-in fake SSH honeypot that:
@@ -20,7 +20,7 @@ Honeypot:
     - Reports all attacker activity back to CNSL
 
 Architecture:
-  [Attacker] ──SSH──> [Port 22 DNAT] ──> [Honeypot on Port 2222]
+  [Attacker] --SSH--> [Port 22 DNAT] --> [Honeypot on Port 2222]
                               ^
                          iptables PREROUTING
 
@@ -172,7 +172,7 @@ class FakeSSHServer:
             return
 
         # Fake authentication loop (accept anything after 1-2 "failures")
-        # Real SSH would do key exchange here — we skip to a fake login prompt
+        # Real SSH would do key exchange here -- we skip to a fake login prompt
         await asyncio.sleep(random.uniform(0.5, 1.5))
 
         attempts = 0
@@ -239,7 +239,7 @@ class FakeSSHServer:
         user = session.auth_attempts[-1]["username"] if session.auth_attempts else "root"
         home = "/root" if user == "root" else f"/home/{user}"
 
-        # Fake filesystem tree — directories and files
+        # Fake filesystem tree -- directories and files
         _FS: Dict[str, List[str]] = {
             "/":                ["bin", "boot", "dev", "etc", "home", "lib", "lib64",
                                  "media", "mnt", "opt", "proc", "root", "run",
@@ -340,7 +340,7 @@ class FakeSSHServer:
                 b"May  1 09:00:05 ubuntu-server sshd[1235]: Failed password for invalid user admin from 45.33.32.1 port 12345 ssh2\r\n",
         }
 
-        # Virtual filesystem for session — tracks created files/dirs
+        # Virtual filesystem for session -- tracks created files/dirs
         _session_fs: Dict[str, bytes] = {}   # path -> content
         _session_dirs: set = set()            # created directories
         _cwd = home
@@ -755,7 +755,7 @@ class FakeSSHServer:
                     words   = len(content.split())
                     writer.write(f"  {lines}  {words}  {len(content)} {cmd_args[-1]}\r\n".encode())
 
-            #  wget / curl — simulate timeout 
+            #  wget / curl -- simulate timeout 
             elif cmd_lower in ("wget", "curl"):
                 await asyncio.sleep(random.uniform(4, 10))
                 if cmd_lower == "wget":
@@ -815,7 +815,7 @@ class FakeSSHServer:
             #  sudo 
             elif cmd_lower == "sudo":
                 if user == "root":
-                    # Already root — just run rest of command (ignore)
+                    # Already root -- just run rest of command (ignore)
                     writer.write(b"")
                 else:
                     writer.write(b"[sudo] password for " + user.encode() + b": \r\n"
@@ -917,10 +917,10 @@ class ActiveResponse:
     Decides what to do with a detected attacker.
 
     Modes:
-      drop      — iptables DROP (silent block, default)
-      redirect  — iptables DNAT to honeypot
-      tarpit    — iptables TARPIT (TCP stall — needs xt_TARPIT)
-      log_only  — no firewall action, just log
+      drop      -- iptables DROP (silent block, default)
+      redirect  -- iptables DNAT to honeypot
+      tarpit    -- iptables TARPIT (TCP stall -- needs xt_TARPIT)
+      log_only  -- no firewall action, just log
     """
 
     def __init__(self, cfg: Dict[str, Any], logger: JsonLogger):

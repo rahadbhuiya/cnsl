@@ -1,5 +1,5 @@
 """
-cnsl/predictive_blocking.py — Block on kill-chain trajectory, not just
+cnsl/predictive_blocking.py -- Block on kill-chain trajectory, not just
 single-rule thresholds.
 
 Every other blocking decision in CNSL fires when ONE rule's own

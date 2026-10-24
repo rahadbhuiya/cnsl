@@ -1,5 +1,5 @@
 """
-cnsl/reporter.py — Compliance and incident reports.
+cnsl/reporter.py -- Compliance and incident reports.
 
 Generates professional PDF and HTML reports covering:
   - Executive summary (incident counts, severity breakdown, top threats)
@@ -12,7 +12,7 @@ Generates professional PDF and HTML reports covering:
   - Response time statistics
 
 Output formats:
-  - PDF  (reportlab — professional, printable)
+  - PDF  (reportlab -- professional, printable)
   - HTML (self-contained, can be emailed)
   - JSON (machine-readable, for integration)
 
@@ -139,7 +139,7 @@ async def _collect_report_data(
     else:
         data["cases"] = {}
 
-    # Alert rule engine — rule violation counts
+    # Alert rule engine -- rule violation counts
     if rule_engine:
         try:
             rules = rule_engine.all_rules()
@@ -236,8 +236,8 @@ def _kc_section(data: Dict) -> str:
     return f"""<div class="section">
   <h2>Kill Chain Tracker</h2>
   <p style="font-size:13px;color:#64748b;margin:0 0 12px">
-    {kc_stats.get('total_chains',0)} chains tracked &nbsp;·&nbsp;
-    {kc_stats.get('complete_chains',0)} complete &nbsp;·&nbsp;
+    {kc_stats.get('total_chains',0)} chains tracked &nbsp;&middot;&nbsp;
+    {kc_stats.get('complete_chains',0)} complete &nbsp;&middot;&nbsp;
     Average score: {kc_stats.get('avg_score',0.0):.0%}
   </p>
   <table>
@@ -269,8 +269,8 @@ def _pl_section(data: Dict) -> str:
     return f"""<div class="section">
   <h2>Pattern Learning</h2>
   <p style="font-size:13px;color:#64748b;margin:0 0 12px">
-    {pl_stats.get('patterns_tracked',0)} patterns tracked &nbsp;·&nbsp;
-    {pl_stats.get('active_suggestions',0)} active suggestions &nbsp;·&nbsp;
+    {pl_stats.get('patterns_tracked',0)} patterns tracked &nbsp;&middot;&nbsp;
+    {pl_stats.get('active_suggestions',0)} active suggestions &nbsp;&middot;&nbsp;
     {pl_stats.get('promoted',0)} promoted to live rules
   </p>
   <table>
@@ -321,7 +321,7 @@ def _generate_html(data: Dict) -> str:
         <tr>
           <td style="font-size:12px;color:#64748b">{i.get('time','')}</td>
           <td><code>{i.get('src_ip','')}</code></td>
-          <td>{i.get('country','—')}</td>
+          <td>{i.get('country','-')}</td>
           <td style="color:{color};font-weight:600">{sev}</td>
           <td style="font-size:12px">{reason_text}</td>
         </tr>"""
@@ -343,7 +343,7 @@ def _generate_html(data: Dict) -> str:
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>CNSL Security Report — {data['generated_at'][:10]}</title>
+<title>CNSL Security Report &mdash; {data['generated_at'][:10]}</title>
 <style>
   body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f8fafc;
           color: #1e293b; margin: 0; padding: 32px; }}
@@ -382,8 +382,8 @@ def _generate_html(data: Dict) -> str:
 
 <div class="header">
   <h1><svg width="22" height="22" viewBox="0 0 20 20" fill="none" style="vertical-align:middle;margin-right:8px"><path d="M10 2L3 5.5V10c0 3.87 2.93 7.5 7 8.45C17.07 17.5 20 13.87 20 10V5.5L10 2z" stroke="#6366f1" stroke-width="1.5" stroke-linejoin="round" fill="none"/><path d="M7 10l2 2 4-4" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>CNSL Security Report</h1>
-  <p>Period: last {data['period_days']} days &nbsp;·&nbsp;
-     Generated: {data['generated_at']} &nbsp;·&nbsp;
+  <p>Period: last {data['period_days']} days &nbsp;&middot;&nbsp;
+     Generated: {data['generated_at']} &nbsp;&middot;&nbsp;
      Correlated Network Security Layer v1.1.0</p>
 </div>
 
@@ -448,36 +448,36 @@ def _generate_html(data: Dict) -> str:
     <div class="comp-card">
       <h3>SOC 2 Type II</h3>
       <p>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.1 — Access controls monitored<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.7 — Unauthorized access detection<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC7.2 — System anomaly monitoring<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.1 &mdash; Access controls monitored<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC6.7 &mdash; Unauthorized access detection<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> CC7.2 &mdash; System anomaly monitoring<br>
         {'<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' if fim_count == 0 else '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/><path d="M6.5 4v3M6.5 8.5v.5" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/></svg>'}
-        CC6.8 — File integrity {'maintained' if fim_count == 0 else f'{fim_count} changes detected'}
+        CC6.8 &mdash; File integrity {'maintained' if fim_count == 0 else f'{fim_count} changes detected'}
       </p>
     </div>
     <div class="comp-card">
       <h3>ISO 27001</h3>
       <p>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.4 — Event logging active<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.6 — Vulnerability monitoring<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.13.1 — Network monitoring<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.16.1 — Incident management
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.4 &mdash; Event logging active<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.12.6 &mdash; Vulnerability monitoring<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.13.1 &mdash; Network monitoring<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> A.16.1 &mdash; Incident management
       </p>
     </div>
     <div class="comp-card">
       <h3>PCI-DSS v4</h3>
       <p>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 10 — Log monitoring active<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 11.5 — Intrusion detection<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 10 &mdash; Log monitoring active<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 11.5 &mdash; Intrusion detection<br>
         {'<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' if fim_crit == 0 else '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/><path d="M6.5 4v3M6.5 8.5v.5" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/></svg>'}
-        Req 11.5.2 — File integrity {'OK' if fim_crit == 0 else f'{fim_crit} critical changes'}<br>
-        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 12.10 — Incident response
+        Req 11.5.2 &mdash; File integrity {'OK' if fim_crit == 0 else f'{fim_crit} critical changes'}<br>
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="vertical-align:middle;margin-right:4px"><circle cx="6.5" cy="6.5" r="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><path d="M4 6.5l2 2 3-3" stroke="#22c55e" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg> Req 12.10 &mdash; Incident response
       </p>
     </div>
   </div>
 </div>
 
-<footer>CNSL — Correlated Network Security Layer &nbsp;·&nbsp; Report generated {data['generated_at']}</footer>
+<footer>CNSL &mdash; Correlated Network Security Layer &nbsp;&middot;&nbsp; Report generated {data['generated_at']}</footer>
 </div>
 </body>
 </html>"""
@@ -524,7 +524,7 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
     # Header
     story.append(Paragraph("CNSL Security Report", title_style))
     story.append(Paragraph(
-        f"Period: last {data['period_days']} days &nbsp;·&nbsp; "
+        f"Period: last {data['period_days']} days &nbsp;&middot;&nbsp; "
         f"Generated: {data['generated_at']}", muted_style
     ))
     story.append(Spacer(1, 8*mm))
@@ -540,10 +540,10 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
          "! Action needed" if inc > 10 else "OK Normal"],
         ["HIGH severity incidents", str(high),
          "! Review required" if high > 0 else "OK None"],
-        ["MEDIUM severity incidents", str(data["medium_count"]), "—"],
+        ["MEDIUM severity incidents", str(data["medium_count"]), "-"],
         ["File integrity alerts", str(data.get("fim_alert_count", 0)),
          "! Review files" if data.get("fim_critical", 0) > 0 else "OK Clean"],
-        ["Currently blocked IPs", str(data.get("block_count", 0)), "—"],
+        ["Currently blocked IPs", str(data.get("block_count", 0)), "-"],
     ]
 
     col_widths = [80*mm, 40*mm, 60*mm]
@@ -623,7 +623,7 @@ def _generate_pdf(data: Dict, output_path: str) -> bool:
     story.append(Spacer(1, 10*mm))
 
     story.append(Paragraph(
-        f"Generated by CNSL — Correlated Network Security Layer v1.1.0 &nbsp;·&nbsp; {data['generated_at']}",
+        f"Generated by CNSL &mdash; Correlated Network Security Layer v1.1.0 &nbsp;&middot;&nbsp; {data['generated_at']}",
         muted_style
     ))
 
