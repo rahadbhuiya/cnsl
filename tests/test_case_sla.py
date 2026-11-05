@@ -143,10 +143,11 @@ class TestEvaluateCase:
 
     def test_custom_targets_respected(self):
         s = _sla(targets={"LOW": {"response_minutes": 5, "resolution_minutes": 10}})
-        old = time.time() - 600
+        now = 1700000000.0
+        old = now - 601.0
         case = {"id": 1, "severity": "LOW", "status": "open",
                 "created_at": old, "assigned_to": None}
-        report = s.evaluate_case(case)
+        report = s.evaluate_case(case, now_ts=now)
         assert report["response_breached"] is True
         assert report["resolution_breached"] is True
 

@@ -4,6 +4,26 @@ All notable changes to CNSL are documented here.
 
 ---
 
+### v3.4.34 -- ASCII cleanup, part 3: `cnsl/dashboard_html.py`
+
+Completes the project-wide ASCII transition started in v3.4.32 and v3.4.33. The last remaining non-ASCII module, `cnsl/dashboard_html.py`, is now strictly plain ASCII.
+
+**What changed**
+- 45 non-ASCII characters in `cnsl/dashboard_html.py` converted to plain ASCII or standard HTML entities:
+  - Em-dashes in titles and banners (`DRY-RUN MODE`, `Incidents`, `HuddleCluster`, `SSE disconnected`) become `--`.
+  - Placeholders in table cells and statistic cards become `-`.
+  - HTML entity `&#9998;` for the rule-override pencil icon in the rules and correlation tables.
+  - HTML entity `&middot;` for the middle dot separating country and city.
+  - Arrow in console logs (`->`).
+- The rendered web dashboard and user interface remain visually identical.
+
+**Tests**
+- `tests/test_dashboard.py`: `TestPackageSourceIsAscii.test_cnsl_modules_are_ascii_only` now asserts that all modules in `cnsl/` without exception (including `dashboard_html.py`) are strictly plain ASCII.
+
+- Version bumped to 3.4.34 across `__init__.py`, `pyproject.toml`, `Chart.yaml`, `Dockerfile`, and `docker-compose.yml`.
+
+---
+
 ### v3.4.33 -- ASCII cleanup, part 2: the `cnsl/` package
 
 Continues v3.4.32. Every module in `cnsl/` except `dashboard_html.py` (next release) is now plain ASCII: comments, docstrings and user-visible strings.

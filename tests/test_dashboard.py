@@ -489,7 +489,7 @@ class TestStartupBannerAndNaming:
         assert '"http://%s:%s"' in src
 
 
-# v3.4.33 -- plain-ASCII guard for the package (dashboard_html.py is handled separately)
+# v3.4.34 -- plain-ASCII guard for the entire package (including dashboard_html.py)
 
 class TestPackageSourceIsAscii:
 
@@ -498,8 +498,6 @@ class TestPackageSourceIsAscii:
         pkg = Path(__file__).parent.parent / "cnsl"
         bad = {}
         for f in sorted(pkg.glob("*.py")):
-            if f.name == "dashboard_html.py":     # UI symbols, cleaned up separately
-                continue
             n = sum(1 for c in f.read_text(encoding="utf-8") if ord(c) > 127)
             if n:
                 bad[f.name] = n

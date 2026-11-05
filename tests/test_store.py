@@ -48,6 +48,10 @@ class TestStoreLowCount:
                 stats = await store.stats()
                 assert stats.get("low", 0) == 1, f"LOW count was {stats.get('low')} — expected 1"
             finally:
+                try:
+                    await store.close()
+                except Exception:
+                    pass
                 os.unlink(db_path)
 
         try:
@@ -83,6 +87,10 @@ class TestStoreLowCount:
                 assert stats["low"]    == 1
                 assert stats["total"]  == 3
             finally:
+                try:
+                    await store.close()
+                except Exception:
+                    pass
                 os.unlink(db_path)
 
         try:

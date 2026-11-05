@@ -614,7 +614,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <path d="M7 2v4M7 9v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
     <path d="M1.5 12L7 2l5.5 10H1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
   </svg>
-  DRY-RUN MODE — No real iptables commands executed.
+  DRY-RUN MODE -- No real iptables commands executed.
 </div>
 <div id="default-pw-banner" style="display:none;margin:12px 24px 0" class="banner banner-red">
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -635,7 +635,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         Total Incidents
       </div>
-      <div class="stat-val" id="s-total">—</div>
+      <div class="stat-val" id="s-total">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -645,7 +645,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         HIGH Severity
       </div>
-      <div class="stat-val c-red" id="s-high">—</div>
+      <div class="stat-val c-red" id="s-high">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -655,7 +655,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         Active Blocks
       </div>
-      <div class="stat-val c-amber" id="s-blocks">—</div>
+      <div class="stat-val c-amber" id="s-blocks">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -665,7 +665,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         Unique Attackers
       </div>
-      <div class="stat-val c-blue" id="s-unique">—</div>
+      <div class="stat-val c-blue" id="s-unique">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -675,7 +675,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         Uptime
       </div>
-      <div class="stat-val c-muted" id="s-uptime">—</div>
+      <div class="stat-val c-muted" id="s-uptime">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -684,7 +684,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         SSH Fails Total
       </div>
-      <div class="stat-val c-green" id="s-ssh-fails">—</div>
+      <div class="stat-val c-green" id="s-ssh-fails">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -693,7 +693,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         Events Processed
       </div>
-      <div class="stat-val c-purple" id="s-events">—</div>
+      <div class="stat-val c-purple" id="s-events">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">
@@ -703,13 +703,13 @@ tr:hover td{background:rgba(255,255,255,.02);}
         </svg>
         All-time Blocks
       </div>
-      <div class="stat-val c-muted" id="s-blocks-total">—</div>
+      <div class="stat-val c-muted" id="s-blocks-total">-</div>
     </div>
   </div>
 
   <div class="chart-grid">
     <div class="chart-box">
-      <h3>Incidents — last 24h</h3>
+      <h3>Incidents -- last 24h</h3>
       <canvas id="chart-timeline" role="img" aria-label="Incidents over last 24 hours">Incident timeline chart</canvas>
     </div>
     <div class="chart-box">
@@ -791,11 +791,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
     <div class="stat">
       <div class="stat-lbl">Mode</div>
-      <div class="stat-val c-muted" style="font-size:16px" id="hp-mode">—</div>
+      <div class="stat-val c-muted" style="font-size:16px" id="hp-mode">-</div>
     </div>
     <div class="stat">
       <div class="stat-lbl">Active Redirects</div>
-      <div class="stat-val c-amber" id="hp-redirects">—</div>
+      <div class="stat-val c-amber" id="hp-redirects">-</div>
     </div>
   </div>
 
@@ -1331,7 +1331,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
     </div>
   </div>
   <div class="tbl-wrap" style="margin-bottom:14px">
-    <div class="tbl-head"><span class="tbl-head-title">HuddleCluster — Load Balancing</span></div>
+    <div class="tbl-head"><span class="tbl-head-title">HuddleCluster -- Load Balancing</span></div>
     <div style="padding:16px" id="settings-huddle">
       <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
         Self-organizing load balancer across multiple CNSL nodes.<br>
@@ -1355,8 +1355,8 @@ function escHtml(s){
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
     .replace(/'/g,'&#39;');
 }
-const fmtDate=ts=>ts?new Date(ts*1000).toLocaleString():'—';
-const fmtTime=ts=>ts?new Date(ts*1000).toLocaleTimeString():'—';
+const fmtDate=ts=>ts?new Date(ts*1000).toLocaleString():'-';
+const fmtTime=ts=>ts?new Date(ts*1000).toLocaleTimeString():'-';
 const token=()=>localStorage.getItem('cnsl_token')||'';
 const authHdr=()=>({'Content-Type':'application/json','Authorization':'Bearer '+token()});
 
@@ -1409,7 +1409,7 @@ async function loadCases(){
       <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(c.title)}">${escHtml(c.title)}</td>
       <td><span class="${STATUS_COLOR[c.status]||''}">${escHtml(c.status)}</span></td>
       <td><span class="${c.severity==='HIGH'?'c-red':c.severity==='MEDIUM'?'c-yellow':'c-blue'}">${escHtml(c.severity)}</span></td>
-      <td style="font-family:monospace;font-size:12px">${escHtml(c.src_ip||'—')}</td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(c.src_ip||'-')}</td>
       <td>${c.assigned_to?escHtml(c.assigned_to):'<span style="color:var(--muted)">unassigned</span>'}</td>
       <td style="color:var(--muted);font-size:11px">${fmtDate(c.updated_at)}</td>
     </tr>`).join('') :
@@ -1434,9 +1434,9 @@ async function loadUEBA(){
     an.anomalies.map(a=>`<tr>
       <td style="color:var(--muted);font-size:11px">${fmtTime(a.ts)}</td>
       <td style="font-weight:500">${escHtml(a.username)}</td>
-      <td style="font-family:monospace;font-size:12px">${escHtml(a.src_ip||'—')}</td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(a.src_ip||'-')}</td>
       <td style="font-size:11px">${escHtml((a.anomaly_types||a.anomaly_type||'').toString()).replace(',','<br>')}</td>
-      <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(a.reason)}">${escHtml(a.reason||'—')}</td>
+      <td style="font-size:11px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(a.reason)}">${escHtml(a.reason||'-')}</td>
     </tr>`).join('') :
     '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No anomalies detected</td></tr>';
 
@@ -1451,7 +1451,7 @@ async function loadUEBA(){
         <td>${p.known_ip_count}</td>
         <td style="color:var(--muted);font-size:11px">${fmtDate(p.last_seen)}</td>
       </tr>`).join('') :
-      '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No profiles yet — observes successful SSH logins</td></tr>';
+      '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">No profiles yet -- observes successful SSH logins</td></tr>';
   }
 }
 
@@ -1463,7 +1463,7 @@ async function loadRules(){
     <tr>
       <td style="font-family:monospace;font-size:11px;color:var(--muted)">${r.id}</td>
       <td style="font-size:12px">${r.name}</td>
-      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">✎</span>':''}</td>
+      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">&#9998;</span>':''}</td>
       <td><span class="${r.effective_severity==='HIGH'?'c-red':r.effective_severity==='MEDIUM'?'c-yellow':'c-blue'}">${r.effective_severity}</span></td>
       <td>${r.effective_threshold}</td>
       <td>${r.effective_window}s</td>
@@ -1521,7 +1521,7 @@ async function loadCorrelationRules(){
   $('correlation-tbody').innerHTML = d.rules.map(r=>`
     <tr>
       <td style="font-size:12px">${escHtml(r.name)}<div style="font-size:10px;color:var(--muted)">${escHtml(r.description||'')}</div></td>
-      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">✎</span>':''}</td>
+      <td><span class="${r.enabled?'c-green':'c-red'}">${r.enabled?'Enabled':'Disabled'}</span>${r.overridden?'<span style="font-size:10px;color:var(--muted);margin-left:6px">&#9998;</span>':''}</td>
       <td>${r.effective_window_sec}</td>
       <td>${r.effective_cooldown_sec}</td>
       <td>${r.effective_confidence}</td>
@@ -2280,7 +2280,7 @@ async function loadSettings(){
   const hd = await apiFetch('/api/huddle');
   if(hd){
     if(!hd.enabled){
-      $('huddle-status-line').textContent = 'Disabled — enable in config.json: "huddle": {"enabled": true, "nodes": [...]}';
+      $('huddle-status-line').textContent = 'Disabled -- enable in config.json: "huddle": {"enabled": true, "nodes": [...]}';
     } else {
       const inner = hd.inner_servers||[];
       const outer = hd.outer_servers||[];
@@ -2302,7 +2302,7 @@ async function loadSettings(){
           <div style="font-size:11px;margin-top:4px">temp: ${(s.temp*100).toFixed(0)}%</div>
         </div>`).join('');
       $('huddle-status-line').textContent =
-        `Rotations: ${hd.rotations||0}  |  Fairness: ${((hd.fairness||1)*100).toFixed(0)}%  |  Local: ${hd.local_id||'—'}  temp: ${((hd.local_temp||0)*100).toFixed(0)}%`;
+        `Rotations: ${hd.rotations||0}  |  Fairness: ${((hd.fairness||1)*100).toFixed(0)}%  |  Local: ${hd.local_id||'-'}  temp: ${((hd.local_temp||0)*100).toFixed(0)}%`;
     }
   }
 
@@ -2421,12 +2421,12 @@ async function fetchIncidents(){
   tb.innerHTML=rows.slice(0,50).map(r=>`
     <tr>
       <td style="color:var(--muted);font-size:11px">${fmtDate(r.ts)}</td>
-      <td class="mono">${escHtml(r.src_ip||'—')}</td>
-      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')}</td>
+      <td class="mono">${escHtml(r.src_ip||'-')}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'-')}</td>
       <td><span class="sev sev-${escHtml(r.severity)}">${escHtml(r.severity)}</span></td>
       <td style="color:var(--muted)">${r.fail_count||0}</td>
       <td style="font-size:11px;color:var(--muted);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-        ${(r.reasons||[]).map(escHtml).join(', ')||'—'}
+        ${(r.reasons||[]).map(escHtml).join(', ')||'-'}
       </td>
     </tr>`).join('');
 }
@@ -2442,7 +2442,7 @@ async function fetchBlocks(){
   tb.innerHTML=rows.map(r=>`
     <tr>
       <td class="mono">${escHtml(r.ip)}</td>
-      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'-')}</td>
       <td style="font-size:11px;color:var(--muted)">${fmtDate(r.blocked_at)}</td>
       <td style="font-size:11px;color:var(--amber)">${fmtDate(r.unblock_at)}</td>
       <td><button class="btn btn-green" onclick="doUnblock('${escHtml(r.ip)}')">Unblock</button></td>
@@ -2455,7 +2455,7 @@ async function fetchTopAttackers(){
   $('attackers-body').innerHTML=rows.map(r=>`
     <tr>
       <td class="mono">${escHtml(r.src_ip)}</td>
-      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'—')} ${r.city?'· '+escHtml(r.city):''}</td>
+      <td style="font-size:12px">${escHtml(r.flag||'')} ${escHtml(r.country||'-')} ${r.city?'&middot; '+escHtml(r.city):''}</td>
       <td class="c-red" style="font-weight:600">${r.incident_count}</td>
       <td style="font-size:11px;color:var(--muted)">${fmtDate(r.last_seen)}</td>
     </tr>`).join('');
@@ -2467,7 +2467,7 @@ async function fetchHoneypot(){
   $('hp-status').innerHTML=d.enabled
     ?'<span class="pill pill-on">enabled</span>'
     :'<span class="pill pill-off">disabled</span>';
-  $('hp-mode').textContent=d.mode||'—';
+  $('hp-mode').textContent=d.mode||'-';
   $('hp-redirects').textContent=d.active_redirects??'0';
   const tb=$('hp-body');
   const sess=d.sessions||[];
@@ -2481,13 +2481,13 @@ async function fetchHoneypot(){
       <td style="font-size:11px;color:var(--muted)">${s.time||fmtDate(s.start_time)}</td>
       <td style="color:var(--muted)">${Math.round(s.duration_sec||0)}s</td>
       <td style="color:var(--amber)">${(s.auth_attempts||[]).length}</td>
-      <td class="cmds">${(s.commands||[]).map(escHtml).join(' | ')||'—'}</td>
+      <td class="cmds">${(s.commands||[]).map(escHtml).join(' | ')||'-'}</td>
     </tr>`).join('');
 }
 
 async function fetchFIM(){
   const d=await apiFetch('/api/fim');
-  console.log('[CNSL] /api/fim →', d);
+  console.log('[CNSL] /api/fim ->', d);
   if(!d)return;
   const enabled = d.enabled === true;
   $('fim-disabled-msg').style.display=enabled?'none':'flex';
@@ -2661,25 +2661,25 @@ async function exportPDF(){
   const uptime = sys ? (() => {
     const u=sys.uptime_sec||0, h=Math.floor(u/3600), m=Math.floor((u%3600)/60);
     return h>0?h+'h '+m+'m':m+'m';
-  })() : '—';
+  })() : '-';
 
   const sevColor = s => s==='HIGH'?'#ef4444':s==='MEDIUM'?'#f59e0b':s==='LOW'?'#3b82f6':'#a855f7';
 
   const incRows = (incidents||[]).slice(0,50).map(r=>`
     <tr>
       <td>${new Date((r.ts||0)*1000).toLocaleString()}</td>
-      <td style="font-family:monospace">${r.src_ip||'—'}</td>
-      <td>${r.flag||''} ${r.country||'—'}</td>
+      <td style="font-family:monospace">${r.src_ip||'-'}</td>
+      <td>${r.flag||''} ${r.country||'-'}</td>
       <td><span style="background:${sevColor(r.severity)}22;color:${sevColor(r.severity)};
         padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600">${r.severity}</span></td>
       <td>${r.fail_count||0}</td>
-      <td style="font-size:11px;max-width:200px">${(r.reasons||[]).join(', ')||'—'}</td>
+      <td style="font-size:11px;max-width:200px">${(r.reasons||[]).join(', ')||'-'}</td>
     </tr>`).join('');
 
   const blkRows = (blocks||[]).map(r=>`
     <tr>
       <td style="font-family:monospace">${r.ip}</td>
-      <td>${r.flag||''} ${r.country||'—'}</td>
+      <td>${r.flag||''} ${r.country||'-'}</td>
       <td>${new Date((r.blocked_at||0)*1000).toLocaleString()}</td>
       <td>${new Date((r.unblock_at||0)*1000).toLocaleString()}</td>
     </tr>`).join('');
@@ -2687,7 +2687,7 @@ async function exportPDF(){
   const atkRows = (attackers||[]).map(r=>`
     <tr>
       <td style="font-family:monospace">${r.src_ip}</td>
-      <td>${r.flag||''} ${r.country||'—'}</td>
+      <td>${r.flag||''} ${r.country||'-'}</td>
       <td style="font-weight:600;color:#ef4444">${r.incident_count}</td>
       <td>${new Date((r.last_seen||0)*1000).toLocaleString()}</td>
     </tr>`).join('');
@@ -2704,10 +2704,10 @@ async function exportPDF(){
   const hpRows = (hp?.sessions||[]).slice(0,20).map(s=>`
     <tr>
       <td style="font-family:monospace">${s.attacker_ip}</td>
-      <td>${s.time||'—'}</td>
+      <td>${s.time||'-'}</td>
       <td>${Math.round(s.duration_sec||0)}s</td>
       <td>${(s.auth_attempts||[]).length}</td>
-      <td style="font-family:monospace;font-size:11px">${(s.commands||[]).slice(0,4).join(' | ')||'—'}</td>
+      <td style="font-family:monospace;font-size:11px">${(s.commands||[]).slice(0,4).join(' | ')||'-'}</td>
     </tr>`).join('');
 
   const css = `
@@ -2826,7 +2826,7 @@ async function exportPDF(){
           :'<span class="pill-off">disabled</span>'}
         </div>
         ${fim?.enabled ? `<div style="font-size:10px;color:#94a3b8;margin-top:4px">
-          Watching: ${(fim.watch_paths||[]).join(', ')||'—'}</div>` : ''}
+          Watching: ${(fim.watch_paths||[]).join(', ')||'-'}</div>` : ''}
       </div>
       <div class="info-box">
         <div class="lbl">Honeypot</div>
@@ -2876,7 +2876,7 @@ function connectSSE(){
       const p=d.payload||{};
       if(t==='incident'){
         const cls=p.severity==='HIGH'?'feed-alert':p.severity==='MEDIUM'?'feed-warn':'feed-info';
-        addFeed('[INCIDENT] '+p.severity+' — '+(p.src_ip||p.ip||'?')+' — '+(p.reasons||[]).join('; '),cls);
+        addFeed('[INCIDENT] '+p.severity+' -- '+(p.src_ip||p.ip||'?')+' -- '+(p.reasons||[]).join('; '),cls);
         fetchStats();fetchIncidents();fetchBlocks();
       }else if(t==='action_block_scheduled'){
         addFeed('[BLOCKED] '+(p.ip||'?')+' reason='+p.reason,'feed-alert');
@@ -2889,7 +2889,7 @@ function connectSSE(){
         addFeed('[ML ANOMALY] '+(p.src_ip||p.ip||'?')+' score='+(p.score??'?'),'feed-purple');
         fetchStats();
       }else if(t==='fim_alert'){
-        addFeed('[FIM] '+p.severity+' — '+p.change+': '+p.path,'feed-purple');
+        addFeed('[FIM] '+p.severity+' -- '+p.change+': '+p.path,'feed-purple');
         fetchFIM();
       }else if(t==='honeypot_session_complete'){
         addFeed('[HONEYPOT] session from '+(p.attacker_ip||'?')+' cmds='+(p.commands||[]).length,'feed-warn');
@@ -2898,7 +2898,7 @@ function connectSSE(){
     }catch(_){}
   };
   es.onerror=()=>{
-    addFeed('SSE disconnected — reconnecting...','feed-info');
+    addFeed('SSE disconnected -- reconnecting...','feed-info');
     es.close();setTimeout(connectSSE,3000);
   };
 }
