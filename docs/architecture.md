@@ -20,7 +20,7 @@ Log Sources --> Parsers --> Queue --> Detector --> Correlator --> Blocker
 
 ```
 cnsl/
--- __init__.py              package version (2.9.0)
+-- __init__.py              package entry & version
 -- __main__.py              python -m cnsl entrypoint
 
 -- models.py                Event, Detection, Severity dataclasses

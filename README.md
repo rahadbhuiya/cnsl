@@ -11,8 +11,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
 </p>
 
-**A self-hosted SIEM for Linux.**  
-Detects attacks that span SSH, web, database, and cloud logs simultaneously -- then blocks them automatically.
+**Correlated log analysis and automated IP blocking for Linux servers.**  
+Connects auth, web, database, and system events to detect coordinated attacks in real time.
 
 </div>
 
@@ -20,9 +20,9 @@ Detects attacks that span SSH, web, database, and cloud logs simultaneously -- t
 
 ## What it does
 
-Most tools watch one log and count failures. CNSL watches everything at once.
+Most tools watch one log and count failures. CNSL watches multiple log streams simultaneously.
 
-When an attacker scans your web server, probes your database, then tries SSH with stolen credentials -- CNSL sees all three as one coordinated attack and responds before the breach completes.
+When an attacker scans your web server, probes your database, then tries SSH with stolen credentials -- CNSL correlates the activity from that IP and responds before the breach completes:
 
 ```
 Web scan      from 45.33.32.1  --+
@@ -30,10 +30,9 @@ SSH brute     from 45.33.32.1  --+--->  HIGH alert + auto-block
 DB auth fail  from 45.33.32.1  --+
 ```
 
-It also tracks how far each attacker has progressed through the kill chain, learns new attack patterns automatically, and shares threat intelligence across multiple servers in real time.
+It tracks attacker progression, learns recurrent attack patterns, and can share threat intelligence across multiple servers.
 
-**Beyond core detection:** multi-node federation with a unified hub view, STIX 2.1 export and a built-in TAXII 2.1 server for sharing IOCs, Wazuh/OSSEC integration, PostgreSQL support with a migration tool, a Kubernetes Helm chart, attacker fingerprinting (spots the same actor rotating IPs), graph-based campaign correlation, and opt-in predictive blocking that reacts to an attack's trajectory before any single rule's threshold fires.
-
+Includes a local web dashboard, dynamic iptables/ipset blocking, multi-node federation, and optional integrations for Kubernetes, Redis, and common SIEM forwarders.
 ---
 
 ## Quick start
@@ -102,42 +101,25 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 
 ## Documentation
 
-| Document | What it covers |
-|:---|:---|
-| [`docs/installation.md`](docs/installation.md) | Full install, systemd, Docker |
-| [`docs/configuration.md`](docs/configuration.md) | Every config option explained |
-| [`docs/features.md`](docs/features.md) | Complete feature list |
-| [`docs/architecture.md`](docs/architecture.md) | Module structure and design |
-| [`docs/api.md`](docs/api.md) | Full REST API reference |
-| [`docs/kubernetes.md`](docs/kubernetes.md) | Helm chart deployment (DaemonSet, hub view, federation) |
-| [`docs/kill-chain.md`](docs/kill-chain.md) | Kill chain tracker (predictive blocking: see [`docs/api.md`](docs/api.md#predictive-blocking)) |
-| [`docs/federation.md`](docs/federation.md) | Multi-node setup and the hub view |
-| [`docs/cloud-identity.md`](docs/cloud-identity.md) | AWS + Azure AD + GCP integration |
-| [`docs/sigma-rules.md`](docs/sigma-rules.md) | Sigma detection rule import |
-| [`docs/attack-mapping.md`](docs/attack-mapping.md) | MITRE ATT&CK technique tagging and coverage |
-| [`docs/oidc-sso.md`](docs/oidc-sso.md) | OIDC single sign-on setup |
-| [`docs/source-health.md`](docs/source-health.md) | Log source silence detection |
-| [`docs/retention.md`](docs/retention.md) | Data retention and archival |
-| [`docs/case-sla.md`](docs/case-sla.md) | Case SLA tracking and escalation |
-| [`docs/zero-trust.md`](docs/zero-trust.md) | Trust score engine |
-| [`docs/siem-connectors.md`](docs/siem-connectors.md) | Splunk, Sentinel, Webhook push |
-| [`docs/pattern-learning.md`](docs/pattern-learning.md) | Automated rule discovery |
-| [`docs/rules.md`](docs/rules.md) | Detection rule tuning (correlation-rule tuning: see [`docs/api.md`](docs/api.md#correlation-rules)) |
-| [`docs/ueba.md`](docs/ueba.md) | User/entity behavior analytics |
-| [`docs/cases.md`](docs/cases.md) | Case management |
-| [`docs/threat-feed.md`](docs/threat-feed.md) | External threat feed ingestion |
-| [`docs/2fa.md`](docs/2fa.md) | Two-factor auth for the dashboard |
-| [`docs/agent.md`](docs/agent.md) | Remote log-shipping agent |
-| [`docs/kafka.md`](docs/kafka.md) | Kafka log ingestion |
-| [`docs/zeek.md`](docs/zeek.md) | Zeek log integration |
-| [`docs/ot-iot.md`](docs/ot-iot.md) | OT/ICS protocol support (Modbus, DNP3, SCADA) |
-| [`docs/country-blocking.md`](docs/country-blocking.md) | Geo-based blocking |
-| [`docs/rate-limiting.md`](docs/rate-limiting.md) | API rate limiting |
-| [`docs/tenants.md`](docs/tenants.md) | Multi-tenant setup |
-| [`docs/huddle.md`](docs/huddle.md) | Incident huddle/collaboration |
-| [`docs/notifications.md`](docs/notifications.md) | Email/Slack/Telegram alerts |
-| [`docs/changelog.md`](docs/changelog.md) | Version history |
-| [`docs/`](docs/) | Browse all 33 guides |
+### Core Guides
+- [Installation](docs/installation.md) -- Standalone, systemd service, and Docker setup
+- [Configuration](docs/configuration.md) -- Reference for config.json options and thresholds
+- [Architecture](docs/architecture.md) -- Engine pipeline and module layout
+- [API Reference](docs/api.md) -- REST API endpoints and data models
+
+### Detection & Rules
+- [Rules & Tuning](docs/rules.md) -- Built-in detection logic and custom overrides
+- [Attack Kill Chain](docs/kill-chain.md) -- Progression stages and predictive blocking
+- [Pattern Learning](docs/pattern-learning.md) -- Auto-discovered signatures from traffic
+- [Threat Feed & FIM](docs/threat-feed.md) -- Ingesting external feeds and file integrity checks
+
+### Integrations & Deployment
+- [Kubernetes & Helm](docs/kubernetes.md) -- DaemonSet and cluster deployment
+- [Multi-Node Federation](docs/federation.md) -- Sharing state across server clusters
+- [SIEM & Webhooks](docs/siem-connectors.md) -- Forwarding alerts to external platforms
+- [Changelog](docs/changelog.md) -- Release notes and version history
+
+*(Full documentation collection available in [docs/](docs/))*
 
 ---
 
