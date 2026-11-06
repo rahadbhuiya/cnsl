@@ -32,7 +32,7 @@ DB auth fail  from 45.33.32.1  --+
 
 It tracks attacker progression, learns recurrent attack patterns, and can share threat intelligence across multiple servers.
 
-Includes a local web dashboard, dynamic iptables/ipset blocking, multi-node federation, and optional integrations for Kubernetes, Redis, and common SIEM forwarders.
+Includes a local web dashboard, dynamic iptables/ipset blocking, attacker fingerprinting, opt-in predictive blocking, multi-node federation, and integrations for Kubernetes, Wazuh, STIX/TAXII, Redis, and common SIEM forwarders.
 ---
 
 ## Quick start
@@ -119,7 +119,7 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 - [SIEM & Webhooks](docs/siem-connectors.md) -- Forwarding alerts to external platforms
 - [Changelog](docs/changelog.md) -- Release notes and version history
 
-*(Full documentation collection available in [docs/](docs/))*
+*(Browse all 33 guides in [`docs/`](docs/))*
 
 ---
 
