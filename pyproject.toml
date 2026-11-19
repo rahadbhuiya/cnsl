@@ -7,7 +7,7 @@ name = "cnsl"
 version = "3.4.34"
 description = "Correlated Network Security Layer — A self-hosted SIEM for Linux"
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.10"
 authors = [
     {name = "Rahad Bhuiya", email = "rahadbhuiya2021@gmail.com"}
@@ -23,6 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Operating System :: POSIX :: Linux",
     "Topic :: Security",
     "Topic :: System :: Networking :: Monitoring",

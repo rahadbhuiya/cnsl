@@ -133,6 +133,14 @@ Optional: Redis (distributed blocklist + federation), MaxMind GeoIP database.
 
 ---
 
-## License
+## License & Commercial Support
 
-MIT. See [LICENSE](LICENSE).
+### Open Source (AGPL-3.0)
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0-or-later)**. See [LICENSE](LICENSE) for full details.
+
+Under this license, you are free to inspect, run, modify, and host CNSL. However, if you modify CNSL or integrate it into network/cloud services, you are legally required to make your complete modified source code publicly available under the AGPL-3.0 license.
+
+### Commercial & Enterprise Licensing
+For organizations that wish to deploy CNSL without AGPL-3.0 copyleft obligations, or require custom integrations, high-throughput eBPF filtering, and dedicated enterprise SLA/support:
+
+- **Commercial Inquiries:** Contact `rahadbhuiya2021@gmail.com` or connect via [Exploidus](https://github.com/Exploidus).
