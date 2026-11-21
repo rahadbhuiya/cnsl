@@ -86,6 +86,11 @@ class SourceHealthTracker:
         # transitions (healthy->silent, silent->healthy) are logged
         # exactly once each rather than every check_interval_sec.
         self._is_silent: Dict[str, bool] = {}
+        self._remote_status: Dict[str, Dict[str, Any]] = {}
+
+    def set_remote_status(self, status: Dict[str, Dict[str, Any]]) -> None:
+        """Attach read-only per-profile transport counters to source health."""
+        self._remote_status = status
 
     def register_source(self, source: str) -> None:
         """Called once when a source's tailer task starts."""
@@ -115,7 +120,13 @@ class SourceHealthTracker:
     def status_snapshot(self, now_ts: Optional[float] = None) -> List[Dict[str, Any]]:
         """Current status of every registered source, for the dashboard API."""
         now_ts = now_ts if now_ts is not None else time.time()
-        return [self._status_for(s, now_ts).to_dict() for s in sorted(self._registered)]
+        rows = []
+        for source in sorted(self._registered):
+            row = self._status_for(source, now_ts).to_dict()
+            if source.startswith("loki:"):
+                row.update(self._remote_status.get(source.split(":", 1)[1], {}))
+            rows.append(row)
+        return rows
 
     def check_transitions(self, now_ts: Optional[float] = None) -> List[Dict[str, Any]]:
         """

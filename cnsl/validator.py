@@ -98,6 +98,9 @@ def validate_config(cfg: Dict[str, Any]) -> List[ValidationError]:
     # Log source health monitoring
     _validate_source_health(cfg.get("source_health", {}), issues)
 
+    # Remote observability inputs (Loki pull)
+    _validate_observability_sources(cfg.get("observability_sources", {}), issues)
+
     # Data retention
     _validate_retention(cfg.get("retention", {}), issues)
 
@@ -569,6 +572,84 @@ def _validate_source_health(sh: Any, issues: List) -> None:
             "being flagged",
             level="warning",
         ))
+
+
+def _validate_observability_sources(section: Any, issues: List) -> None:
+    if not section:
+        return
+    if not isinstance(section, dict):
+        issues.append(ValidationError("observability_sources", "must be a mapping"))
+        return
+    v = _V(section, issues, "observability_sources")
+    v.is_bool("enabled")
+    v.is_positive_int("queue_timeout_sec", max_val=60)
+    v.is_positive_int("max_batch_size", max_val=5000)
+    profiles = section.get("profiles", {}) or {}
+    if not isinstance(profiles, dict):
+        issues.append(ValidationError("observability_sources.profiles", "must be a mapping"))
+        return
+    for name, profile in profiles.items():
+        path = f"observability_sources.profiles.{name}"
+        if not isinstance(profile, dict):
+            issues.append(ValidationError(path, "must be a mapping"))
+            continue
+        if "enabled" in profile and not isinstance(profile["enabled"], bool):
+            issues.append(ValidationError(f"{path}.enabled", "must be a boolean"))
+        transport = profile.get("transport", "loki")
+        if transport not in ("loki", "alloy_http"):
+            issues.append(ValidationError(f"{path}.transport", "must be loki or alloy_http"))
+        if transport == "alloy_http" and profile.get("enabled", False):
+            issues.append(ValidationError(f"{path}.transport",
+                "alloy_http direct ingest is not supported yet; configure Alloy to write to Loki",
+                level="warning"))
+            continue
+        elif transport == "alloy_http":
+            continue
+        url = profile.get("url", "")
+        if profile.get("enabled", False) and not url:
+            issues.append(ValidationError(f"{path}.url", "required for an enabled Loki profile"))
+        if not isinstance(url, str) or (url and not url.startswith(("http://", "https://"))):
+            issues.append(ValidationError(f"{path}.url", "must be an HTTP(S) URL"))
+        query = profile.get("query", "")
+        if profile.get("enabled", False) and not query:
+            issues.append(ValidationError(f"{path}.query", "required for an enabled Loki profile"))
+        if not isinstance(query, str) or len(query) > 4096:
+            issues.append(ValidationError(f"{path}.query", "must be a string no longer than 4096 characters"))
+        for key, max_value in (("poll_interval_sec", 3600), ("lookback_sec", 86400),
+                               ("max_query_range_sec", 86400)):
+            value = profile.get(key)
+            if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool)
+                                      or value <= 0 or value > max_value):
+                issues.append(ValidationError(f"{path}.{key}", f"must be between 0 and {max_value}"))
+        if profile.get("start_position", "checkpoint") not in ("checkpoint", "now", "beginning"):
+            issues.append(ValidationError(f"{path}.start_position", "must be checkpoint, now, or beginning"))
+        parser = profile.get("parser", "json_security")
+        if parser not in ("json", "json_security", "nginx", "apache", "mysql", "ufw", "syslog", "wazuh"):
+            issues.append(ValidationError(f"{path}.parser", "unsupported parser"))
+        auth = profile.get("auth", {}) or {}
+        if not isinstance(auth, dict):
+            issues.append(ValidationError(f"{path}.auth", "must be a mapping"))
+        else:
+            if auth.get("type", "none") not in ("none", "bearer"):
+                issues.append(ValidationError(f"{path}.auth.type", "must be none or bearer"))
+            if auth.get("type") == "bearer" and not auth.get("token_env"):
+                issues.append(ValidationError(f"{path}.auth.token_env", "required for bearer authentication"))
+        field_map = profile.get("field_map", {}) or {}
+        if not isinstance(field_map, dict):
+            issues.append(ValidationError(f"{path}.field_map", "must be a mapping"))
+        elif any(not isinstance(k, str) or not isinstance(val, str) or len(val) > 256
+                 for k, val in field_map.items()):
+            issues.append(ValidationError(f"{path}.field_map", "keys and paths must be strings up to 256 characters"))
+        for selector in ("labels",):
+            value = profile.get(selector, {}) or {}
+            if not isinstance(value, dict) or any(not isinstance(k, str) or not isinstance(val, str)
+                                                   for k, val in value.items()):
+                issues.append(ValidationError(f"{path}.{selector}", "must map string labels to string values"))
+        services = profile.get("services", []) or []
+        if not isinstance(services, list) or any(not isinstance(item, str) for item in services):
+            issues.append(ValidationError(f"{path}.services", "must be a list of service names"))
+        if "verify_tls" in profile and not isinstance(profile["verify_tls"], bool):
+            issues.append(ValidationError(f"{path}.verify_tls", "must be a boolean"))
 
 
 def _validate_retention(r: Any, issues: List) -> None:

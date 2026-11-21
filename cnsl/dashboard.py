@@ -27,29 +27,6 @@ if TYPE_CHECKING:
     from .metrics     import Metrics
     from .store       import Store
 
-# SVG icon helpers 
-
-def _svg(path_d: str, w: int = 16, h: int = 16) -> str:
-    return (f'<svg width="{w}" height="{h}" viewBox="0 0 24 24" fill="none" '
-            f'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
-            f'stroke-linejoin="round">{path_d}</svg>')
-
-_I = {
-    "shield":   _svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 18, 18),
-    "alert":    _svg('<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', 16, 16),
-    "lock":     _svg('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>', 16, 16),
-    "users":    _svg('<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>', 16, 16),
-    "cpu":      _svg('<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>', 16, 16),
-    "terminal": _svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>', 16, 16),
-    "file":     _svg('<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>', 16, 16),
-    "activity": _svg('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>', 16, 16),
-    "target":   _svg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>', 16, 16),
-    "radio":    _svg('<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>', 16, 16),
-    "clock":    _svg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', 16, 16),
-    "download": _svg('<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', 14, 14),
-    "logout":   _svg('<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>', 14, 14),
-}
-
 # Login page HTML
 
 from .dashboard_html import _LOGIN_HTML, _HTML  # noqa: F401
@@ -106,6 +83,10 @@ async def start_dashboard(
     zero_trust:      Any = None,  sigma: Any = None,
     queue:           Any = None,  redis_sync: Any = None,
     correlator:      Any = None,  oidc: Any = None,  source_health: Any = None,  retention: Any = None,  case_sla: Any = None,
+    config_path:     Optional[str] = None,
+    soar:            Any = None,
+    copilot:         Any = None,
+    mitre:           Any = None,
 ) -> None:
     from . import __version__
     try:
@@ -1144,6 +1125,8 @@ async def start_dashboard(
         ("dashboard_source_health", "register_source_health_routes", (router, source_health, _require_auth, _rate_check)),
         ("dashboard_retention", "register_retention_routes", (router, retention, store, audit_log, logger, rbac, _require_auth, _rate_check)),
         ("dashboard_case_sla", "register_case_sla_routes", (router, case_sla, case_manager, logger, rbac, _require_auth, _rate_check, notifier)),
+        ("dashboard_config", "register_config_routes", (router, config_path, _require_auth, _rate_check, _audit, _require_perm)),
+        ("dashboard_soar", "register_soar_routes", (router, soar, copilot, mitre, _require_auth, _rate_check)),
     ): _reg(_m, _f, _a)
     #  SIEM Connector API
     @router.get("/api/siem/status")

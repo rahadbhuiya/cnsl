@@ -38,6 +38,7 @@ class Metrics:
         # Per-IP top fails (kept small)
         self.ip_fails:          Dict[str, int] = {}
         self.ip_country:        Dict[str, str] = {}
+        self.observability_sources: Dict[str, Dict[str, Any]] = {}
 
     # Update methods 
 
@@ -107,5 +108,39 @@ class Metrics:
                 lines.append(
                     f'cnsl_ip_fails_total{{ip="{ip}",country="{country}"}} {count}'
                 )
+
+        # Remote source metrics use bounded profile labels; never expose URLs,
+        # tenant credentials, or query text in the Prometheus endpoint.
+        def label(value: str) -> str:
+            return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        lines.extend([
+            "# HELP cnsl_source_requests_total Remote source polling requests",
+            "# TYPE cnsl_source_requests_total counter",
+            "# HELP cnsl_source_events_total Remote source records by parse result",
+            "# TYPE cnsl_source_events_total counter",
+            "# HELP cnsl_source_parse_errors_total Remote source records that failed parsing",
+            "# TYPE cnsl_source_parse_errors_total counter",
+            "# HELP cnsl_source_lag_seconds Latest remote event ingestion lag",
+            "# TYPE cnsl_source_lag_seconds gauge",
+            "# HELP cnsl_source_deduplicated_total Remote source duplicate records",
+            "# TYPE cnsl_source_deduplicated_total counter",
+            "# HELP cnsl_source_checkpoint_age_seconds Seconds since checkpoint update",
+            "# TYPE cnsl_source_checkpoint_age_seconds gauge",
+            "# HELP cnsl_source_backpressure_total Remote queue backpressure events",
+            "# TYPE cnsl_source_backpressure_total counter",
+        ])
+        for profile, stat in self.observability_sources.items():
+            labels = f'transport="loki",profile="{label(profile)}"'
+            lines.append(f'cnsl_source_requests_total{{{labels},status="success"}} {stat.get("last_success_count", 0)}')
+            lines.append(f'cnsl_source_requests_total{{{labels},status="error"}} {stat.get("request_errors", 0)}')
+            lines.append(f'cnsl_source_events_total{{{labels},result="parsed"}} {stat.get("parsed", 0)}')
+            lines.append(f'cnsl_source_events_total{{{labels},result="rejected"}} {stat.get("rejected", 0)}')
+            lines.append(f'cnsl_source_parse_errors_total{{{labels},parser="{label(stat.get("parser", "json_security"))}"}} {stat.get("rejected", 0)}')
+            lines.append(f'cnsl_source_deduplicated_total{{{labels}}} {stat.get("deduplicated", 0)}')
+            lines.append(f'cnsl_source_backpressure_total{{{labels}}} {stat.get("queue_backpressure", 0)}')
+            lines.append(f'cnsl_source_lag_seconds{{{labels}}} {stat.get("lag_sec", 0.0)}')
+            updated = stat.get("checkpoint_updated")
+            age = max(0, time.time() - updated) if updated else 0
+            lines.append(f'cnsl_source_checkpoint_age_seconds{{profile="{label(profile)}"}} {age:.3f}')
 
         return "\n".join(lines) + "\n"

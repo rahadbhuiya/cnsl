@@ -32,7 +32,7 @@ DB auth fail  from 45.33.32.1  --+
 
 It tracks attacker progression, learns recurrent attack patterns, and can share threat intelligence across multiple servers.
 
-Includes a local web dashboard, dynamic iptables/ipset blocking, attacker fingerprinting, opt-in predictive blocking, multi-node federation, and integrations for Kubernetes, Wazuh, STIX/TAXII, Redis, and common SIEM forwarders.
+Includes a local web dashboard, dynamic iptables/ipset blocking, attacker fingerprinting, opt-in predictive blocking, multi-node federation, and integrations for Kubernetes, Wazuh, STIX/TAXII, Redis, Grafana Loki, Deception Honeytokens, Container Security, SOAR Playbooks, MITRE ATT&CK, and common SIEM forwarders.
 ---
 
 ## Quick start
@@ -116,10 +116,12 @@ Key sections: `thresholds`, `actions`, `dashboard`, `notifications`, `redis`, `c
 ### Integrations & Deployment
 - [Kubernetes & Helm](docs/kubernetes.md) -- DaemonSet and cluster deployment
 - [Multi-Node Federation](docs/federation.md) -- Sharing state across server clusters
+- [Grafana Loki](docs/grafana-loki.md) -- Ingesting log streams from Grafana Loki
+- [Advanced Protections](docs/advanced-protections.md) -- Honeytokens, container security, SOAR playbooks, MITRE heatmaps & AI copilot
 - [SIEM & Webhooks](docs/siem-connectors.md) -- Forwarding alerts to external platforms
 - [Changelog](docs/changelog.md) -- Release notes and version history
 
-*(Browse all 33 guides in [`docs/`](docs/))*
+*(Browse all 35 guides in [`docs/`](docs/))*
 
 ---
 

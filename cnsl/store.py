@@ -61,6 +61,19 @@ CREATE TABLE IF NOT EXISTS blocks (
 CREATE INDEX IF NOT EXISTS idx_incidents_ip  ON incidents(src_ip);
 CREATE INDEX IF NOT EXISTS idx_incidents_ts  ON incidents(ts);
 CREATE INDEX IF NOT EXISTS idx_incidents_sev ON incidents(severity);
+
+CREATE TABLE IF NOT EXISTS source_checkpoints (
+    profile TEXT PRIMARY KEY,
+    checkpoint_ns INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS source_records (
+    profile TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (profile, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_source_records_created ON source_records(created_at);
 """
 
 
@@ -133,6 +146,7 @@ class Store:
             self._pg_dsn  = ""
 
         self._db        = None   # SQLite connection
+        self._source_db = None   # Isolated SQLite transaction connection for poll cursors
         self._pg        = None   # PostgreSQL connection pool
         self._available = False
 
@@ -159,6 +173,10 @@ class Store:
             await self._db.executescript(ZT_SCHEMA)
             await self._db.executescript(_AUDIT_SCHEMA)
             await self._db.commit()
+            # Keep source checkpoint transactions isolated from detector writes
+            # that share the primary Store connection.
+            self._source_db = await aiosqlite.connect(self.db_path, timeout=30)
+            self._source_db.row_factory = aiosqlite.Row
             # Migration: add 'kind' column to existing DBs that don't have it
             try:
                 await self._db.execute(
@@ -208,6 +226,45 @@ class Store:
     @property
     def available(self) -> bool:
         return self._available
+
+    async def source_checkpoint(self, profile: str) -> int:
+        """Return the last committed Loki timestamp (nanoseconds)."""
+        if not self._available or self._source_db is None:
+            return 0
+        async with self._source_db.execute(
+            "SELECT checkpoint_ns FROM source_checkpoints WHERE profile=?", (profile,)
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def has_source_record(self, profile: str, fingerprint: str) -> bool:
+        if not self._available or self._source_db is None:
+            return False
+        async with self._source_db.execute(
+            "SELECT 1 FROM source_records WHERE profile=? AND fingerprint=?", (profile, fingerprint)
+        ) as cur:
+            return await cur.fetchone() is not None
+
+    async def commit_source_batch(self, profile: str, fingerprints: List[str], checkpoint_ns: int) -> None:
+        """Atomically persist dedup keys and the successfully enqueued cursor."""
+        if not self._available or self._source_db is None:
+            raise RuntimeError("persistent source checkpoints require the SQLite store")
+        now_ts = time.time()
+        await self._source_db.execute("BEGIN")
+        try:
+            await self._source_db.executemany(
+                "INSERT OR IGNORE INTO source_records(profile,fingerprint,created_at) VALUES(?,?,?)",
+                [(profile, fp, now_ts) for fp in fingerprints],
+            )
+            await self._source_db.execute(
+                "INSERT INTO source_checkpoints(profile,checkpoint_ns,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(profile) DO UPDATE SET checkpoint_ns=MAX(checkpoint_ns, excluded.checkpoint_ns), updated_at=excluded.updated_at",
+                (profile, int(checkpoint_ns), now_ts),
+            )
+            await self._source_db.commit()
+        except Exception:
+            await self._source_db.rollback()
+            raise
 
     #  Incidents 
 
@@ -409,3 +466,6 @@ class Store:
         if self._db is not None:
             await self._db.close()
             self._db = None
+        if self._source_db is not None:
+            await self._source_db.close()
+            self._source_db = None

@@ -22,6 +22,40 @@ Token lifetime is configurable via `dashboard.token_ttl_sec` (default 86400 = 24
 
 ---
 
+## Configuration Drafts and Versions
+
+All endpoints in this section require `config:read` or `config:write` (admin). Secret fields are masked. Drafts are actor-bound, stored in `config.versions/.drafts`, and expire after 4 hours. Creating a version writes an immutable JSON archive with a SHA-256 manifest.
+
+```
+GET  /api/config/schema
+GET  /api/config/current
+GET  /api/config/status
+GET  /api/config/versions
+GET  /api/config/versions/{version_id}
+POST /api/config/draft
+PUT  /api/config/draft/{draft_id}
+GET  /api/config/diff/{draft_id}
+POST /api/config/validate
+POST /api/config/versions
+```
+
+---
+
+## SOAR, MITRE ATT&CK & AI Copilot
+
+Automate incident response playbooks, calculate dynamic MITRE ATT&CK threat density heatmaps, and execute AI/heuristic incident root-cause analysis.
+
+```
+GET  /api/soar/playbooks              List active SOAR automation playbooks
+GET  /api/soar/history                View automated containment execution log
+POST /api/soar/evaluate               Evaluate an incident against loaded playbooks
+POST /api/copilot/analyze             Analyze incident root cause and generate remediation steps
+GET  /api/mitre/heatmap               Dynamic enterprise MITRE ATT&CK tactic heatmap
+GET  /api/mitre/mapping/{rule}        Inspect MITRE tactic/technique mapping for a detection rule
+```
+
+---
+
 ## Stats & Overview
 
 ```

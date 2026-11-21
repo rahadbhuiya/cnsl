@@ -42,7 +42,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "syslog":   None,
     },
 
-    #  Detection thresholds (per source IP) 
+    # Remote observability inputs are opt-in. Alloy direct ingest is deferred
+    # until an explicit wire contract is available.
+    "observability_sources": {
+        "enabled": False,
+        "queue_timeout_sec": 2,
+        "max_batch_size": 500,
+        "profiles": {},
+    },
+
+    # Detection thresholds (per source IP)
     "thresholds": {
         # Brute-force: many failures in a short window
         "fails_window_sec":  60,
@@ -358,9 +367,40 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
 
-    #  Queue 
+    # Queue
     "queue": {
         "maxsize": 10000,   # drop events if queue fills (prevents OOM)
+    },
+
+    # AI Security Copilot
+    "ai_copilot": {
+        "enabled":       True,
+        "provider":      "ollama",  # "ollama", "gemini", "openai", "heuristic"
+        "endpoint":      "http://localhost:11434/api/generate",
+        "model":         "llama3:8b",
+        "api_key":       None,
+    },
+
+    # Honeytokens & Canary Deception
+    "honeytokens": {
+        "enabled":       True,
+        "auto_block":    True,
+        "canary_paths":  [
+            "/tmp/fake_aws_credentials",
+            "/tmp/fake_database.env"
+        ],
+    },
+
+    # SOAR Automation Playbooks
+    "soar": {
+        "enabled":       True,
+        "auto_remediate": False,
+    },
+
+    # Container Runtime Security
+    "container_security": {
+        "enabled":       False,
+        "docker_socket": "/var/run/docker.sock",
     },
 }
 

@@ -186,6 +186,35 @@
     "ufw": "/var/log/ufw.log",
     "syslog": "/var/log/syslog"
   },
+  "observability_sources": {
+    "enabled": false,
+    "queue_timeout_sec": 2,
+    "max_batch_size": 500,
+    "profiles": {
+      "payments-prod": {
+        "enabled": false,
+        "transport": "loki",
+        "url": "https://loki.example",
+        "tenant_id": "tenant-a",
+        "auth": {"type": "bearer", "token_env": "CNSL_LOKI_TOKEN"},
+        "query": "{namespace=\"payments\", app=~\"api|worker\"}",
+        "services": ["payments-api", "payments-worker"],
+        "labels": {"environment": "prod", "cluster": "main"},
+        "parser": "json_security",
+        "field_map": {
+          "timestamp": "ts",
+          "message": "msg",
+          "src_ip": "client.ip",
+          "user": "user.name",
+          "kind": "security.event_kind"
+        },
+        "poll_interval_sec": 5,
+        "lookback_sec": 30,
+        "max_query_range_sec": 60,
+        "verify_tls": true
+      }
+    }
+  },
   "fim": {
     "enabled": false,
     "db_path": "/var/lib/cnsl/cnsl_fim.db",
@@ -483,5 +512,28 @@
     },
     "trusted_ips": [],
     "alert_on_any_write": true
+  },
+  "honeytokens": {
+    "enabled": false,
+    "auto_block": true,
+    "canary_paths": [
+      "/tmp/fake_aws_credentials",
+      "/tmp/fake_database.env"
+    ]
+  },
+  "soar": {
+    "enabled": true,
+    "auto_remediate": false
+  },
+  "ai_copilot": {
+    "enabled": false,
+    "provider": "ollama",
+    "endpoint": "http://localhost:11434/api/generate",
+    "model": "llama3:8b",
+    "api_key": null
+  },
+  "container_security": {
+    "enabled": false,
+    "docker_socket": "/var/run/docker.sock"
   }
 }

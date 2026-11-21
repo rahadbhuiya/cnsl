@@ -1267,6 +1267,23 @@ tr:hover td{background:rgba(255,255,255,.02);}
 <div class="page" id="page-settings">
   <div class="tbl-wrap" style="margin-bottom:14px">
     <div class="tbl-head">
+      <span class="tbl-head-title">Configuration Editor</span>
+      <span id="config-editor-status" style="font-size:11px;color:var(--muted)">Loading configuration...</span>
+      <button class="btn" onclick="loadConfigEditor()" style="font-size:11px;padding:4px 10px">Reload</button>
+    </div>
+    <div id="config-editor-meta" style="padding:10px 16px;border-bottom:1px solid var(--bord);font-size:11px;color:var(--muted)"></div>
+    <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--bord)">
+      <button class="btn" onclick="previewConfigEditor()">Validate &amp; Preview</button>
+      <button class="btn btn-green" id="config-generate-btn" onclick="generateConfigVersion()" disabled>Generate Version</button>
+      <span style="font-size:11px;color:var(--muted);align-self:center">Generated versions are archived and inactive. Apply/restart workflow is not configured yet.</span>
+    </div>
+    <div id="config-editor-categories" style="padding:12px 16px"></div>
+    <div id="config-editor-category-view" style="padding:12px 16px;display:none"></div>
+    <div id="config-editor-result" style="padding:0 16px 16px;font-size:12px"></div>
+    <div style="padding:0 16px 16px"><div style="font-size:12px;font-weight:600;margin-bottom:8px">Generated versions</div><div id="config-editor-versions" style="font-size:11px;color:var(--muted)"></div></div>
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:14px">
+    <div class="tbl-head">
       <span class="tbl-head-title">Zero-Trust Trust Scores</span>
       <span style="font-size:11px;color:var(--muted)">Per-entity trust scoring -- lower trust = lower alert threshold</span>
       <button onclick="loadZeroTrust()" style="font-size:11px;padding:3px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer">Refresh</button>
@@ -1371,7 +1388,7 @@ function showTab(name){
   if(name==='rules')     { loadRules(); loadSuggestedRules(); }
   if(name==='correlation') loadCorrelationRules();
   if(name==='ratelimit') loadRateLimit();
-  if(name==='settings')  { loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); loadZeroTrust(); }
+  if(name==='settings')  { if(!_configEditor) loadConfigEditor(); loadSettings(); loadSIEMStatus(); loadFederationStatus(); loadCloudIdentityStatus(); loadZeroTrust(); }
   if(name==='killchain') loadKillChain();
   if(name==='graph')     loadGraph();
   if(name==='hub')       loadHub();
@@ -1717,6 +1734,226 @@ async function rlReset(ip){
 }
 
 //  Settings 
+let _configEditor = null;
+let _configInputValues = {};
+let _configDraftId = null;
+let _configPreviewHash = null;
+let _configEditorDirty = false;
+let _configEditorFileHash = null;
+let _configEditorWritable = false;
+let _configEditorCategory = null;
+const CONFIG_CATEGORIES=[
+  {id:'sources',title:'Sources & Inputs',description:'Log files, network capture, agents, remote sources and ingestion.',roots:['authlog_path','iface','tcpdump_enabled','tcpdump_bpf','log_sources','syslog_receiver','observability_sources','agent','kafka','zeek']},
+  {id:'detection',title:'Detection & Analysis',description:'Thresholds, rules, analytics and enrichment used to identify activity.',roots:['thresholds','rules','correlation_rules','predictive_blocking','behavioral_baseline','ueba','kill_chain','pattern_learning','sigma','ml','zero_trust','geoip','threat_intel','ot']},
+  {id:'protection',title:'Protection & Response',description:'Blocking policy, allowlists, rate limits and active response.',roots:['actions','allowlist','country_block','rate_limiting','honeypot','threat_feed']},
+  {id:'integrations',title:'Integrations & Notifications',description:'External alerting, SIEM, identity sources and cluster coordination.',roots:['notifications','siem','cloud_identity','redis','federation','huddle']},
+  {id:'data',title:'Data & Operations',description:'Persistence, retention, health monitoring, search and reporting.',roots:['store','queue','logging','retention','source_health','fim','asset_inventory','reporting','search','case_sla']},
+  {id:'access',title:'Access & Dashboard',description:'Dashboard access, SSO, tenants and user authentication.',roots:['auth','oidc','dashboard','tenants']},
+  {id:'other',title:'Other',description:'Additional or future settings not yet assigned to a category.',roots:[]}
+];
+function markConfigEditorDirty(event){
+  const input=event?.target;
+  if(input&&input.dataset?.cfgIndex!==undefined){
+    _configInputValues[input.dataset.cfgIndex]=input.type==='checkbox'?input.checked:input.value;
+  }
+  _configEditorDirty=true; _configPreviewHash=null;
+  $('config-generate-btn').disabled=true;
+  $('config-editor-status').textContent='Unvalidated edits';
+}
+window.addEventListener('beforeunload',event=>{
+  if(_configEditorDirty){ event.preventDefault(); event.returnValue=''; }
+});
+
+function cfgGet(root,segments){ return segments.reduce((v,k)=>v==null?undefined:v[k],root); }
+function cfgSet(root,segments,value){
+  let at=root;
+  for(let i=0;i<segments.length-1;i++){
+    if(!at[segments[i]] || typeof at[segments[i]]!=='object') at[segments[i]]={};
+    at=at[segments[i]];
+  }
+  at[segments[segments.length-1]]=value;
+}
+function configInputValue(field){
+  if(Object.prototype.hasOwnProperty.call(_configInputValues,field.index)) return _configInputValues[field.index];
+  const value=cfgGet(_configEditor.config,field.segments);
+  if(field.secret) return '';
+  if(field.type==='object'||field.type==='list'||field.type==='null') return JSON.stringify(value,null,2);
+  return value==null?'':String(value);
+}
+function renderConfigField(field,label){
+  const current=Object.prototype.hasOwnProperty.call(_configInputValues,field.index)
+    ? _configInputValues[field.index] : cfgGet(_configEditor.config,field.segments);
+  const stored=cfgGet(_configEditor.config,field.segments);
+  const hint=field.secret?(stored&&stored.__cnsl_secret__?'Saved secret; leave blank to keep it':'Secret; leave blank to keep current value'):'';
+  if(field.type==='boolean') return `<label style="display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--surf);border-radius:4px;font-size:11px"><input type="checkbox" data-cfg-index="${field.index}" ${current?'checked':''}>${escHtml(label)}</label>`;
+  const complex=['object','list','null'].includes(field.type);
+  const value=escHtml(configInputValue(field));
+  const control=field.secret?`<input type="password" autocomplete="new-password" data-cfg-index="${field.index}" value="${escHtml(configInputValue(field))}" placeholder="${escHtml(hint)}" style="width:100%">`:
+    complex?`<textarea data-cfg-index="${field.index}" rows="${field.type==='object'||field.type==='list'?4:1}" style="width:100%;font:11px monospace">${value}</textarea>`:
+    `<input type="${field.type==='integer'||field.type==='number'?'number':'text'}" ${field.type==='number'?'step="any"':''} data-cfg-index="${field.index}" value="${value}" style="width:100%">`;
+  return `<label style="display:block;padding:7px 9px;background:var(--surf);border-radius:4px;font-size:11px"><span style="display:block;margin-bottom:5px;color:var(--muted)">${escHtml(label)}${field.secret?' - secret':''}</span>${control}${hint?`<small style="display:block;color:var(--muted);margin-top:4px">${escHtml(hint)}</small>`:''}</label>`;
+}
+function configNodeCount(node){ return node.fields.length+Object.values(node.children).reduce((n,child)=>n+configNodeCount(child),0); }
+function renderConfigNode(node,label,section,depth,isRoot=false){
+  const enabledField=node.fields.find(f=>f.segments[f.segments.length-1]==='enabled'&&f.type==='boolean');
+  const fields=node.fields.filter(f=>f!==enabledField);
+  const children=Object.entries(node.children).map(([name,child])=>renderConfigNode(child,name,section,depth+1)).join('');
+  const controls=fields.map(f=>renderConfigField(f,f.segments.slice(depth).join('.')||label)).join('');
+  const currentEnabled=enabledField?!!cfgGet(_configEditor.config,enabledField.segments):true;
+  const open=currentEnabled?' open':'';
+  const control=enabledField?`<label onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;font-size:11px;font-weight:400;color:var(--muted)"><input type="checkbox" data-cfg-index="${enabledField.index}" ${currentEnabled?'checked':''} onchange="this.closest('details').open=this.checked;markConfigEditorDirty()">Enabled</label>`:'';
+  return `<details${open} style="border:1px solid var(--bord);border-radius:5px;margin:0 0 ${isRoot?'8':'6'}px ${isRoot?'0':'10'}px">
+    <summary style="padding:9px 12px;cursor:pointer;font-size:${isRoot?'12':'11'}px;font-weight:600">${escHtml(label)} <span style="color:var(--muted);font-weight:400">(${configNodeCount(node)})</span>${control}</summary>
+    <div style="padding:4px 12px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:8px">${controls}${children}</div>
+  </details>`;
+}
+function renderConfigEditor(){
+  const grouped={};
+  _configEditor.fields.forEach(field=>{
+    const section=field.segments[0]||'Configuration';
+    const node=grouped[section]||=( {fields:[],children:{}} );
+    const rest=field.segments.slice(1);
+    if(!rest.length){ node.fields.push(field); return; }
+    let at=node;
+    rest.slice(0,-1).forEach(part=>{ at.children[part]||={fields:[],children:{}}; at=at.children[part]; });
+    at.fields.push(field);
+  });
+  const counts={};
+  Object.keys(grouped).forEach(root=>{
+    const category=CONFIG_CATEGORIES.find(c=>c.roots.includes(root))||CONFIG_CATEGORIES.find(c=>c.id==='other');
+    counts[category.id]=(counts[category.id]||0)+configNodeCount(grouped[root]);
+  });
+  $('config-editor-categories').style.display=_configEditorCategory?'none':'grid';
+  $('config-editor-categories').style.gridTemplateColumns='repeat(auto-fit,minmax(230px,1fr))';
+  $('config-editor-categories').style.gap='10px';
+  $('config-editor-categories').innerHTML=CONFIG_CATEGORIES.filter(c=>counts[c.id]).map(c=>`
+    <button class="tbl-wrap" onclick="openConfigCategory('${c.id}')" style="text-align:left;padding:14px;background:var(--surf);color:var(--text);cursor:pointer">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">${escHtml(c.title)}</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.5">${escHtml(c.description)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:9px">${counts[c.id]} settings</div>
+    </button>`).join('');
+  const category=CONFIG_CATEGORIES.find(c=>c.id===_configEditorCategory);
+  const view=$('config-editor-category-view');
+  view.style.display=category?'block':'none';
+  if(category){
+    const roots=Object.keys(grouped).filter(root=>category.id==='other'
+      ? !CONFIG_CATEGORIES.some(c=>c.id!=='other'&&c.roots.includes(root))
+      : category.roots.includes(root));
+    view.innerHTML=`<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px">
+      <button class="btn" onclick="closeConfigCategory()" style="padding:4px 9px">&larr; Categories</button>
+      <div><div style="font-size:14px;font-weight:600">${escHtml(category.title)}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${escHtml(category.description)}</div></div>
+    </div>${roots.map(section=>renderConfigNode(grouped[section],section,section,1,true)).join('')}`;
+  }else view.innerHTML='';
+}
+function openConfigCategory(id){ _configEditorCategory=id; renderConfigEditor(); }
+function closeConfigCategory(){ _configEditorCategory=null; renderConfigEditor(); }
+
+async function loadConfigEditor(){
+  if(_configEditorDirty&&!confirm('Discard unvalidated configuration edits and reload?')) return;
+  const [current,schema,status,versions]=await Promise.all([
+    apiFetch('/api/config/current'),apiFetch('/api/config/schema'),apiFetch('/api/config/status'),apiFetch('/api/config/versions')
+  ]);
+  if(!current||!schema||!status){ $('config-editor-status').textContent='Unable to load configuration'; return; }
+  _configEditorCategory=null;
+  _configInputValues={};
+  _configEditor={config:current.config,fields:schema.fields.map((f,index)=>({...f,index}))};
+  _configEditorWritable=status.writable;
+  _configDraftId=null; _configPreviewHash=null; $('config-generate-btn').disabled=true;
+  _configEditorFileHash=status.file_hash;
+  let restoredConflict=false;
+  const savedId=localStorage.getItem('cnsl_config_draft_id');
+  if(savedId){
+    const saved=await apiFetch(`/api/config/diff/${encodeURIComponent(savedId)}`);
+    if(saved&&!saved.error){
+      _configEditor.config=saved.config; _configDraftId=saved.draft_id;
+      _configPreviewHash=saved.config_hash;
+      _configEditorFileHash=saved.base_file_hash; restoredConflict=saved.conflict;
+    }else localStorage.removeItem('cnsl_config_draft_id');
+  }
+  _configEditorDirty=false;
+  $('config-editor-status').textContent=_configDraftId
+    ? 'Server draft restored'+(restoredConflict?' - active config changed':'')
+    : `${status.writable?'Ready':'Read-only'} - ${status.activation}`;
+  $('config-editor-meta').textContent=`Active file: ${current.config_path||'built-in defaults (no file)'} - Config hash: ${current.config_hash} - Secrets are masked.`;
+  $('config-editor-result').innerHTML='';
+  renderConfigEditor();
+  $('config-editor-category-view').oninput=markConfigEditorDirty;
+  $('config-editor-category-view').onchange=markConfigEditorDirty;
+  renderConfigVersions(versions?.versions||[]);
+}
+
+function renderConfigVersions(versions){
+  $('config-editor-versions').innerHTML=versions.length?`<div style="display:grid;gap:5px">${versions.map(v=>`<div style="display:flex;gap:10px;align-items:center;padding:7px 9px;background:var(--surf);border-radius:4px"><code>${escHtml(v.version_id)}</code><span>${escHtml(new Date((v.created_at||0)*1000).toLocaleString())}</span><span style="color:var(--muted)">${escHtml(v.sha256||'')}</span><button class="btn" onclick="viewConfigVersion('${escHtml(v.version_id)}')" style="margin-left:auto;padding:3px 8px">Inspect</button></div>`).join('')}</div>`:'No generated versions yet.';
+}
+
+async function viewConfigVersion(versionId){
+  const data=await apiFetch(`/api/config/versions/${encodeURIComponent(versionId)}`);
+  if(!data||data.error){$('config-editor-result').innerHTML=`<div style="color:#ef4444">${escHtml(data?.error||'Could not load version')}</div>`;return;}
+  $('config-editor-result').innerHTML=`<div style="padding:12px;background:var(--surf);border-radius:5px"><b>Version ${escHtml(data.version.version_id)}</b> - integrity ${escHtml(data.integrity)}<pre style="max-height:320px;overflow:auto;white-space:pre-wrap">${escHtml(JSON.stringify(data.config,null,2))}</pre></div>`;
+}
+
+function collectConfigEditor(){
+  const config=JSON.parse(JSON.stringify(_configEditor.config));
+  for(const field of _configEditor.fields){
+    const input=document.querySelector(`[data-cfg-index="${field.index}"]`);
+    if(!input&&!Object.prototype.hasOwnProperty.call(_configInputValues,field.index)) continue;
+    const raw=input?(input.type==='checkbox'?input.checked:input.value):_configInputValues[field.index];
+    let value;
+    if(field.type==='boolean') value=raw;
+    else if(field.secret){ if(!raw) continue; value=raw; }
+    else if(field.type==='integer') value=raw===''?null:parseInt(raw,10);
+    else if(field.type==='number') value=raw===''?null:parseFloat(raw);
+    else if(field.type==='object'||field.type==='list'||field.type==='null'){
+      try { value=raw.trim()===''?null:JSON.parse(raw); }
+      catch(e){ throw new Error(`${field.path}: invalid JSON (${e.message})`); }
+      if(field.type==='object'&&value!==null&&(typeof value!=='object'||Array.isArray(value))) throw new Error(`${field.path}: expected a JSON object`);
+      if(field.type==='list'&&value!==null&&!Array.isArray(value)) throw new Error(`${field.path}: expected a JSON list`);
+    } else value=raw;
+    cfgSet(config,field.segments,value);
+  }
+  return config;
+}
+
+async function previewConfigEditor(){
+  const result=$('config-editor-result');
+  try{
+    const config=collectConfigEditor();
+    const draft=_configDraftId
+      ? await apiFetch(`/api/config/draft/${encodeURIComponent(_configDraftId)}`,{method:'PUT',body:JSON.stringify({config})})
+      : await apiFetch('/api/config/draft',{method:'POST',body:JSON.stringify({config,base_file_hash:_configEditorFileHash})});
+    if(!draft||draft.error) throw new Error(draft?.error||'Could not create draft');
+    _configDraftId=draft.draft_id;
+    _configEditorFileHash=draft.base_file_hash;
+    _configEditor.config=draft.config;
+    _configInputValues={};
+    localStorage.setItem('cnsl_config_draft_id',_configDraftId);
+    _configEditorDirty=false;
+    renderConfigEditor();
+    $('config-editor-category-view').oninput=markConfigEditorDirty;
+    $('config-editor-category-view').onchange=markConfigEditorDirty;
+    const validation=await apiFetch('/api/config/validate',{method:'POST',body:JSON.stringify({draft_id:_configDraftId})});
+    if(!validation||validation.error) throw new Error(validation?.error||'Validation failed');
+    _configPreviewHash=draft.config_hash;
+    $('config-generate-btn').disabled=!_configEditorWritable||!validation.valid||validation.conflict;
+    const issues=validation.issues.map(i=>`<div style="color:${i.level==='error'?'#ef4444':'#f59e0b'}">${escHtml(i.level.toUpperCase())} - ${escHtml(i.path)}: ${escHtml(i.message)}</div>`).join('');
+    const changes=validation.changes.length?validation.changes.map(c=>`<div style="padding:3px 0"><code>${escHtml(c.path)}</code>: ${escHtml(JSON.stringify(c.before))} &rarr; ${escHtml(JSON.stringify(c.after))}</div>`).join(''):'No changes.';
+    result.innerHTML=`<div style="padding:12px;background:var(--surf);border-radius:5px"><b>${validation.valid?'Validation passed':'Validation found errors'}</b>${validation.conflict?' - Active config changed; reload before continuing.':''}<div style="margin-top:8px">${issues}</div><div style="margin-top:8px">${changes}</div></div>`;
+  }catch(e){ $('config-generate-btn').disabled=true; result.innerHTML=`<div style="color:#ef4444">${escHtml(e.message)}</div>`; }
+}
+
+async function generateConfigVersion(){
+  if(!_configDraftId||!_configPreviewHash) return;
+  const result=await apiFetch('/api/config/versions',{method:'POST',body:JSON.stringify({draft_id:_configDraftId,config_hash:_configPreviewHash})});
+  $('config-editor-result').innerHTML=result?.version_id
+    ? `<div style="padding:12px;background:var(--surf);border-radius:5px">Generated inactive version <code>${escHtml(result.version_id)}</code><br>SHA-256: <code>${escHtml(result.sha256)}</code><br>File: <code>${escHtml(result.config_file)}</code></div>`
+    : `<div style="color:#ef4444">${escHtml(result?.error||'Version generation failed')}</div>`;
+  $('config-generate-btn').disabled=true;
+  if(result?.version_id){
+    const versions=await apiFetch('/api/config/versions');
+    renderConfigVersions(versions?.versions||[]);
+  }
+}
+
 // ---- Graph Visualization (force-directed, canvas-based) ----
 
 let _graphData = null;

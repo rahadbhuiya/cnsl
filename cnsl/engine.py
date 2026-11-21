@@ -472,6 +472,30 @@ async def _main_async(args: Any, cfg: Dict) -> None:
     # Multi-log sources (nginx, apache, mysql, ufw, syslog)
     source_health = SourceHealthTracker(cfg)
     tasks.extend(get_log_tasks(cfg, queue, logger, health_tracker=source_health))
+    from .observability_sources import ObservabilitySourceManager
+    observability_sources = ObservabilitySourceManager(cfg, queue, logger, store, source_health, metrics)
+    tasks.extend(observability_sources.start())
+    source_health.set_remote_status(observability_sources.stats)
+    metrics.observability_sources = observability_sources.stats
+
+    # Advanced Protections: Honeytokens, Container Security, SOAR & AI Copilot
+    from .honeytokens import HoneytokenEngine
+    from .container_security import ContainerSecurityEngine
+    from .soar import SOAREngine
+    from .ai_copilot import AICopilot
+    from .mitre_attack import MitreAttackEngine
+
+    honeytoken_engine = HoneytokenEngine(cfg, queue=queue)
+    if honeytoken_engine.enabled:
+        tasks.append(asyncio.create_task(honeytoken_engine.start_watcher(), name="honeytokens"))
+
+    container_engine = ContainerSecurityEngine(cfg, queue=queue)
+    if container_engine.enabled:
+        tasks.append(asyncio.create_task(container_engine.start(), name="container_security"))
+
+    soar_engine = SOAREngine(cfg, blocker=blocker)
+    copilot = AICopilot(cfg)
+    mitre_engine = MitreAttackEngine()
     if source_health.enabled:
         tasks.append(asyncio.create_task(source_health.run_health_loop(logger), name="source_health"))
     if retention.enabled and store.available:
@@ -574,7 +598,11 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                             oidc=oidc,
                             source_health=source_health,
                             retention=retention,
-                            case_sla=case_sla),
+                            case_sla=case_sla,
+                            config_path=args.config,
+                            soar=soar_engine,
+                            copilot=copilot,
+                            mitre=mitre_engine),
             name="dashboard",
         ))
 
@@ -691,10 +719,13 @@ async def _main_async(args: Any, cfg: Dict) -> None:
                 pass
 
     # 2. Producers and network components.
-    await _safe("kafka",          lambda: kafka.stop())
-    await _safe("huddle",         lambda: huddle.stop())
-    await _safe("syslog",         lambda: syslog_receiver.stop())
-    await _safe("threat_feed",    lambda: threat_feed.stop())
+    await _safe("kafka",              lambda: kafka.stop())
+    await _safe("huddle",             lambda: huddle.stop())
+    await _safe("syslog",             lambda: syslog_receiver.stop())
+    await _safe("observability",      lambda: observability_sources.close())
+    await _safe("honeytokens",        lambda: honeytoken_engine.stop_watcher())
+    await _safe("container_security", lambda: container_engine.stop())
+    await _safe("threat_feed",        lambda: threat_feed.stop())
     await _safe("notifier",       lambda: notifier.stop())
     await _safe("fim",            lambda: fim_engine.close())
     await _safe("federation",     lambda: federation.stop())
